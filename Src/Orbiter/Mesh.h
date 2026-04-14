@@ -10,8 +10,8 @@
 #define __MESH_H
 
 #define OAPI_IMPLEMENTATION
-#include <d3d.h>
-#include <d3dtypes.h>
+#include "d3d_compat.h"
+
 #include <iostream>
 #include "OrbiterAPI.h"
 

@@ -10,8 +10,14 @@
 #define __PANE_H
 
 #define STRICT 1
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
+#ifdef _WIN32
 #include <mmsystem.h>
+#endif
 #include "Orbiter.h"
 #include "Body.h"
 #include "Mfd.h"

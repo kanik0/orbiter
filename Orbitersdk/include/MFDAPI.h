@@ -36,6 +36,8 @@ class Instrument;
  */
 // ======================================================================
 
+class Instrument_User; // forward declaration (Orbiter private class)
+
 class OAPIFUNC MFD {
 	friend class MFD2;
 

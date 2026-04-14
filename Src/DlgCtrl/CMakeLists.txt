@@ -1,11 +1,18 @@
 # Copyright (c) Martin Schweiger
 # Licensed under the MIT License
 
-add_library(DlgCtrl STATIC
-	DlgCtrl.cpp
-	DlgCtrlPropertyList.cpp
-	DlgCtrlSwitch.cpp
-)
+if(WIN32)
+	add_library(DlgCtrl STATIC
+		DlgCtrl.cpp
+		DlgCtrlPropertyList.cpp
+		DlgCtrlSwitch.cpp
+	)
+else()
+	# Stub library on non-Windows platforms
+	add_library(DlgCtrl STATIC
+		DlgCtrl_stub.cpp
+	)
+endif()
 
 target_include_directories(DlgCtrl
 	PUBLIC ${CMAKE_SOURCE_DIR}/Orbitersdk/include

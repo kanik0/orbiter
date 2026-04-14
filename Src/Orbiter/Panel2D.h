@@ -13,7 +13,11 @@
 #define __PANEL2D_H
 
 #define STRICT 1
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 #include "Mfd.h"
 
 // =======================================================================

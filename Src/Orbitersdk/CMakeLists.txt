@@ -25,6 +25,7 @@ set_target_properties(Orbitersdk
 
 target_include_directories(Orbitersdk
 	PUBLIC ${imgui_SOURCE_DIR}
+	PUBLIC ${CMAKE_SOURCE_DIR}/Orbitersdk/include
 )
 
 

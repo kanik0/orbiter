@@ -8,7 +8,7 @@
 #ifndef __VOBJECT_H
 #define __VOBJECT_H
 
-#include <d3d.h>
+#include "d3d_compat.h"
 #include "Vecmat.h"
 #include "GraphicsAPI.h"
 

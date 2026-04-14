@@ -298,7 +298,9 @@ bool Mesh::DeleteGroup (DWORD grp)
 	} else if (grp < nGrp && grp > 0) { // delete selected group
 		if (Grp[grp].Vtx) { delete []Grp[grp].Vtx; Grp[grp].Vtx = NULL; }
 		if (Grp[grp].Idx) { delete []Grp[grp].Idx; Grp[grp].Idx = NULL; }
+#ifdef _WIN32
 		if (Grp[grp].VtxBuf) Grp[grp].VtxBuf->Release();
+#endif
 
 		// redo group
 		GroupSpec * tmp_Grp = new GroupSpec[nGrp - 1]; TRACENEW
@@ -450,7 +452,9 @@ void Mesh::Clear ()
 		delete []Grp[i].Idx;
 		Grp[i].Vtx = NULL;
 		Grp[i].Idx = NULL;
+#ifdef _WIN32
 		if (Grp[i].VtxBuf) Grp[i].VtxBuf->Release();
+#endif
 	}
 	if (nGrp) {
 		delete []Grp;
@@ -521,9 +525,13 @@ void Mesh::TranslateGroup (DWORD grp, D3DVALUE dx, D3DVALUE dy, D3DVALUE dz)
 		GrpCnt[grp].y += dy;
 		GrpCnt[grp].z += dz;
 	}
+#ifdef _WIN32
 	if (Grp[grp].VtxBuf) { // make this more efficient!
 		Grp[grp].VtxBuf->Release();
 		Grp[grp].VtxBuf = 0;
+#else
+	if (false) {
+#endif
 	}
 }
 
@@ -1140,13 +1148,13 @@ bool LoadMesh (const char *meshname, Mesh &mesh)
 
 // =======================================================================
 // Create a sphere patch.
-// nlng is the number of patches required to span the full 360° in longitude
-// nlat is the number of patches required to span the latitude range from 0 to 90°
+// nlng is the number of patches required to span the full 360ï¿½ in longitude
+// nlat is the number of patches required to span the latitude range from 0 to 90ï¿½
 // 0 <= ilat < nlat is the actual latitude strip the patch is to cover
 // res >= 1 is the resolution of the patch (= number of internal latitude strips in the patch)
 // bseg, if given, is the number of of polygon segments on the lower base line of the patch.
 // Default is (nlat-ilat)*res. bseg is ignored for triangular patches (i.e. where upper
-// latitude is 90°)
+// latitude is 90ï¿½)
 
 void CreateSpherePatch (Mesh &mesh, int nlng, int nlat, int ilat, int res, int bseg, bool reduce, bool outside)
 {

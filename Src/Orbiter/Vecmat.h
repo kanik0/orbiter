@@ -227,7 +227,7 @@ public:
 
 	void orthogonalise (int axis);
 
-	friend void qrdcmp (Matrix &a, Vector &c, Vector &d, int *sing = 0);
+	friend void qrdcmp (Matrix &a, Vector &c, Vector &d, int *sing);
 	friend void qrsolv (const Matrix &a, const Vector &c, const Vector &d, Vector &b);
 
 	union {
@@ -237,6 +237,10 @@ public:
 };
 
 Matrix IMatrix();		 // returns identity matrix
+
+// QR decomposition (default arg here, not in the friend declaration)
+void qrdcmp (Matrix &a, Vector &c, Vector &d, int *sing = 0);
+void qrsolv (const Matrix &a, const Vector &c, const Vector &d, Vector &b);
 
 Vector mul (const Matrix &A, const Vector &b);  // returns A * b
 Vector tmul (const Matrix &A, const Vector &b); // returns A^T * b
@@ -310,7 +314,7 @@ public:
 	inline double operator() (int i, int j) const
 	{ return data[i*4+j]; }
 
-	friend void qrdcmp (Matrix4 &a, Vector4 &c, Vector4 &d, int *sing = 0);
+	friend void qrdcmp (Matrix4 &a, Vector4 &c, Vector4 &d, int *sing);
 	friend void qrsolv (const Matrix4 &a, const Vector4 &c, const Vector4 &d, Vector4 &b);
 	friend void QRFactorize (Matrix4 &A, Vector4 &c, Vector4 &d);
 	friend void RSolve (const Matrix4 &A, const Vector4 &d, Vector4 &b);
@@ -322,6 +326,13 @@ public:
 		struct { double m11, m12, m13, m14, m21, m22, m23, m24, m31, m32, m33, m34, m41, m42, m43, m44; };
 	};
 };
+
+// QR decomposition for Matrix4 (default arg here, not in the friend declaration)
+void qrdcmp (Matrix4 &a, Vector4 &c, Vector4 &d, int *sing = 0);
+void qrsolv (const Matrix4 &a, const Vector4 &c, const Vector4 &d, Vector4 &b);
+void QRFactorize (Matrix4 &A, Vector4 &c, Vector4 &d);
+void RSolve (const Matrix4 &A, const Vector4 &d, Vector4 &b);
+void QRSolve (const Matrix4 &A, const Vector4 &c, const Vector4 &d, const Vector4 &b, Vector4 &x);
 
 // =======================================================================
 // class Quaternion

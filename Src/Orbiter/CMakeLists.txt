@@ -1,23 +1,22 @@
 # Copyright (c) Martin Schweiger
 # Licensed under the MIT License
 
-# SAFESEH linker flag must be turned off because the DX7 libraries don't support it'
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -SAFESEH:NO")
+if(MSVC)
+	# SAFESEH linker flag must be turned off because the DX7 libraries don't support it'
+	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -SAFESEH:NO")
+endif()
 FetchContent_MakeAvailable(imgui)
 FetchContent_MakeAvailable(implot)
 
-# Sources for all Orbiter executable targets
+# Sources for all Orbiter executable targets - cross-platform core
 set(common_src
 # General source files
 	Astro.cpp
 	Camera.cpp
 	cmdline.cpp
 	Config.cpp
-	console_ng.cpp
 	Element.cpp
 	elevmgr.cpp
-	Help.cpp
-	Input.cpp
 	Keymap.cpp
 	LightEmitter.cpp
 	Mesh.cpp
@@ -30,20 +29,8 @@ set(common_src
 	State.cpp
 	Vecmat.cpp
 	VectorMap.cpp
-    ConsoleManager.cpp
 	TimeData.cpp
-# Launchpad
-	Launchpad.cpp
-	LpadTab.cpp
-	TabAbout.cpp
-	TabExtra.cpp
-	TabModule.cpp
-	TabOptions.cpp
-	TabScenario.cpp
-	TabVideo.cpp
-# Dialogs
-	CustomControls.cpp
-	DialogWin.cpp
+# Dialogs (ImGui-based, cross-platform)
 	DlgCamera.cpp
 	DlgCapture.cpp
 	DlgFocus.cpp
@@ -56,7 +43,6 @@ set(common_src
 	DlgOptions.cpp
 	DlgRecorder.cpp
 	DlgTacc.cpp
-	htmlctrl.c
 	Select.cpp
 	OptionsPages.cpp
 # Body classes
@@ -109,81 +95,146 @@ set(common_src
 # Graphics utils
 	D3d7util.cpp
 	D3dmath.cpp
-	Di7frame.cpp
-# Graphics interface base class for GDI clients
-	${GDICLIENT_DIR}/GDIClient.cpp
 # Utils
 	Log.cpp
 	Memstat.cpp
 	Util.cpp
 	ZTreeMgr.cpp
-# Resources
-	Orbiter.rc
-	Orbiter.ico
-	${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
 )
+
+# Platform-specific sources
+if(WIN32)
+	list(APPEND common_src
+		# Windows-specific
+		console_ng.cpp
+		ConsoleManager.cpp
+		Help.cpp
+		Input.cpp
+		Di7frame.cpp
+		# Win32 Launchpad
+		Launchpad.cpp
+		LpadTab.cpp
+		TabAbout.cpp
+		TabExtra.cpp
+		TabModule.cpp
+		TabOptions.cpp
+		TabScenario.cpp
+		TabVideo.cpp
+		# Win32 Dialogs
+		CustomControls.cpp
+		DialogWin.cpp
+		htmlctrl.c
+		# GDI Client
+		${GDICLIENT_DIR}/GDIClient.cpp
+		# Resources
+		Orbiter.rc
+		Orbiter.ico
+		${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
+	)
+else()
+	# TODO: macOS/Linux platform sources will be added as they are implemented
+	# For now, stub files are included to allow compilation
+endif()
 
 set(Orbiter_includes
 	${CMAKE_CURRENT_SOURCE_DIR}
 	${CMAKE_SOURCE_DIR}/Orbitersdk/include
 	${CMAKE_SOURCE_DIR}/OVP
 	${CMAKE_CURRENT_BINARY_DIR}
-	${HTMLHELP_INCLUDE_DIR}
 )
 
-set(Orbiter_common_libs
-	Winmm.dll
-	comctl32.lib
-	UxTheme.lib
-	version.lib
-	${HTML_HELP_LIBRARY}
-	zlib
-	${HTMLHELP_LIB}
-	$<TARGET_FILE:Orbitersdk>
-	$<TARGET_FILE:DlgCtrl>
-)
-set(Orbiter_libs
-	dxguid.lib
-	dinput8.lib
-)
+if(WIN32)
+	list(APPEND Orbiter_includes ${HTMLHELP_INCLUDE_DIR})
+endif()
+
+# Platform-specific libraries
+if(WIN32)
+	set(Orbiter_common_libs
+		Winmm.dll
+		comctl32.lib
+		UxTheme.lib
+		version.lib
+		${HTML_HELP_LIBRARY}
+		zlib
+		${HTMLHELP_LIB}
+		$<TARGET_FILE:Orbitersdk>
+		$<TARGET_FILE:DlgCtrl>
+	)
+	set(Orbiter_libs
+		dxguid.lib
+		dinput8.lib
+	)
+elseif(APPLE)
+	set(Orbiter_common_libs
+		zlib
+		${SDL2_LIBRARIES}
+		${OPENGL_LIBRARIES}
+		$<TARGET_FILE:Orbitersdk>
+		$<TARGET_FILE:DlgCtrl>
+		"-framework CoreFoundation"
+		"-framework IOKit"
+		dl
+	)
+	set(Orbiter_libs "")
+else()
+	set(Orbiter_common_libs
+		zlib
+		$<TARGET_FILE:Orbitersdk>
+		$<TARGET_FILE:DlgCtrl>
+		dl
+	)
+	set(Orbiter_libs "")
+endif()
 
 set(Orbiter_depends
 	Orbitersdk
 	DlgCtrl
 )
 
-# Orbiter executable (graphics server version)
+# Orbiter executable
 add_executable(Orbiter ${common_src})
 
-set_target_properties(Orbiter
-	PROPERTIES
-	LINK_FLAGS "/SUBSYSTEM:CONSOLE /ENTRY:WinMainCRTStartup"
-	RUNTIME_OUTPUT_DIRECTORY ${ORBITER_BINARY_ROOT_DIR}
-	OUTPUT_NAME Orbiter
-	VS_DEBUGGER_WORKING_DIRECTORY ${ORBITER_BINARY_ROOT_DIR}
-	COMPILE_DEFINITIONS "NOGRAPHICS;DIRECTINPUT_VERSION=0x0800"
-	FOLDER Core
-)
+if(WIN32)
+	set_target_properties(Orbiter
+		PROPERTIES
+		LINK_FLAGS "/SUBSYSTEM:CONSOLE /ENTRY:WinMainCRTStartup"
+		RUNTIME_OUTPUT_DIRECTORY ${ORBITER_BINARY_ROOT_DIR}
+		OUTPUT_NAME Orbiter
+		VS_DEBUGGER_WORKING_DIRECTORY ${ORBITER_BINARY_ROOT_DIR}
+		COMPILE_DEFINITIONS "NOGRAPHICS;DIRECTINPUT_VERSION=0x0800"
+		FOLDER Core
+	)
+else()
+	set_target_properties(Orbiter
+		PROPERTIES
+		RUNTIME_OUTPUT_DIRECTORY ${ORBITER_BINARY_ROOT_DIR}
+		OUTPUT_NAME Orbiter
+		FOLDER Core
+	)
+	target_compile_definitions(Orbiter PRIVATE NOGRAPHICS)
+endif()
 
 target_include_directories(Orbiter PUBLIC ${Orbiter_includes} ${TRACY_CLIENT_INCLUDE} ${imgui_SOURCE_DIR}/ ${imgui_SOURCE_DIR}/backends ${implot_SOURCE_DIR}/)
+
+if(APPLE)
+	target_include_directories(Orbiter PUBLIC ${SDL2_INCLUDE_DIRS})
+endif()
 
 target_link_libraries(Orbiter ${Orbiter_common_libs} ${Orbiter_libs} ${TRACY_CLIENT})
 
 add_dependencies(Orbiter ${Orbiter_depends})
 
-# Installation: Orbiter executable (graphics-server versions)
+# Installation: Orbiter executable
 install(TARGETS Orbiter	RUNTIME DESTINATION ${ORBITER_INSTALL_ROOT_DIR})
 
-# If the standard Orbiter executable is not built...
 set_target_properties(Orbiter PROPERTIES ENABLE_EXPORTS 1)
 
-# ...we have to use the NG version to export the API links
 install(FILES $<TARGET_LINKER_FILE:Orbiter>	DESTINATION ${ORBITER_INSTALL_SDK_DIR}/lib)
 
 # Copy library to its Orbitersdk/lib location so that external project integrated into the build can find it
 add_custom_command(TARGET ${OrbiterTgt}	POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_SDK_DIR}/lib
-	COMMAND ${CMAKE_COMMAND} -E copy ${ORBITER_LIB} ${ORBITER_BINARY_SDK_DIR}/lib/ 
+	COMMAND ${CMAKE_COMMAND} -E copy ${ORBITER_LIB} ${ORBITER_BINARY_SDK_DIR}/lib/
 )
 
 string(TIMESTAMP DATE "%d %b %Y")

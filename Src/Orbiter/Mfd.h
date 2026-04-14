@@ -21,7 +21,7 @@
 #include "Vessel.h"
 #include "Element.h"
 #include "Select.h"
-#include <d3d.h>
+#include "d3d_compat.h"
 
 #define ELN 256           // polygon resolution for orbit trajectory
 #define ELNH (ELN/2)

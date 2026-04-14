@@ -21,7 +21,11 @@
 
 #include "OrbiterAPI.h"
 #include <assert.h>
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #include <xmmintrin.h>
+#elif defined(__aarch64__) || defined(_M_ARM64)
+#include <arm_neon.h>
+#endif
 
 #if defined(_MSC_VER) && (_MSC_VER < 1920 ) // Microsoft Visual Studio Version 2017 and lower
 #include <algorithm>
@@ -562,7 +566,11 @@ namespace oapi {
 			return D3DXVECTOR4(x, y, z, w);
 		}
 #endif
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 		__m128 xm;
+#elif defined(__aarch64__) || defined(_M_ARM64)
+		float32x4_t xm;
+#endif
 		float data[4];
 		struct { float x, y, z, w; };
 		struct { float r, g, b, a; };

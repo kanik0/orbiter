@@ -9,8 +9,12 @@
 #ifndef __MESH_H
 #define __MESH_H
 
+#ifdef _WIN32
 #include <d3d.h>
 #include <d3dtypes.h>
+#else
+#include "d3d_stub.h"
+#endif
 #include <iostream>
 
 typedef char Str256[256];

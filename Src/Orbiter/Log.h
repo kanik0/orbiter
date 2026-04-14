@@ -5,7 +5,11 @@
 #define __LOG_H
 
 #include <stdio.h>
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 
 // comment the following line to suppress log file output
 #define GENERATE_LOG

@@ -42,8 +42,25 @@ else()
 endif()
 
 # This is important for building using vs generator (jarmonik)
-if (NOT ${CMAKE_GENERATOR} STREQUAL "Ninja")
+if (MSVC AND NOT ${CMAKE_GENERATOR} STREQUAL "Ninja")
 	add_compile_options(/MP)
+endif()
+
+# Platform detection
+if(APPLE)
+	set(ORBITER_PLATFORM_MACOS TRUE)
+	message(STATUS "Building for macOS")
+	# Force-disable Windows-only components on macOS
+	set(ORBITER_BUILD_D3D9CLIENT OFF CACHE BOOL "D3D9Client not available on macOS" FORCE)
+	set(ORBITER_BUILD_XRSOUND OFF CACHE BOOL "XRSound not yet ported to macOS" FORCE)
+	# Find SDL2 for windowing/input on macOS
+	find_package(SDL2 REQUIRED)
+	find_package(OpenGL REQUIRED)
+	message(STATUS "SDL2 found: ${SDL2_INCLUDE_DIRS}")
+	message(STATUS "OpenGL found: ${OPENGL_INCLUDE_DIR}")
+elseif(UNIX AND NOT APPLE)
+	set(ORBITER_PLATFORM_LINUX TRUE)
+	message(STATUS "Building for Linux")
 endif()
 
 # Define directories and file paths for some common binaries
@@ -86,22 +103,33 @@ set(ORBITER_INSTALL_SDK_DIR ${ORBITER_INSTALL_ROOT_DIR}/Orbitersdk)
 set(ORBITER_SDK_LIB $<TARGET_FILE:Orbitersdk>)
 set(ORBITER_DLGCTRL_LIB $<TARGET_FILE:DlgCtrl>)
 set(LUAINTERPRETER_LIB $<TARGET_LINKER_FILE:LuaInterpreter>)
-set(GDICLIENT_LIB $<TARGET_LINKER_FILE:GDIClient>)
+if(WIN32)
+	set(GDICLIENT_LIB $<TARGET_LINKER_FILE:GDIClient>)
+endif()
 
 set(EXTERN_DIR "${CMAKE_SOURCE_DIR}/Extern")
 
-set(HTMLHELP_DIR "${EXTERN_DIR}/Htmlhelp")
-set(HTMLHELP_INCLUDE_DIR ${HTMLHELP_DIR}/include)
-set(HTMLHELP_LIB_DIR ${HTMLHELP_DIR}/lib-${ARCH})
-set(HTMLHELP_LIB ${HTMLHELP_LIB_DIR}/Htmlhelp.Lib)
+if(WIN32)
+	set(HTMLHELP_DIR "${EXTERN_DIR}/Htmlhelp")
+	set(HTMLHELP_INCLUDE_DIR ${HTMLHELP_DIR}/include)
+	set(HTMLHELP_LIB_DIR ${HTMLHELP_DIR}/lib-${ARCH})
+	set(HTMLHELP_LIB ${HTMLHELP_LIB_DIR}/Htmlhelp.Lib)
+else()
+	set(HTMLHELP_INCLUDE_DIR "")
+	set(HTMLHELP_LIB "")
+endif()
 
 set(ORBITER_TOOL_MESHC "$<TARGET_FILE:meshc>")
 set(ldoc $<TARGET_FILE:lua::exe> ${ORBITER_BINARY_ROOT_DIR}/packages/LDoc/ldoc.lua -v --multimodule)
 
-find_package(OpenGL QUIET)
-find_package(HTMLHelp)
+if(NOT APPLE)
+	find_package(OpenGL QUIET)
+endif()
+if(WIN32)
+	find_package(HTMLHelp)
+	find_package(MFC)
+endif()
 find_package(LATEX)
-find_package(MFC)
 
 # We don't query Qt with find_package because we need the 64-bit version here
 set(Qt5_x64_DIR
@@ -114,6 +142,12 @@ set(Qt5_x64_DIR
 if(MSVC)
   add_compile_options(/we4311 /DNOMINMAX)
   add_link_options("/NODEFAULTLIB:\"LIBCMTD\"")
+elseif(APPLE)
+  set(CMAKE_BUILD_WITH_INSTALL_RPATH true)
+  set(CMAKE_INSTALL_RPATH "@executable_path")
+  add_compile_definitions(NOMINMAX)
+  # Suppress OpenGL deprecation warnings on macOS
+  add_compile_definitions(GL_SILENCE_DEPRECATION)
 else()
   set(CMAKE_BUILD_WITH_INSTALL_RPATH true)
 endif()
@@ -136,19 +170,20 @@ set_target_properties(CopyData
 )
 
 # =====================================================================================
-# work around Html Help compiler bug returning error code
+# work around Html Help compiler bug returning error code (Windows only)
 
-set(HHC_CMD ${CMAKE_CURRENT_BINARY_DIR}/cmake/hhc_fix.bat)
-file(TO_NATIVE_PATH "${HTML_HELP_COMPILER}" HHC_PATH_W)
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/hhc_fix.bat.in ${HHC_CMD})
+if(WIN32)
+	set(HHC_CMD ${CMAKE_CURRENT_BINARY_DIR}/cmake/hhc_fix.bat)
+	file(TO_NATIVE_PATH "${HTML_HELP_COMPILER}" HHC_PATH_W)
+	configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/hhc_fix.bat.in ${HHC_CMD})
 
+	# =====================================================================================
+	# work around pdftex returning an error because of doxygen bug
 
-# =====================================================================================
-# work around pdftex returning an error because of doxygen bug
-
-set(PDFTEX_CMD ${CMAKE_CURRENT_BINARY_DIR}/cmake/pdftex_fix.bat)
-file(TO_NATIVE_PATH "${PDFLATEX_COMPILER}" PDFTEX_PATH_W)
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/pdftex_fix.bat.in ${PDFTEX_CMD})
+	set(PDFTEX_CMD ${CMAKE_CURRENT_BINARY_DIR}/cmake/pdftex_fix.bat)
+	file(TO_NATIVE_PATH "${PDFLATEX_COMPILER}" PDFTEX_PATH_W)
+	configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/pdftex_fix.bat.in ${PDFTEX_CMD})
+endif()
 
 
 # =====================================================================================
@@ -309,7 +344,13 @@ endif()
 configure_file(${CMAKE_SOURCE_DIR}/cmake/CPackOptions.cmake.in
 	${CMAKE_BINARY_DIR}/OrbiterCPackOptions.cmake)
 
-set(CPACK_GENERATOR "WIX;ZIP")
+if(APPLE)
+	set(CPACK_GENERATOR "DragNDrop;ZIP")
+elseif(WIN32)
+	set(CPACK_GENERATOR "WIX;ZIP")
+else()
+	set(CPACK_GENERATOR "TGZ;ZIP")
+endif()
 set(CPACK_PACKAGE_NAME OpenOrbiter)
 set(CPACK_PACKAGE_VENDOR Orbitersim)
 set(CPACK_PACKAGE_DESCRIPTION "Orbiter is an Open-source spaceflight simulator for Windows PCs.")
@@ -321,11 +362,13 @@ set(CPACK_COMPONENT_Unspecified_REQUIRED TRUE)
 set(CPACK_COMPONENT_RuntimeLibraries_DESCRIPTION "System libraries used by Orbiter. Install if Orbiter fails to launch.")
 set(CPACK_RESOURCE_FILE_LICENSE ${ORBITER_SOURCE_ROOT_DIR}/cmake/LICENSE.rtf)
 set(CPACK_RESOURCE_FILE_README ${ORBITER_SOURCE_ROOT_DIR}/README.md)
-set(CPACK_WIX_UI_BANNER ${ORBITER_SOURCE_ROOT_DIR}/cmake/install_banner.bmp)
-set(CPACK_WIX_UI_DIALOG ${ORBITER_SOURCE_ROOT_DIR}/cmake/install_bkg.bmp)
-set(CPACK_WIX_PRODUCT_ICON ${ORBITER_SOURCE_ROOT_DIR}/cmake/orbiter_install.ico)
-set(CPACK_WIX_UPGRADE_GUID AB3F6483-A1A4-4ECD-ADAE-D33DF3A5AADA)
-set(CPACK_WIX_COMPONENT_INSTALL)
+if(WIN32)
+	set(CPACK_WIX_UI_BANNER ${ORBITER_SOURCE_ROOT_DIR}/cmake/install_banner.bmp)
+	set(CPACK_WIX_UI_DIALOG ${ORBITER_SOURCE_ROOT_DIR}/cmake/install_bkg.bmp)
+	set(CPACK_WIX_PRODUCT_ICON ${ORBITER_SOURCE_ROOT_DIR}/cmake/orbiter_install.ico)
+	set(CPACK_WIX_UPGRADE_GUID AB3F6483-A1A4-4ECD-ADAE-D33DF3A5AADA)
+	set(CPACK_WIX_COMPONENT_INSTALL)
+endif()
 set(CPACK_PROJECT_CONFIG_FILE "${CMAKE_BINARY_DIR}/OrbiterCPackOptions.cmake")
 
 include(OrbiterCPackOptions)

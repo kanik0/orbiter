@@ -13,7 +13,11 @@
 #ifndef __OPTIONSPAGES_H
 #define __OPTIONSPAGES_H
 
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 #include <CommCtrl.h>
 #include "CustomControls.h"
 #include "OrbiterAPI.h"

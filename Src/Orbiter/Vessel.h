@@ -39,7 +39,7 @@ class Nav;
 class Nav_IDS;
 class Nav_XPDR;
 class ExhaustStream;
-class oapi::Sketchpad;
+namespace oapi { class Sketchpad; }
 class LightEmitter;
 class Select;
 class InputBox;

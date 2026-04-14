@@ -4,7 +4,11 @@
 #ifndef __MEMSTAT_H
 #define __MEMSTAT_H
 
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 #include <psapi.h>
 
 typedef BOOL (CALLBACK *Proc_GetProcessMemoryInfo)(HANDLE,PPROCESS_MEMORY_COUNTERS,DWORD);

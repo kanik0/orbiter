@@ -8,6 +8,8 @@ add_executable(meshc
 
 target_include_directories(meshc
 	PUBLIC ${ORBITER_SOURCE_DIR}
+	PUBLIC ${CMAKE_SOURCE_DIR}/Orbitersdk/include
+	PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
 set_target_properties(meshc

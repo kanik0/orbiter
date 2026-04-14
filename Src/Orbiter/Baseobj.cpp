@@ -1,7 +1,7 @@
 // Copyright (c) Martin Schweiger
 // Licensed under the MIT License
 
-#include <d3d.h>
+#include "d3d_compat.h"
 #include <stdio.h>
 #include <iostream>
 #include <fstream>
