@@ -77,6 +77,18 @@ typedef void* LPDIRECT3DDEVICE7;
 typedef void* LPDIRECTDRAWSURFACE7;
 typedef void* LPDIRECTDRAW7;
 typedef void* LPDIRECT3DVERTEXBUFFER7;
+typedef void* LPDIRECT3D7;
+
+// Capability structures (unused but referenced in headers)
+typedef struct _DDCAPS {
+	DWORD dwSize;
+	DWORD dwCaps;
+} DDCAPS;
+
+typedef struct _D3DDEVICEDESC7 {
+	DWORD dwDevCaps;
+	DWORD dwMaxTextureWidth, dwMaxTextureHeight;
+} D3DDEVICEDESC7;
 
 // DDSURFACEDESC2 stub
 typedef struct _DDSURFACEDESC2 {

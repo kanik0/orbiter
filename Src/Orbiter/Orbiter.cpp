@@ -4,15 +4,19 @@
 #define STRICT 1
 #define OAPI_IMPLEMENTATION
 
+#ifdef _WIN32
 // Enable visual styles. Source: https://msdn.microsoft.com/en-us/library/windows/desktop/bb773175(v=vs.85).aspx
 #pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
-
 #include <windows.h>
 #include <direct.h>
+#include <process.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
+
 #include <stdio.h>
 #include <time.h>
 #include <fstream>
-#include <process.h> 
 #include "cmdline.h"
 #include "D3d7util.h"
 #include "D3dmath.h"
@@ -27,7 +31,9 @@
 #include "Psys.h"
 #include "Base.h"
 #include "Vessel.h"
+#ifdef _WIN32
 #include "resource.h"
+#endif
 #include "Orbiter.h"
 #include "Launchpad.h"
 #include "MenuInfoBar.h"
@@ -36,15 +42,20 @@
 #include "Script.h"
 #include "Memstat.h"
 #include "CustomControls.h"
+#ifdef _WIN32
 #include "Help.h"
-#include "Util.h"
 #include "DlgHelp.h" // temporary
 #include "htmlctrl.h"
+#endif
 #include "DlgCtrl.h"
 #include "GraphicsAPI.h"
+#ifdef _WIN32
 #include "ConsoleManager.h"
+#endif
 #include "imgui.h"
+#ifdef _WIN32
 #include "imgui_impl_win32.h"
+#endif
 #include <filesystem>
 
 #include "Tracy.hpp"
@@ -54,7 +65,9 @@ namespace fs = std::filesystem;
 using namespace std;
 using namespace oapi;
 
+#ifdef _WIN32
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+#endif
 
 #define OUTPUT_DBG
 #define LOADSTATUSCOL 0xC08080 //0xFFD0D0
@@ -150,6 +163,7 @@ INT_PTR CALLBACK BkMsgProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 VOID    DestroyWorld ();
 void    SetEnvironmentVars ();
 HANDLE hMutex = 0;
+#ifdef _WIN32
 HANDLE hConsoleMutex = 0;
 
 // =======================================================================
@@ -164,13 +178,14 @@ int _matherr(struct _exception *except )
 	}
 	return 0;
 }
+#endif
 
 
 // =======================================================================
-// WinMain()
+// WinMain() / main()
 // Application entry containing message loop
 
-
+#ifdef _WIN32
 INT WINAPI WinMain (HINSTANCE hInstance, HINSTANCE, LPSTR strCmdLine, INT nCmdShow)
 {
 #ifdef _CRTDBG_MAP_ALLOC
@@ -188,7 +203,7 @@ INT WINAPI WinMain (HINSTANCE hInstance, HINSTANCE, LPSTR strCmdLine, INT nCmdSh
     // If we're not running from actual console, hide the window
     if (ConsoleManager::IsConsoleExclusive())
         ConsoleManager::ShowConsole(false);
-    
+
     SetEnvironmentVars();
 	g_pOrbiter = new Orbiter; // application instance
 
@@ -225,6 +240,53 @@ INT WINAPI WinMain (HINSTANCE hInstance, HINSTANCE, LPSTR strCmdLine, INT nCmdSh
 	delete g_pOrbiter;
 	return 0;
 }
+
+#else // !_WIN32 -- POSIX entry point (macOS/Linux)
+
+int main (int argc, char *argv[])
+{
+	// Verify working directory
+	char dir[1024];
+	GetCurrentDirectory(1024, dir);
+
+	SetEnvironmentVars();
+	g_pOrbiter = new Orbiter; // application instance
+
+	// Build a command line string from argv for the parser
+	std::string cmdline;
+	for (int i = 1; i < argc; i++) {
+		if (i > 1) cmdline += ' ';
+		cmdline += argv[i];
+	}
+	orbiter::CommandLine::Parse(g_pOrbiter, (char*)cmdline.c_str());
+
+	// Initialise the log
+	INITLOG("Orbiter.log", g_pOrbiter->Cfg()->CfgCmdlinePrm.bAppendLog);
+#ifdef ISBETA
+	LOGOUT("Build %s BETA [v.%06d]", __DATE__, g_pOrbiter->GetVersion());
+#else
+	LOGOUT("Build %s [v.%06d]", __DATE__, g_pOrbiter->GetVersion());
+#endif
+
+	srand(12345);
+	LOGOUT("Timer precision: %g sec", fine_counter_step);
+
+	oapiRegisterCustomControls(nullptr);
+
+	HRESULT hr;
+	if (FAILED (hr = g_pOrbiter->Create (nullptr))) {
+		LOGOUT("Application creation failed");
+		fprintf(stderr, "Application creation failed! Terminating.\n");
+		return 1;
+	}
+
+	setlocale (LC_CTYPE, "");
+
+	g_pOrbiter->Run ();
+	delete g_pOrbiter;
+	return 0;
+}
+#endif // _WIN32
 
 void SetEnvironmentVars ()
 {
@@ -383,16 +445,17 @@ HRESULT Orbiter::Create (HINSTANCE hInstance)
 	if (m_pLaunchpad) return S_OK; // already created
 
 	HRESULT hr;
-	WNDCLASS wndClass;
-
-	// Enable tab controls
-	InitCommonControls();
-	LoadLibrary ("riched20.dll");
 
 	// parameter manager - parses from master config file
 	hInst = hInstance;
 	pConfig->Load(MasterConfigFile);
 	strcpy (cfgpath, pConfig->CfgDirPrm.ConfigDir);   cfglen = strlen (cfgpath);
+
+#ifdef _WIN32
+	WNDCLASS wndClass;
+	InitCommonControls();
+	LoadLibrary ("riched20.dll");
+#endif
 
 	if (FAILED (hr = pDI->Create (hInstance))) return hr;
 
@@ -404,8 +467,9 @@ HRESULT Orbiter::Create (HINSTANCE hInstance)
 
     pState = new State(); TRACENEW
 
+#ifdef _WIN32
 	// Register main dialog window class
-	GetClassInfo (hInstance, "#32770", &wndClass); // override default dialog class
+	GetClassInfo (hInstance, "#32770", &wndClass);
 	wndClass.hIcon = LoadIcon (hInstance, MAKEINTRESOURCE (IDI_MAIN_ICON));
 	RegisterClass (&wndClass);
 
@@ -418,17 +482,22 @@ HRESULT Orbiter::Create (HINSTANCE hInstance)
 	// Register HTML viewer class
 	RegisterHtmlCtrl (hInstance, UseHtmlInline());
 	CustomCtrl::RegisterClass (hInstance);
+#else
+	bWINEenv = false;
+#endif
 
 	if (pConfig->CfgCmdlinePrm.bFastExit)
 		SetFastExit(true);
 	if (pConfig->CfgCmdlinePrm.bOpenVideoTab)
 		OpenVideoTab();
 
+#ifdef _WIN32
 	if (pConfig->CfgDemoPrm.bBkImage) {
 		hBk = CreateDialog (hInstance, MAKEINTRESOURCE(IDD_DEMOBK), NULL, BkMsgProc);
 		ShowWindow (hBk, SW_MAXIMIZE);
 	}
-	
+#endif
+
 	// Create the "launchpad" main dialog window
 	m_pLaunchpad = new orbiter::LaunchpadDialog (this); TRACENEW
 	m_pLaunchpad->Create (bStartVideoTab);
@@ -1045,7 +1114,11 @@ INT Orbiter::Run ()
             bGotMsg = GetMessage (&msg, NULL, 0U, 0U);
 		}
         if (bGotMsg) {
+#ifdef _WIN32
 			if (!m_pLaunchpad || !m_pLaunchpad->ConsumeMessage(&msg)) {
+#else
+			{
+#endif
 				TranslateMessage (&msg);
 				DispatchMessage (&msg);
 			}
@@ -1993,6 +2066,17 @@ const char *Orbiter::KeyState() const
 // Desc: Process user input via DirectInput keyboard and joystick (but not
 //       keyboard messages sent via window message queue)
 //-----------------------------------------------------------------------------
+#ifndef _WIN32
+HRESULT Orbiter::UserInput ()
+{
+	// TODO: SDL2 input handling will replace this on non-Windows
+	memset(simkstate, 0, 256);
+	for (DWORD i = 0; i < 15; i++) ctrlKeyboard[i] = ctrlJoystick[i] = ctrlTotal[i] = 0;
+	g_camera->UpdateMouse();
+	g_focusobj->ApplyUserAttitudeControls (ctrlTotal);
+	return S_OK;
+}
+#else
 HRESULT Orbiter::UserInput ()
 {
 	static char buffer[256];
@@ -2510,6 +2594,7 @@ void Orbiter::BroadcastBufferedKeyboardEvent (char *kstate, DIDEVICEOBJECTDATA *
 		if (consume) dod[i].dwData = 0; // remove key from process queue
 	}
 }
+#endif // _WIN32 - end of DirectInput-specific input methods
 
 //-----------------------------------------------------------------------------
 // Name: MsgProc()
@@ -2518,8 +2603,10 @@ void Orbiter::BroadcastBufferedKeyboardEvent (char *kstate, DIDEVICEOBJECTDATA *
 
 LRESULT Orbiter::MsgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+#ifdef _WIN32
 	if (ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam))
 		return 0;
+#endif
 
 	switch (uMsg) {
 

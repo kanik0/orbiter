@@ -18,7 +18,9 @@
 #else
 #include "OrbiterPlatform.h"
 #endif
+#ifdef _WIN32
 #include <CommCtrl.h>
+#endif
 #include "CustomControls.h"
 #include "OrbiterAPI.h"
 

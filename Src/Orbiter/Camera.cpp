@@ -24,7 +24,9 @@
 #include "Log.h"
 #include "OrbiterAPI.h"
 #include "Vobject.h"
+#ifdef _WIN32
 #include <zmouse.h>
+#endif
 
 using namespace std;
 

@@ -25,6 +25,9 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <cerrno>
+#include <string>
+#include <algorithm>
 #include <cstring>
 #include <climits>
 #include <unistd.h>
@@ -166,6 +169,9 @@ typedef DWORD COLORREF;
 #define WINAPI
 #define CALLBACK
 #define APIENTRY
+#define FAR
+#define PASCAL
+#define CDECL
 
 // -----------------------------------------------------------
 // Dynamic library loading
@@ -181,6 +187,12 @@ inline void* OrbiterGetProcAddress(HMODULE mod, const char* name) {
 inline BOOL OrbiterFreeLibrary(HMODULE mod) {
 	return dlclose(mod) == 0;
 }
+
+// Map Windows DLL loading APIs to POSIX equivalents
+#define LoadLibrary(x)     OrbiterLoadLibrary(x)
+#define LoadLibraryA(x)    OrbiterLoadLibrary(x)
+#define GetProcAddress     OrbiterGetProcAddress
+#define FreeLibrary        OrbiterFreeLibrary
 
 // -----------------------------------------------------------
 // String compatibility
@@ -206,6 +218,105 @@ inline int strcpy_s(char* dest, size_t destsz, const char* src) {
 inline HWND GetDesktopWindow() { return nullptr; }
 inline BOOL GetWindowRect(HWND, RECT*) { return FALSE; }
 inline BOOL GetClientRect(HWND, RECT*) { return FALSE; }
+inline int GetSystemMetrics(int) { return 0; }
+inline BOOL GetCursorPos(POINT* p) { if(p) { p->x = 0; p->y = 0; } return FALSE; }
+inline BOOL SetCursorPos(int, int) { return FALSE; }
+inline BOOL ScreenToClient(HWND, POINT*) { return FALSE; }
+inline BOOL ClientToScreen(HWND, POINT*) { return FALSE; }
+
+// Window management stubs
+inline HWND GetFocus() { return nullptr; }
+inline HWND SetFocus(HWND) { return nullptr; }
+inline HWND GetParent(HWND) { return nullptr; }
+inline HWND GetDlgItem(HWND, int) { return nullptr; }
+inline LONG_PTR GetWindowLongPtr(HWND, int) { return 0; }
+inline LONG_PTR SetWindowLongPtr(HWND, int, LONG_PTR) { return 0; }
+inline BOOL InvalidateRect(HWND, const RECT*, BOOL) { return FALSE; }
+inline BOOL MoveWindow(HWND, int, int, int, int, BOOL) { return FALSE; }
+inline BOOL EnableWindow(HWND, BOOL) { return FALSE; }
+inline BOOL SetWindowText(HWND, const char*) { return FALSE; }
+inline int  GetWindowText(HWND, char*, int) { return 0; }
+inline UINT_PTR SetTimer(HWND, UINT_PTR, UINT, void*) { return 0; }
+inline BOOL KillTimer(HWND, UINT_PTR) { return FALSE; }
+inline BOOL PostMessage(HWND, UINT, WPARAM, LPARAM) { return FALSE; }
+inline LRESULT SendMessage(HWND, UINT, WPARAM, LPARAM) { return 0; }
+inline LRESULT DefWindowProc(HWND, UINT, WPARAM, LPARAM) { return 0; }
+inline HWND SetCapture(HWND) { return nullptr; }
+inline BOOL ReleaseCapture() { return FALSE; }
+inline BOOL GetUpdateRect(HWND, RECT*, BOOL) { return FALSE; }
+inline int GetScrollPos(HWND, int) { return 0; }
+inline int SetScrollPos(HWND, int, int, BOOL) { return 0; }
+inline BOOL SetScrollRange(HWND, int, int, int, BOOL) { return FALSE; }
+inline BOOL SetScrollInfo(HWND, int, void*, BOOL) { return FALSE; }
+inline BOOL ScrollWindow(HWND, int, int, const RECT*, const RECT*) { return FALSE; }
+inline BOOL UpdateWindow(HWND) { return FALSE; }
+inline HWND HtmlHelp(HWND, const char*, UINT, DWORD) { return nullptr; }
+
+// Timer stubs
+inline void timeBeginPeriod(UINT) {}
+inline void timeEndPeriod(UINT) {}
+inline DWORD timeGetTime() { return 0; }
+
+// Registry stubs
+#define HKEY_CURRENT_USER nullptr
+#define REG_SZ 1
+inline LONG RegOpenKeyEx(HKEY, const char*, DWORD, DWORD, HKEY*) { return 1; }
+inline LONG RegQueryValueEx(HKEY, const char*, DWORD*, DWORD*, BYTE*, DWORD*) { return 1; }
+inline LONG RegCloseKey(HKEY) { return 0; }
+#define KEY_READ 0
+#define ERROR_SUCCESS 0
+
+// Misc Win32 stubs
+inline DWORD GetLastError() { return 0; }
+inline void SetLastError(DWORD) {}
+inline BOOL DestroyWindow(HWND) { return FALSE; }
+inline HCURSOR SetCursor(HCURSOR) { return nullptr; }
+inline HCURSOR LoadCursor(HINSTANCE, const char*) { return nullptr; }
+inline HICON LoadIcon(HINSTANCE, const char*) { return nullptr; }
+inline void InitCommonControls() {}
+inline BOOL SystemParametersInfo(UINT, UINT, void*, UINT) { return FALSE; }
+inline BOOL GetClassInfo(HINSTANCE, const char*, void*) { return FALSE; }
+inline BOOL RegisterClass(const void*) { return FALSE; }
+inline BOOL UnregisterClass(const char*, HINSTANCE) { return FALSE; }
+inline HWND CreateDialog(HINSTANCE, const char*, HWND, void*) { return nullptr; }
+inline int DialogBox(HINSTANCE, const char*, HWND, void*) { return 0; }
+inline void RegisterHtmlCtrl(HINSTANCE, bool) {}
+#define MAKEINTRESOURCE(i) ((const char*)(uintptr_t)(i))
+#define IDC_WAIT nullptr
+#define IDC_ARROW nullptr
+#define TEXT(x) x
+#define SW_MAXIMIZE 3
+#define SPI_GETFONTSMOOTHING 0x004A
+#define KEY_QUERY_VALUE 0x0001
+#define LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR 0
+#define LOAD_LIBRARY_SEARCH_DEFAULT_DIRS 0
+inline HMODULE LoadLibraryEx(const char* p, HANDLE, DWORD) { return OrbiterLoadLibrary(p); }
+
+// Console stubs
+#define ATTACH_PARENT_PROCESS ((DWORD)-1)
+inline BOOL AttachConsole(DWORD) { return FALSE; }
+inline BOOL AllocConsole() { return FALSE; }
+inline BOOL FreeConsole() { return FALSE; }
+inline HWND GetConsoleWindow() { return nullptr; }
+inline BOOL ShowWindow(HWND, int) { return FALSE; }
+
+// Wide char / code page stubs
+typedef wchar_t WCHAR;
+typedef WCHAR*  LPWSTR;
+typedef const WCHAR* LPCWSTR;
+
+// Additional type stubs
+typedef short SHORT;
+typedef char  TCHAR;
+typedef char* LPTSTR;
+typedef const char* LPCTSTR;
+typedef struct { SHORT x; SHORT y; } POINTS;
+typedef void* LPNMHDR;
+#define SW_HIDE 0
+#define SW_SHOW 5
+#define CP_UTF8 65001
+#define SM_CYSCREEN 1
+inline int MultiByteToWideChar(UINT, DWORD, LPCSTR, int, LPWSTR, int) { return 0; }
 
 // -----------------------------------------------------------
 // Path separator
@@ -297,6 +408,216 @@ inline void SetEnvironmentVariable(const char* name, const char* value) {
 #define WM_TIMER           0x0113
 #define WM_NOTIFY          0x004E
 #define WM_INITDIALOG      0x0110
+#define WM_SETCURSOR       0x0020
+#define WM_NCLBUTTONDBLCLK 0x00A3
+#define WM_ENTERSIZEMOVE   0x0231
+#define WM_EXITSIZEMOVE    0x0232
+#define WM_HSCROLL         0x0114
+#define WM_VSCROLL         0x0115
+#define WM_CTLCOLORSTATIC  0x0138
+#define WM_SIZING          0x0214
+#define WM_ACTIVATE        0x0006
+
+#define SM_CXSIZEFRAME     32
+#define SM_CYSIZEFRAME     33
+#define SM_CXFIXEDFRAME    7
+#define SM_CYFIXEDFRAME    8
+#define SM_CYCAPTION       4
+
+#define SB_LINEUP    0
+#define SB_LINEDOWN  1
+#define SB_PAGEUP    2
+#define SB_PAGEDOWN  3
+#define SB_TOP       6
+#define SB_BOTTOM    7
+#define SB_THUMBTRACK 5
+#define SB_LINELEFT  0
+#define SB_LINERIGHT 1
+#define SB_VERT      1
+
+#define GWLP_USERDATA (-21)
+#define GWL_STYLE     (-16)
+#define DWLP_USER     (sizeof(LONG_PTR))
+
+#define GWL_EXSTYLE   (-20)
+#define WS_DISABLED   0x08000000L
+#define BM_GETSTATE   0x00F2
+#define SIF_PAGE      0x0002
+#define SIF_RANGE     0x0001
+
+#define HH_DISPLAY_TOPIC 0
+#define WM_QUIT            0x0012
+#define PM_NOREMOVE        0x0000
+#define PM_REMOVE          0x0001
+
+// Message structure stub
+typedef struct tagMSG {
+	HWND   hwnd;
+	UINT   message;
+	WPARAM wParam;
+	LPARAM lParam;
+	DWORD  time;
+	POINT  pt;
+} MSG, *LPMSG;
+
+inline BOOL PeekMessage(MSG*, HWND, UINT, UINT, UINT) { return FALSE; }
+inline BOOL GetMessage(MSG*, HWND, UINT, UINT) { return FALSE; }
+inline BOOL TranslateMessage(const MSG*) { return FALSE; }
+inline LRESULT DispatchMessage(const MSG*) { return 0; }
+inline void PostQuitMessage(int) {}
+inline BOOL IsDialogMessage(HWND, MSG*) { return FALSE; }
+
+// Resource ID stubs (values don't matter on non-Windows)
+#define IDC_STATIC1 1001
+#define IDC_STATIC2 1002
+#define IDC_STATIC3 1003
+#define IDC_STATIC4 1004
+#define IDC_STATIC5 1005
+#define IDC_STATIC6 1006
+#define IDD_DEMOBK  2001
+#define IDI_MAIN_ICON 101
+
+#define IDC_STATIC7 1007
+
+// Threading stubs
+inline HANDLE CreateThread(void*, size_t, void*, void*, DWORD, DWORD*) { return nullptr; }
+inline HANDLE CreateEvent(void*, BOOL, BOOL, const char*) { return nullptr; }
+inline BOOL CloseHandle(HANDLE) { return FALSE; }
+inline DWORD WaitForSingleObject(HANDLE, DWORD) { return 0; }
+inline BOOL PostThreadMessage(DWORD, UINT, WPARAM, LPARAM) { return FALSE; }
+inline BOOL IsChild(HWND, HWND) { return FALSE; }
+inline int ShowCursor(BOOL) { return 0; }
+inline BOOL ClipCursor(const RECT*) { return FALSE; }
+#define INFINITE 0xFFFFFFFF
+
+// GDI object stubs
+inline void* CreatePen(int, int, DWORD) { return nullptr; }
+inline void* CreateSolidBrush(DWORD) { return nullptr; }
+inline void* CreateFont(int,int,int,int,int,int,int,int,int,int,int,int,int,const char*) { return nullptr; }
+inline void* CreateBrushIndirect(void*) { return nullptr; }
+inline void* GetStockObject(int) { return nullptr; }
+inline BOOL DeleteObject(void*) { return FALSE; }
+inline void* SelectObject(HDC, void*) { return nullptr; }
+inline DWORD GetSysColor(int) { return 0; }
+inline BOOL TextOut(HDC, int, int, const char*, int) { return FALSE; }
+inline BOOL GetTextExtentPoint32(HDC, const char*, int, SIZE*) { return FALSE; }
+inline BOOL Rectangle(HDC, int, int, int, int) { return FALSE; }
+inline BOOL MoveToEx(HDC, int, int, POINT*) { return FALSE; }
+inline BOOL LineTo(HDC, int, int) { return FALSE; }
+inline BOOL BitBlt(HDC, int, int, int, int, HDC, int, int, DWORD) { return FALSE; }
+inline HDC BeginPaint(HWND, void*) { return nullptr; }
+inline BOOL EndPaint(HWND, void*) { return FALSE; }
+inline HDC GetDC(HWND) { return nullptr; }
+inline int ReleaseDC(HWND, HDC) { return 0; }
+inline HDC CreateCompatibleDC(HDC) { return nullptr; }
+inline BOOL DeleteDC(HDC) { return FALSE; }
+// PAINTSTRUCT, SCROLLINFO, LOGBRUSH defined below as proper structs
+#define PS_SOLID  0
+#define FW_BOLD   700
+#define FW_NORMAL 400
+#define ANSI_CHARSET 0
+#define OUT_DEFAULT_PRECIS 0
+#define CLIP_DEFAULT_PRECIS 0
+#define DEFAULT_QUALITY 0
+#define FF_SWISS 0
+#define BS_SOLID 0
+#define SRCCOPY 0
+#define CS_HREDRAW 1
+#define CS_VREDRAW 2
+#define COLOR_3DSHADOW 0
+#define COLOR_3DFACE 0
+#define LTGRAY_BRUSH 0
+#define NULL_BRUSH 0
+#define WHITE_BRUSH 0
+#define BLACK_BRUSH 0
+#define GRAY_BRUSH 0
+#define NULL_PEN 0
+#define WHITE_PEN 0
+
+// DirectInput type stubs
+typedef struct { char tszProductName[260]; } DIDEVICEINSTANCE;
+typedef struct { DWORD dwOfs; DWORD dwData; DWORD dwTimeStamp; DWORD dwSequence; } DIDEVICEOBJECTDATA;
+typedef struct { LONG lX; LONG lY; LONG lZ; LONG lRx; LONG lRy; LONG lRz; LONG rglSlider[2]; } DIJOYSTATE2;
+#define DIERR_NOTACQUIRED  0x8007001EL
+#define DIERR_INPUTLOST    0x8007001FL
+
+// Common Control types
+typedef void* HTREEITEM;
+typedef struct { HWND hwndFrom; UINT_PTR idFrom; UINT code; } NMHDR;
+
+// More Win32 API stubs
+#define _strdup strdup
+inline int fopen_s(FILE** f, const char* name, const char* mode) {
+	*f = fopen(name, mode);
+	return *f ? 0 : errno;
+}
+
+// D3D render state and primitive type constants
+#define D3DRENDERSTATE_ALPHABLENDENABLE 0
+#define D3DRENDERSTATE_AMBIENT 0
+#define D3DPT_TRIANGLESTRIP 0
+#define D3DFVF_VERTEX 0
+#define D3DRGBA(r,g,b,a) (0)
+
+// Additional GDI types
+typedef BYTE* LPBYTE;
+typedef void* HGDIOBJ;
+typedef struct { LONG bmWidth; LONG bmHeight; } BITMAP;
+typedef struct { DWORD dwSize; DWORD dwFlags; DWORD dwFourCC; DWORD dwRGBBitCount;
+	DWORD dwRBitMask; DWORD dwGBitMask; DWORD dwBBitMask; DWORD dwRGBAlphaBitMask; } DDPIXELFORMAT;
+typedef struct { DWORD dwSize; DWORD dwFlags; } DDBLTFX;
+typedef struct { LONG x; LONG y; } MINMAXINFO;
+typedef struct { UINT lbStyle; COLORREF lbColor; ULONG_PTR lbHatch; } LOGBRUSH;
+typedef struct { DWORD cbSize; UINT fMask; int nMin; int nMax; UINT nPage; int nPos; int nTrackPos; } SCROLLINFO;
+typedef struct { HDC hdc; BOOL fErase; RECT rcPaint; } PAINTSTRUCT;
+
+// Win32 constants
+#define WA_INACTIVE 0
+#define WM_GETMINMAXINFO 0x0024
+#define WM_POWERBROADCAST 0x0218
+#define WM_NCHITTEST 0x0084
+#define WM_SYSCOMMAND 0x0112
+#define PBT_APMQUERYSUSPEND 0
+#define PBT_APMRESUMESUSPEND 7
+#define SC_MONITORPOWER 0xF170
+#define HTCLIENT 1
+#define IDM_EXIT 0
+#define IDC_SCROLLBAR1 0
+#define IDC_OPT_PAGELIST 0
+#define SB_CTL 2
+#define SIF_POS 4
+#define _chdir chdir
+
+// TreeView stubs
+typedef struct { UINT mask; HTREEITEM hItem; char* pszText; int cchTextMax; int cChildren; } TVITEM;
+#define TVIF_HANDLE 0x0010
+#define TVIF_TEXT 0x0001
+#define TVIF_CHILDREN 0x0040
+#define TVE_EXPAND 2
+#define TVE_COLLAPSE 1
+inline HTREEITEM TreeView_GetRoot(HWND) { return nullptr; }
+inline BOOL TreeView_Expand(HWND, HTREEITEM, UINT) { return FALSE; }
+inline BOOL TreeView_GetItem(HWND, TVITEM*) { return FALSE; }
+inline HTREEITEM TreeView_GetChild(HWND, HTREEITEM) { return nullptr; }
+inline HTREEITEM TreeView_GetNextSibling(HWND, HTREEITEM) { return nullptr; }
+
+inline BOOL GetObject(HBITMAP, int, void*) { return FALSE; }
+inline DWORD GetWindowThreadProcessId(HWND, DWORD*) { return 0; }
+
+// ConsoleManager stub (used in Orbiter.cpp)
+namespace ConsoleManager {
+	inline bool IsConsoleExclusive() { return false; }
+	inline void ShowConsole(bool) {}
+}
+
+// iequal stub
+inline bool iequal(const std::string& a, const std::string& b) {
+	return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(),
+		[](char ca, char cb) { return tolower(ca) == tolower(cb); });
+}
+
+// Process stubs
+#define _execl execl
 
 // -----------------------------------------------------------
 // Misc Windows macros

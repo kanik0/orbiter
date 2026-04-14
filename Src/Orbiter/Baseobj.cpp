@@ -3249,6 +3249,7 @@ void Train2::UpdateShadow (Vector &fromsun, double az)
 
 void Train2::Render (LPDIRECT3DDEVICE7 dev, bool day)
 {
+#ifdef _WIN32
 	int i;
 	NTVERTEX *vtx = dyndata->rail;
 	DWORD ambient;
@@ -3274,12 +3275,15 @@ void Train2::Render (LPDIRECT3DDEVICE7 dev, bool day)
 
 	dev->SetRenderState (D3DRENDERSTATE_ALPHABLENDENABLE, FALSE);
 	if (!day) dev->SetRenderState (D3DRENDERSTATE_AMBIENT, ambient);
+#endif // _WIN32
 }
 
 void Train2::RenderShadow (LPDIRECT3DDEVICE7 dev)
 {
+#ifdef _WIN32
 	dev->DrawPrimitive (
 		D3DPT_TRIANGLESTRIP, D3DFVF_XYZ /*| D3DFVF_DIFFUSE*/, dyndata->rshvtx, (dyndata->ng+1)*2, NULL);
+#endif
 }
 
 // ==============================================================================

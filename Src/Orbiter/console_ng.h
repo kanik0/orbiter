@@ -4,7 +4,11 @@
 #ifndef __console_ng_h
 #define __console_ng_h
 
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 
 class Orbiter;
 

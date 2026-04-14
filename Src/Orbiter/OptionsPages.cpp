@@ -5,15 +5,21 @@
 // Template for simulation options pages
 // ======================================================================
 
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 #include <array>
 #include "OptionsPages.h"
 #include "DlgCtrl.h"
 #include "Orbiter.h"
 #include "Psys.h"
 #include "Camera.h"
+#ifdef _WIN32
 #include "resource.h"
 #include "Uxtheme.h"
+#endif
 
 using std::min;
 using std::max;
