@@ -16,6 +16,8 @@ if(NOT WIN32)
 		OGLvVessel.cpp
 		OGLCelSphere.cpp
 		OGLSurface.cpp
+		OGLLaunchpad.cpp
+		OGLTile.cpp
 		${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
 		${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
 	)
@@ -32,6 +34,7 @@ if(NOT WIN32)
 	target_include_directories(OGLClient
 		PUBLIC ${CMAKE_SOURCE_DIR}/Orbitersdk/include
 		PUBLIC ${CMAKE_SOURCE_DIR}/OVP/OGLClient
+		PUBLIC ${CMAKE_SOURCE_DIR}/Src/Orbiter
 		PUBLIC ${SDL2_INCLUDE_DIRS}
 		PUBLIC ${imgui_SOURCE_DIR}
 		PUBLIC ${imgui_SOURCE_DIR}/backends

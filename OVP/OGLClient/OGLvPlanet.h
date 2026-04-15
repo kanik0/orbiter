@@ -15,6 +15,8 @@ struct OGLTexture;
 
 namespace ogl {
 
+class OGLTileMgr;
+
 class OGLvPlanet : public OGLvObject {
 public:
 	OGLvPlanet(OBJHANDLE hObj, ShaderMgr *shaderMgr);
@@ -28,10 +30,14 @@ public:
 	// Load the texture for this planet (call after InitShared)
 	void LoadTexture(const std::string &texturePath);
 
+	// Initialize LOD tile manager for this planet (call after InitShared)
+	void InitTiles(const std::string &texturePath);
+
 	void Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &sunPos) override;
 
 private:
 	OGLTexture *m_texture; // planet surface texture (may be null for flat-color fallback)
+	OGLTileMgr *m_tileMgr; // LOD tile manager (nullptr if no .tree archives)
 
 	// Render the planetary rings if this body has them
 	void RenderRings(const float *vp, const VECTOR3 &camPos, const VECTOR3 &sunPos);

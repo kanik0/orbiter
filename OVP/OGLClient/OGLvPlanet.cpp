@@ -6,6 +6,7 @@
 #include "OGLvPlanet.h"
 #include "OGLShaderMgr.h"
 #include "OGLTexture.h"
+#include "OGLTile.h"
 #include <cstdio>
 #include <cmath>
 #include <cstring>
@@ -190,13 +191,35 @@ void OGLvPlanet::InitRingsShared(ShaderMgr *shaderMgr, const std::string &textur
 // --- Instance methods ---
 
 OGLvPlanet::OGLvPlanet(OBJHANDLE hObj, ShaderMgr *shaderMgr)
-	: OGLvObject(hObj, shaderMgr), m_texture(nullptr)
+	: OGLvObject(hObj, shaderMgr), m_texture(nullptr), m_tileMgr(nullptr)
 {
 }
 
 OGLvPlanet::~OGLvPlanet()
 {
 	delete m_texture;
+	delete m_tileMgr;
+}
+
+void OGLvPlanet::InitTiles(const std::string &texturePath)
+{
+	// Try to find tile archives for this planet
+	char name[64];
+	oapiGetObjectName(m_hObj, name, 64);
+
+	// Planet data path: typically "Textures/<PlanetName>"
+	std::string planetPath = texturePath + name;
+
+	// Check if Archive directory exists
+	std::string archivePath = planetPath + "/Archive";
+	struct stat st;
+	if (stat(archivePath.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
+		m_tileMgr = new OGLTileMgr(m_hObj, m_shaderMgr);
+		if (!m_tileMgr->Init(planetPath)) {
+			delete m_tileMgr;
+			m_tileMgr = nullptr;
+		}
+	}
 }
 
 void OGLvPlanet::LoadTexture(const std::string &texturePath)
@@ -222,6 +245,17 @@ void OGLvPlanet::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 {
 	if (!s_sharedInitialized) return;
 
+	// Use LOD tile rendering if available
+	if (m_tileMgr) {
+		double planetRadius = oapiGetSize(m_hObj);
+		MATRIX3 planetRot;
+		oapiGetRotationMatrix(m_hObj, &planetRot);
+		m_tileMgr->Render(vp, camPos, sunPos, planetRadius, planetRot);
+		RenderRings(vp, camPos, sunPos);
+		return;
+	}
+
+	// Fallback: single textured sphere
 	VECTOR3 pos;
 	oapiGetGlobalPos(m_hObj, &pos);
 

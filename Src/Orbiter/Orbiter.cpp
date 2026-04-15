@@ -62,6 +62,7 @@
 #else
 #include "SDLPlatform.h"
 #include "OGLClient.h"
+#include "OGLLaunchpad.h"
 #include <OpenGL/gl.h>
 #endif
 #include <filesystem>
@@ -1221,6 +1222,18 @@ INT Orbiter::Run ()
 			Launch (pConfig->CfgCmdlinePrm.LaunchScenario.c_str());
 		}
 
+	// ImGui launchpad for scenario selection (when no -s flag given)
+	ogl::OGLLaunchpad *launchpad = nullptr;
+	if (pConfig->CfgCmdlinePrm.LaunchScenario.empty()) {
+		launchpad = new ogl::OGLLaunchpad();
+		// Determine Scenarios path
+		char cwd[1024];
+		std::string scnDir = "Scenarios";
+		if (getcwd(cwd, sizeof(cwd)))
+			scnDir = std::string(cwd) + "/Scenarios";
+		launchpad->ScanScenarios(scnDir);
+	}
+
 	bool running = true;
 	while (running) {
 
@@ -1248,10 +1261,29 @@ INT Orbiter::Run ()
 		}
 
 		if (!bSession) {
-			// If no scenario loaded, auto-launch (Current state) or just idle
-			SDL_Delay(16); // ~60fps idle
+			if (launchpad) {
+				// Show ImGui launchpad
+				Render3DEnvironment(); // renders background + ImGui
+				bool quit = false;
+				if (launchpad->Render(quit)) {
+					// User clicked Launch
+					std::string scn = launchpad->GetSelectedScenario();
+					pConfig->CfgLogicPrm.bStartPaused = launchpad->GetStartPaused();
+					delete launchpad;
+					launchpad = nullptr;
+					Launch(scn.c_str());
+				} else if (quit) {
+					delete launchpad;
+					launchpad = nullptr;
+					running = false;
+				}
+			} else {
+				SDL_Delay(16); // ~60fps idle
+			}
 		}
 	}
+
+	delete launchpad;
 
 	if (m_pSDL) {
 		m_pSDL->Shutdown();
