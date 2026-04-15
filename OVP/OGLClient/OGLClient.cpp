@@ -161,6 +161,39 @@ void main() {
 }
 )";
 
+// Ring shader - renders planetary rings as textured annulus with alpha
+// The vertex position is on a unit circle (radius=1); the UV.x (0=outer, 1=inner)
+// selects between outer and inner radii via uniforms.
+static const char *ringVertSrc = R"(
+#version 410 core
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec2 aUV;
+uniform mat4 uViewProj;
+uniform mat4 uModel;
+uniform float uInnerRad;
+uniform float uOuterRad;
+out vec2 vUV;
+void main() {
+    float radius = mix(uOuterRad, uInnerRad, aUV.x);
+    vec3 scaledPos = aPos * radius;
+    vec4 worldPos = uModel * vec4(scaledPos, 1.0);
+    gl_Position = uViewProj * worldPos;
+    vUV = aUV;
+}
+)";
+
+static const char *ringFragSrc = R"(
+#version 410 core
+in vec2 vUV;
+uniform sampler2D uTexture;
+out vec4 FragColor;
+void main() {
+    vec4 color = texture(uTexture, vUV);
+    float alpha = color.r * 0.75;
+    FragColor = vec4(color.rgb, alpha);
+}
+)";
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -306,7 +339,9 @@ OGLClient::OGLClient(HINSTANCE hInstance)
 	  m_planetShader(0), m_sphereVAO(0), m_sphereVBO(0), m_sphereEBO(0), m_sphereIndexCount(0),
 	  m_texPlanetShader(0), m_texSphereVAO(0), m_texSphereVBO(0), m_texSphereEBO(0), m_texSphereIndexCount(0),
 	  m_planetTexLoaded(false),
-	  m_vesselShader(0)
+	  m_vesselShader(0),
+	  m_ringShader(0), m_ringVAO(0), m_ringVBO(0), m_ringEBO(0),
+	  m_ringIndexCount(0), m_ringTexture(nullptr), m_ringsInitialized(false)
 {
 	fprintf(stderr, "[OGLClient] Created\n");
 }
@@ -596,6 +631,22 @@ void OGLClient::clbkRenderScene()
 		glBindVertexArray(0);
 		glBindTexture(GL_TEXTURE_2D, 0);
 		glUseProgram(0);
+	}
+
+	// 3b) Render planetary rings (still with depth test off for distance-normalized rendering)
+	if (validCamera) {
+		InitRings(); // lazy init on first use
+		VECTOR3 sunPos;
+		OBJHANDLE hSun = oapiGetObjectByName((char*)"Sun");
+		if (hSun) oapiGetGlobalPos(hSun, &sunPos);
+		else sunPos = {0, 0, 0};
+
+		DWORD nObj = oapiGetObjectCount();
+		for (DWORD i = 0; i < nObj; i++) {
+			OBJHANDLE hObj = oapiGetObjectByIndex(i);
+			if (oapiGetObjectType(hObj) == OBJTP_PLANET)
+				RenderRings(hObj, camPos, vp, sunPos);
+		}
 	}
 
 	glEnable(GL_DEPTH_TEST);
@@ -1134,6 +1185,180 @@ OGLTexture *OGLClient::LoadPlanetTexture(const char *planetName)
 	fprintf(stderr, "[OGLClient] No texture found for planet '%s'\n", planetName);
 	return nullptr;
 }
+// ============================================================================
+// Planetary Ring Rendering
+// ============================================================================
+
+void OGLClient::InitRings()
+{
+	if (m_ringsInitialized) return;
+	m_ringsInitialized = true;
+
+	m_ringShader = CreateProgram(ringVertSrc, ringFragSrc);
+
+	// Load ring texture (try high-res first)
+	const char *ringTexNames[] = {
+		"Saturn_ring_4096.dds", "Saturn_ring_2048.dds", "Saturn_ring_8192.dds", nullptr
+	};
+	for (int i = 0; ringTexNames[i] && !m_ringTexture; i++) {
+		std::string path = m_texturePath + ringTexNames[i];
+		if (FileExists(path.c_str()))
+			m_ringTexture = OGLTexture::LoadDDS(path.c_str());
+	}
+	if (!m_ringTexture)
+		fprintf(stderr, "[OGLClient] Ring texture not found\n");
+
+	// Generate annulus mesh: inner radius 0 maps to innerRad, outer to outerRad
+	// We use unit radii [0.0..1.0] and scale via model matrix
+	const int nsect = 72; // angular segments
+	const int nverts = (nsect + 1) * 2;
+	struct RingVtx { float x, y, z, u, v; };
+	std::vector<RingVtx> verts(nverts);
+	std::vector<unsigned int> indices;
+
+	for (int i = 0; i <= nsect; i++) {
+		float angle = (float)i / nsect * 2.0f * M_PI;
+		float ca = cosf(angle), sa = sinf(angle);
+		// Outer vertex (u=0)
+		verts[i * 2].x = ca;
+		verts[i * 2].y = 0;
+		verts[i * 2].z = sa;
+		verts[i * 2].u = 0.0f;
+		verts[i * 2].v = 0.5f;
+		// Inner vertex (u=1)
+		verts[i * 2 + 1].x = ca;
+		verts[i * 2 + 1].y = 0;
+		verts[i * 2 + 1].z = sa;
+		verts[i * 2 + 1].u = 1.0f;
+		verts[i * 2 + 1].v = 0.5f;
+	}
+
+	for (int i = 0; i < nsect; i++) {
+		int base = i * 2;
+		indices.push_back(base);
+		indices.push_back(base + 1);
+		indices.push_back(base + 2);
+		indices.push_back(base + 1);
+		indices.push_back(base + 3);
+		indices.push_back(base + 2);
+	}
+	m_ringIndexCount = (int)indices.size();
+
+	glGenVertexArrays(1, &m_ringVAO);
+	glGenBuffers(1, &m_ringVBO);
+	glGenBuffers(1, &m_ringEBO);
+	glBindVertexArray(m_ringVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, m_ringVBO);
+	glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(RingVtx), verts.data(), GL_STATIC_DRAW);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ringEBO);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(RingVtx), (void*)0);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(RingVtx), (void*)(3 * sizeof(float)));
+	glEnableVertexAttribArray(1);
+	glBindVertexArray(0);
+}
+
+void OGLClient::RenderRings(OBJHANDLE hPlanet, const VECTOR3 &camPos,
+                            const float *vp, const VECTOR3 &sunPos)
+{
+	if (!m_ringShader || !m_ringVAO || !m_ringTexture) return;
+
+	bool hasRings = *(bool*)oapiGetObjectParam(hPlanet, OBJPRM_PLANET_HASRINGS);
+	if (!hasRings) return;
+
+	double minRad = *(double*)oapiGetObjectParam(hPlanet, OBJPRM_PLANET_RINGMINRAD);
+	double maxRad = *(double*)oapiGetObjectParam(hPlanet, OBJPRM_PLANET_RINGMAXRAD);
+	double planetSize = oapiGetSize(hPlanet);
+
+	VECTOR3 pos;
+	oapiGetGlobalPos(hPlanet, &pos);
+	double rx = pos.x - camPos.x;
+	double ry = pos.y - camPos.y;
+	double rz = pos.z - camPos.z;
+	double dist = sqrt(rx*rx + ry*ry + rz*rz);
+
+	// Distance normalization (same scheme as planet rendering)
+	double normDist = 10.0;
+	double scale = normDist / dist;
+
+	// Planet rotation to orient the ring plane
+	MATRIX3 prot;
+	oapiGetRotationMatrix(hPlanet, &prot);
+
+	// Build model matrix: translation + planet rotation + ring scale
+	// Ring mesh is unit annulus; scale outer vertices by maxRad*planetSize,
+	// inner by minRad*planetSize (the vertex positions are at radius 1.0,
+	// with u=0 being outer and u=1 being inner — we need two radii)
+	// Simpler: render at outer radius, inner vertices at inner/outer ratio
+	float outerR = (float)(maxRad * planetSize * scale);
+	float innerR = (float)(minRad * planetSize * scale);
+	float tx = (float)(rx * scale);
+	float ty = (float)(ry * scale);
+	float tz = (float)(rz * scale);
+
+	// The ring mesh outer vertices (u=0) are at radius 1.0,
+	// inner vertices (u=1) are also at 1.0. We need to scale them differently.
+	// Instead, we'll use the shader or rebuild: let's use the model matrix
+	// to place the outer ring and store inner/outer ratio for the vertex shader.
+	// Actually, simpler: just build the model matrix for outer radius,
+	// and in the vertex shader, interpolate position based on UV.
+	// But that requires modifying the shader...
+	//
+	// Simplest approach: set outer vertex positions to outerR, inner to innerR
+	// by scaling the unit-circle position. Since we can't change per-vertex
+	// in the VBO each frame, let's use a uniform for inner/outer radii.
+
+	// Actually, let me just update the vertex positions. The mesh has outer at
+	// radius 1.0 and inner at 1.0 (same!). The u coordinate distinguishes them.
+	// I'll modify the vertex shader to scale by radius based on u.
+	// For now, use a simpler approach: two uniforms.
+
+	// Model matrix: planet rotation + translation (no scale - shader handles it)
+	float s = 1.0f; // scale applied per-vertex in shader
+	float model[16] = {
+		(float)(prot.m11*s), (float)(prot.m21*s), (float)(prot.m31*s), 0,
+		(float)(prot.m12*s), (float)(prot.m22*s), (float)(prot.m32*s), 0,
+		(float)(prot.m13*s), (float)(prot.m23*s), (float)(prot.m33*s), 0,
+		tx,                  ty,                  tz,                  1
+	};
+
+	glUseProgram(m_ringShader);
+	glUniformMatrix4fv(glGetUniformLocation(m_ringShader, "uViewProj"), 1, GL_FALSE, vp);
+	glUniformMatrix4fv(glGetUniformLocation(m_ringShader, "uModel"), 1, GL_FALSE, model);
+
+	// Sun direction
+	double sdx = sunPos.x - pos.x, sdy = sunPos.y - pos.y, sdz = sunPos.z - pos.z;
+	double sdist = sqrt(sdx*sdx + sdy*sdy + sdz*sdz);
+	if (sdist > 0) { sdx /= sdist; sdy /= sdist; sdz /= sdist; }
+	float sunDir[3] = {(float)sdx, (float)sdy, (float)sdz};
+	glUniform3fv(glGetUniformLocation(m_ringShader, "uSunDir"), 1, sunDir);
+
+	// Pass inner/outer radii as uniforms
+	glUniform1f(glGetUniformLocation(m_ringShader, "uInnerRad"), innerR);
+	glUniform1f(glGetUniformLocation(m_ringShader, "uOuterRad"), outerR);
+	glUniform1f(glGetUniformLocation(m_ringShader, "uBackFace"), 1.0f);
+
+	// Bind ring texture
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, m_ringTexture->texId);
+	glUniform1i(glGetUniformLocation(m_ringShader, "uTexture"), 0);
+
+	// Enable alpha blending, disable depth write, disable culling
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glDisable(GL_CULL_FACE);
+
+	glBindVertexArray(m_ringVAO);
+	glDrawElements(GL_TRIANGLES, m_ringIndexCount, GL_UNSIGNED_INT, 0);
+	glBindVertexArray(0);
+
+	glDisable(GL_BLEND);
+	glEnable(GL_CULL_FACE);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glUseProgram(0);
+}
+
 // ============================================================================
 // OGL Font / Pen / Brush / Sketchpad — ImGui-backed 2D drawing
 // ============================================================================

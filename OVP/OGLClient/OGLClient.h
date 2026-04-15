@@ -136,6 +136,16 @@ private:
 
 	// Helper: get or create cached OpenGL buffers for a mesh
 	CachedMesh *GetOrCreateMeshCache(MESHHANDLE hMesh);
+
+	// Planetary ring rendering
+	GLuint m_ringShader;
+	GLuint m_ringVAO, m_ringVBO, m_ringEBO;
+	int m_ringIndexCount;
+	OGLTexture *m_ringTexture;
+	bool m_ringsInitialized;
+	void InitRings();
+	void RenderRings(OBJHANDLE hPlanet, const VECTOR3 &camPos,
+	                 const float *vp, const VECTOR3 &sunPos);
 };
 
 } // namespace ogl
