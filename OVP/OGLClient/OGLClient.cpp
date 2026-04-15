@@ -52,7 +52,9 @@ OGLClient::OGLClient(HINSTANCE hInstance)
 	  m_sdlWindow(nullptr), m_sdlContext(nullptr),
 	  m_viewW(1280), m_viewH(800), m_fullscreen(false),
 	  m_imguiInitialized(false),
-	  m_shaderMgr(nullptr), m_scene(nullptr)
+	  m_shaderMgr(nullptr), m_scene(nullptr),
+	  m_blitShader(0), m_blitVAO(0), m_blitVBO(0),
+	  m_panel2dShader(0), m_bltGroupTgt(nullptr)
 {
 	fprintf(stderr, "[OGLClient] Created\n");
 }
@@ -193,6 +195,9 @@ HWND OGLClient::clbkCreateRenderWindow()
 	m_scene = new OGLScene(m_shaderMgr);
 	m_scene->Init(m_texturePath);
 
+	// Initialize blit/panel resources
+	InitBlitResources();
+
 	fprintf(stderr, "[OGLClient] Scene initialized\n");
 	return (HWND)m_sdlWindow;
 }
@@ -201,6 +206,7 @@ void OGLClient::clbkDestroyRenderWindow(bool fastclose)
 {
 	fprintf(stderr, "[OGLClient] clbkDestroyRenderWindow\n");
 
+	ReleaseBlitResources();
 	delete m_scene; m_scene = nullptr;
 	delete m_shaderMgr; m_shaderMgr = nullptr;
 }
@@ -317,6 +323,384 @@ bool OGLClient::clbkSetSurfaceColourKey(SURFHANDLE surf, DWORD ckey)
 DWORD OGLClient::clbkGetDeviceColour(BYTE r, BYTE g, BYTE b)
 {
 	return (DWORD)r | ((DWORD)g << 8) | ((DWORD)b << 16);
+}
+
+// ============================================================================
+// Blit system initialization
+// ============================================================================
+
+void OGLClient::InitBlitResources()
+{
+	m_blitShader = m_shaderMgr->LoadProgram("blit", "blit.vert", "blit.frag");
+	m_panel2dShader = m_shaderMgr->LoadProgram("panel2d", "panel2d.vert", "panel2d.frag");
+	m_bltGroupTgt = nullptr;
+
+	// Create a unit quad (positions and UVs updated per-blit via glBufferSubData)
+	float verts[] = {
+		// pos x,y  uv u,v
+		-1, -1,  0, 1,
+		 1, -1,  1, 1,
+		-1,  1,  0, 0,
+		 1,  1,  1, 0,
+	};
+	glGenVertexArrays(1, &m_blitVAO);
+	glGenBuffers(1, &m_blitVBO);
+	glBindVertexArray(m_blitVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, m_blitVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_DYNAMIC_DRAW);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+	glEnableVertexAttribArray(1);
+	glBindVertexArray(0);
+}
+
+void OGLClient::ReleaseBlitResources()
+{
+	if (m_blitVAO) { glDeleteVertexArrays(1, &m_blitVAO); m_blitVAO = 0; }
+	if (m_blitVBO) { glDeleteBuffers(1, &m_blitVBO); m_blitVBO = 0; }
+	m_blitShader = 0;
+	m_panel2dShader = 0;
+}
+
+// Core blit helper: renders a textured quad from src rect to tgt rect via FBO
+void OGLClient::BlitQuad(OGLSurface *tgt, DWORD tgtx, DWORD tgty, DWORD tgtw, DWORD tgth,
+                          OGLSurface *src, DWORD srcx, DWORD srcy, DWORD srcw, DWORD srch,
+                          DWORD flag) const
+{
+	if (!m_blitShader || !m_blitVAO || !src || !tgt) return;
+
+	// Compute source UV coords
+	float sw = (float)src->GetWidth(), sh = (float)src->GetHeight();
+	float u0 = (float)srcx / sw, v0 = (float)srcy / sh;
+	float u1 = (float)(srcx + srcw) / sw, v1 = (float)(srcy + srch) / sh;
+
+	// Compute target NDC coords within the FBO viewport
+	float tw = (float)tgt->GetWidth(), th = (float)tgt->GetHeight();
+	float x0 = (float)tgtx / tw * 2.0f - 1.0f;
+	float y0 = 1.0f - (float)(tgty + tgth) / th * 2.0f; // flip y for OpenGL
+	float x1 = (float)(tgtx + tgtw) / tw * 2.0f - 1.0f;
+	float y1 = 1.0f - (float)tgty / th * 2.0f;
+
+	float verts[] = {
+		x0, y0, u0, v1,
+		x1, y0, u1, v1,
+		x0, y1, u0, v0,
+		x1, y1, u1, v0,
+	};
+
+	// Bind target FBO
+	tgt->BindFBO();
+
+	glUseProgram(m_blitShader);
+	glBindVertexArray(m_blitVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, m_blitVBO);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
+
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, src->GetTexture());
+	glUniform1i(m_shaderMgr->GetUniformLoc(m_blitShader, "uTexture"), 0);
+	glUniform1f(m_shaderMgr->GetUniformLoc(m_blitShader, "uAlpha"), 1.0f);
+
+	// Color key handling
+	bool useCK = (flag & BLT_SRCCOLORKEY) && src->HasColorKey();
+	glUniform1i(m_shaderMgr->GetUniformLoc(m_blitShader, "uUseColorKey"), useCK ? 1 : 0);
+	if (useCK) {
+		DWORD ck = src->GetColorKey();
+		float ckr = (ck & 0xFF) / 255.0f;
+		float ckg = ((ck >> 8) & 0xFF) / 255.0f;
+		float ckb = ((ck >> 16) & 0xFF) / 255.0f;
+		glUniform3f(m_shaderMgr->GetUniformLoc(m_blitShader, "uColorKey"), ckr, ckg, ckb);
+	}
+
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glDisable(GL_DEPTH_TEST);
+	glViewport(0, 0, tgt->GetWidth(), tgt->GetHeight());
+
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+	glDisable(GL_BLEND);
+	glEnable(GL_DEPTH_TEST);
+	glBindVertexArray(0);
+	glUseProgram(0);
+
+	tgt->UnbindFBO();
+}
+
+// ============================================================================
+// Surface blitting callbacks (Phase 1A)
+// ============================================================================
+
+bool OGLClient::clbkBlt(SURFHANDLE tgt, DWORD tgtx, DWORD tgty, SURFHANDLE src, DWORD flag) const
+{
+	if (!src) return false;
+	OGLSurface *srcS = (OGLSurface*)src;
+	OGLSurface *tgtS = tgt ? (OGLSurface*)tgt : nullptr;
+	if (!tgtS) return false; // TODO: blit to backbuffer when tgt==NULL
+	BlitQuad(tgtS, tgtx, tgty, srcS->GetWidth(), srcS->GetHeight(),
+	         srcS, 0, 0, srcS->GetWidth(), srcS->GetHeight(), flag);
+	return true;
+}
+
+bool OGLClient::clbkBlt(SURFHANDLE tgt, DWORD tgtx, DWORD tgty, SURFHANDLE src,
+                         DWORD srcx, DWORD srcy, DWORD w, DWORD h, DWORD flag) const
+{
+	if (!src) return false;
+	OGLSurface *srcS = (OGLSurface*)src;
+	OGLSurface *tgtS = tgt ? (OGLSurface*)tgt : nullptr;
+	if (!tgtS) return false;
+	BlitQuad(tgtS, tgtx, tgty, w, h, srcS, srcx, srcy, w, h, flag);
+	return true;
+}
+
+bool OGLClient::clbkScaleBlt(SURFHANDLE tgt, DWORD tgtx, DWORD tgty, DWORD tgtw, DWORD tgth,
+                              SURFHANDLE src, DWORD srcx, DWORD srcy, DWORD srcw, DWORD srch,
+                              DWORD flag) const
+{
+	if (!src) return false;
+	OGLSurface *srcS = (OGLSurface*)src;
+	OGLSurface *tgtS = tgt ? (OGLSurface*)tgt : nullptr;
+	if (!tgtS) return false;
+	BlitQuad(tgtS, tgtx, tgty, tgtw, tgth, srcS, srcx, srcy, srcw, srch, flag);
+	return true;
+}
+
+bool OGLClient::clbkFillSurface(SURFHANDLE surf, DWORD col) const
+{
+	if (!surf) return false;
+	((OGLSurface*)surf)->Fill(col);
+	return true;
+}
+
+bool OGLClient::clbkFillSurface(SURFHANDLE surf, DWORD tgtx, DWORD tgty, DWORD w, DWORD h, DWORD col) const
+{
+	if (!surf) return false;
+	((OGLSurface*)surf)->Fill(tgtx, tgty, w, h, col);
+	return true;
+}
+
+int OGLClient::clbkBeginBltGroup(SURFHANDLE tgt)
+{
+	if (m_bltGroupTgt) return -2; // already in a group
+	m_bltGroupTgt = tgt;
+	return 0;
+}
+
+int OGLClient::clbkEndBltGroup()
+{
+	if (!m_bltGroupTgt) return -2;
+	m_bltGroupTgt = nullptr;
+	return 0;
+}
+
+// ============================================================================
+// 2D Panel rendering (Phase 1C)
+// ============================================================================
+
+void OGLClient::clbkRender2DPanel(SURFHANDLE *hSurf, MESHHANDLE hMesh, MATRIX3 *T, bool additive)
+{
+	clbkRender2DPanel(hSurf, hMesh, T, 1.0f, additive);
+}
+
+void OGLClient::clbkRender2DPanel(SURFHANDLE *hSurf, MESHHANDLE hMesh, MATRIX3 *T, float alpha, bool additive)
+{
+	if (!hMesh || !m_panel2dShader) return;
+
+	DWORD nGrp = oapiMeshGroupCount(hMesh);
+	if (nGrp == 0) return;
+
+	glUseProgram(m_panel2dShader);
+	glDisable(GL_DEPTH_TEST);
+	glEnable(GL_BLEND);
+	if (additive)
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+	else
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	// Upload transform as mat3 uniform
+	float mat[9] = {
+		(float)T->m11, (float)T->m12, (float)T->m13,
+		(float)T->m21, (float)T->m22, (float)T->m23,
+		(float)T->m31, (float)T->m32, (float)T->m33
+	};
+	glUniformMatrix3fv(m_shaderMgr->GetUniformLoc(m_panel2dShader, "uTransform"), 1, GL_FALSE, mat);
+	glUniform2f(m_shaderMgr->GetUniformLoc(m_panel2dShader, "uViewport"), (float)m_viewW, (float)m_viewH);
+	glUniform1f(m_shaderMgr->GetUniformLoc(m_panel2dShader, "uAlpha"), alpha);
+
+	for (DWORD g = 0; g < nGrp; g++) {
+		MESHGROUPEX *grp = oapiMeshGroupEx(hMesh, g);
+		if (!grp || !grp->nVtx || !grp->nIdx) continue;
+
+		// Bind the texture for this group
+		DWORD texIdx = grp->TexIdx;
+		SURFHANDLE hTex = nullptr;
+		if (texIdx != (DWORD)-1 && hSurf)
+			hTex = hSurf[texIdx];
+
+		if (hTex) {
+			OGLSurface *texSurf = (OGLSurface*)hTex;
+			glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, texSurf->GetTexture());
+			glUniform1i(m_shaderMgr->GetUniformLoc(m_panel2dShader, "uTexture"), 0);
+		}
+
+		// Upload vertex data (pos.x, pos.y as vec2 + tu, tv as vec2)
+		// NTVERTEX layout: x,y,z, nx,ny,nz, tu,tv — we take x,y and tu,tv
+		GLuint tmpVAO, tmpVBO, tmpEBO;
+		glGenVertexArrays(1, &tmpVAO);
+		glGenBuffers(1, &tmpVBO);
+		glGenBuffers(1, &tmpEBO);
+		glBindVertexArray(tmpVAO);
+
+		// Build interleaved 2D vertex data: [x, y, u, v]
+		std::vector<float> vdata(grp->nVtx * 4);
+		for (DWORD i = 0; i < grp->nVtx; i++) {
+			vdata[i * 4 + 0] = grp->Vtx[i].x;
+			vdata[i * 4 + 1] = grp->Vtx[i].y;
+			vdata[i * 4 + 2] = grp->Vtx[i].tu;
+			vdata[i * 4 + 3] = grp->Vtx[i].tv;
+		}
+		glBindBuffer(GL_ARRAY_BUFFER, tmpVBO);
+		glBufferData(GL_ARRAY_BUFFER, vdata.size() * sizeof(float), vdata.data(), GL_STREAM_DRAW);
+
+		std::vector<unsigned int> indices(grp->nIdx);
+		for (DWORD i = 0; i < grp->nIdx; i++) indices[i] = (unsigned int)grp->Idx[i];
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, tmpEBO);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STREAM_DRAW);
+
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+		glEnableVertexAttribArray(1);
+
+		glDrawElements(GL_TRIANGLES, (GLsizei)grp->nIdx, GL_UNSIGNED_INT, 0);
+
+		glBindVertexArray(0);
+		glDeleteVertexArrays(1, &tmpVAO);
+		glDeleteBuffers(1, &tmpVBO);
+		glDeleteBuffers(1, &tmpEBO);
+	}
+
+	glDisable(GL_BLEND);
+	glEnable(GL_DEPTH_TEST);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glUseProgram(0);
+}
+
+// ============================================================================
+// Mesh manipulation (Phase 1D)
+// ============================================================================
+
+bool OGLClient::clbkSetMeshTexture(DEVMESHHANDLE hMesh, DWORD texidx, SURFHANDLE tex)
+{
+	// Device meshes are not yet tracked separately; stub for now
+	return false;
+}
+
+int OGLClient::clbkSetMeshMaterial(DEVMESHHANDLE hMesh, DWORD matidx, const MATERIAL *mat)
+{
+	return 2; // not yet supported
+}
+
+int OGLClient::clbkMeshMaterial(DEVMESHHANDLE hMesh, DWORD matidx, MATERIAL *mat)
+{
+	return 2; // not yet supported
+}
+
+bool OGLClient::clbkSetMeshProperty(DEVMESHHANDLE hMesh, DWORD property, DWORD value)
+{
+	return false; // not yet supported
+}
+
+int OGLClient::clbkGetMeshGroup(DEVMESHHANDLE hMesh, DWORD grpidx, GROUPREQUESTSPEC *grs)
+{
+	if (!hMesh || !grs) return -1;
+	MESHGROUPEX *grp = oapiMeshGroupEx((MESHHANDLE)hMesh, grpidx);
+	if (!grp) return -1;
+
+	if (grs->Vtx && grs->nVtx > 0) {
+		DWORD n = std::min(grs->nVtx, grp->nVtx);
+		memcpy(grs->Vtx, grp->Vtx, n * sizeof(NTVERTEX));
+		grs->nVtx = n;
+	}
+	if (grs->Idx && grs->nIdx > 0) {
+		DWORD n = std::min(grs->nIdx, grp->nIdx);
+		memcpy(grs->Idx, grp->Idx, n * sizeof(WORD));
+		grs->nIdx = n;
+	}
+	grs->MtrlIdx = grp->MtrlIdx;
+	grs->TexIdx = grp->TexIdx;
+	return 0;
+}
+
+int OGLClient::clbkEditMeshGroup(DEVMESHHANDLE hMesh, DWORD grpidx, GROUPEDITSPEC *ges)
+{
+	if (!hMesh || !ges) return -1;
+	MESHGROUPEX *grp = oapiMeshGroupEx((MESHHANDLE)hMesh, grpidx);
+	if (!grp) return -1;
+
+	if (ges->Vtx && ges->nVtx > 0) {
+		DWORD n = std::min(ges->nVtx, grp->nVtx);
+		if (ges->vIdx) {
+			for (DWORD i = 0; i < n; i++) {
+				DWORD vi = ges->vIdx[i];
+				if (vi < grp->nVtx) {
+					if (ges->flags & GRPEDIT_VTXCRD) {
+						grp->Vtx[vi].x = ges->Vtx[i].x;
+						grp->Vtx[vi].y = ges->Vtx[i].y;
+						grp->Vtx[vi].z = ges->Vtx[i].z;
+					}
+					if (ges->flags & GRPEDIT_VTXNML) {
+						grp->Vtx[vi].nx = ges->Vtx[i].nx;
+						grp->Vtx[vi].ny = ges->Vtx[i].ny;
+						grp->Vtx[vi].nz = ges->Vtx[i].nz;
+					}
+					if (ges->flags & GRPEDIT_VTXTEX) {
+						grp->Vtx[vi].tu = ges->Vtx[i].tu;
+						grp->Vtx[vi].tv = ges->Vtx[i].tv;
+					}
+				}
+			}
+		} else {
+			for (DWORD i = 0; i < n && i < grp->nVtx; i++) {
+				if (ges->flags & GRPEDIT_VTXCRD) {
+					grp->Vtx[i].x = ges->Vtx[i].x;
+					grp->Vtx[i].y = ges->Vtx[i].y;
+					grp->Vtx[i].z = ges->Vtx[i].z;
+				}
+				if (ges->flags & GRPEDIT_VTXNML) {
+					grp->Vtx[i].nx = ges->Vtx[i].nx;
+					grp->Vtx[i].ny = ges->Vtx[i].ny;
+					grp->Vtx[i].nz = ges->Vtx[i].nz;
+				}
+				if (ges->flags & GRPEDIT_VTXTEX) {
+					grp->Vtx[i].tu = ges->Vtx[i].tu;
+					grp->Vtx[i].tv = ges->Vtx[i].tv;
+				}
+			}
+		}
+	}
+	// TODO: invalidate GPU mesh cache for this mesh handle
+	return 0;
+}
+
+MESHHANDLE OGLClient::clbkGetMesh(VISHANDLE vis, UINT idx)
+{
+	// vis is currently unused — we don't have a vis→mesh mapping yet
+	return nullptr;
+}
+
+// ============================================================================
+// Visual events (Phase 1E)
+// ============================================================================
+
+int OGLClient::clbkVisEvent(OBJHANDLE hObj, VISHANDLE vis, DWORD msg, DWORD_PTR context)
+{
+	// Accept all visual events — vessel modules expect this to return 1
+	// to confirm the graphics client is handling visuals.
+	// Specific message handling will be added as the visual system matures.
+	return 1;
 }
 
 // ============================================================================

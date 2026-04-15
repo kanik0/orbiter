@@ -19,6 +19,7 @@ namespace ogl {
 
 class ShaderMgr;
 class OGLScene;
+class OGLSurface;
 
 class OGLClient : public oapi::GraphicsClient {
 public:
@@ -59,6 +60,35 @@ public:
 	bool clbkSetSurfaceColourKey(SURFHANDLE surf, DWORD ckey) override;
 	DWORD clbkGetDeviceColour(BYTE r, BYTE g, BYTE b) override;
 
+	// === Surface blitting ===
+
+	bool clbkBlt(SURFHANDLE tgt, DWORD tgtx, DWORD tgty, SURFHANDLE src, DWORD flag = 0) const override;
+	bool clbkBlt(SURFHANDLE tgt, DWORD tgtx, DWORD tgty, SURFHANDLE src, DWORD srcx, DWORD srcy, DWORD w, DWORD h, DWORD flag = 0) const override;
+	bool clbkScaleBlt(SURFHANDLE tgt, DWORD tgtx, DWORD tgty, DWORD tgtw, DWORD tgth, SURFHANDLE src, DWORD srcx, DWORD srcy, DWORD srcw, DWORD srch, DWORD flag = 0) const override;
+	bool clbkFillSurface(SURFHANDLE surf, DWORD col) const override;
+	bool clbkFillSurface(SURFHANDLE surf, DWORD tgtx, DWORD tgty, DWORD w, DWORD h, DWORD col) const override;
+	int clbkBeginBltGroup(SURFHANDLE tgt) override;
+	int clbkEndBltGroup() override;
+
+	// === 2D Panel rendering ===
+
+	void clbkRender2DPanel(SURFHANDLE *hSurf, MESHHANDLE hMesh, MATRIX3 *T, bool additive = false) override;
+	void clbkRender2DPanel(SURFHANDLE *hSurf, MESHHANDLE hMesh, MATRIX3 *T, float alpha, bool additive = false) override;
+
+	// === Mesh manipulation ===
+
+	bool clbkSetMeshTexture(DEVMESHHANDLE hMesh, DWORD texidx, SURFHANDLE tex) override;
+	int clbkSetMeshMaterial(DEVMESHHANDLE hMesh, DWORD matidx, const MATERIAL *mat) override;
+	int clbkMeshMaterial(DEVMESHHANDLE hMesh, DWORD matidx, MATERIAL *mat) override;
+	bool clbkSetMeshProperty(DEVMESHHANDLE hMesh, DWORD property, DWORD value) override;
+	int clbkGetMeshGroup(DEVMESHHANDLE hMesh, DWORD grpidx, GROUPREQUESTSPEC *grs) override;
+	int clbkEditMeshGroup(DEVMESHHANDLE hMesh, DWORD grpidx, GROUPEDITSPEC *ges) override;
+	MESHHANDLE clbkGetMesh(VISHANDLE vis, UINT idx) override;
+
+	// === Visual events ===
+
+	int clbkVisEvent(OBJHANDLE hObj, VISHANDLE vis, DWORD msg, DWORD_PTR context) override;
+
 	// === 2D Drawing ===
 
 	oapi::Font *clbkCreateFont(int height, bool prop, const char *face,
@@ -93,6 +123,18 @@ private:
 	// Shader manager and scene renderer
 	ShaderMgr *m_shaderMgr;
 	OGLScene *m_scene;
+
+	// Blit system (Phase 1)
+	GLuint m_blitShader;
+	GLuint m_blitVAO, m_blitVBO;
+	GLuint m_panel2dShader;
+	SURFHANDLE m_bltGroupTgt; // current blt group target (or nullptr)
+
+	void InitBlitResources();
+	void ReleaseBlitResources();
+	void BlitQuad(OGLSurface *tgt, DWORD tgtx, DWORD tgty, DWORD tgtw, DWORD tgth,
+	              OGLSurface *src, DWORD srcx, DWORD srcy, DWORD srcw, DWORD srch,
+	              DWORD flag) const;
 };
 
 } // namespace ogl
