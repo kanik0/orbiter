@@ -82,6 +82,10 @@ public:
 	oapi::Font *clbkCreateFont(int height, bool prop, const char *face,
 		FontStyle style = FONT_NORMAL, int orientation = 0) const override;
 	void clbkReleaseFont(oapi::Font *font) const override;
+	oapi::Pen *clbkCreatePen(int style, int width, DWORD col) const override;
+	void clbkReleasePen(oapi::Pen *pen) const override;
+	oapi::Brush *clbkCreateBrush(DWORD col) const override;
+	void clbkReleaseBrush(oapi::Brush *brush) const override;
 	oapi::Sketchpad *clbkGetSketchpad(SURFHANDLE surf) override;
 	void clbkReleaseSketchpad(oapi::Sketchpad *sp) override;
 

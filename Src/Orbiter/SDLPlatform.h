@@ -76,6 +76,17 @@ public:
 	// Static SDL scancode to DirectInput keycode mapping
 	static unsigned char SDLScancodeToDirectInput(SDL_Scancode sc);
 
+	// Joystick/GameController state
+	// Axis values normalized to [-1000, +1000] to match Orbiter's DI conventions
+	struct JoyState {
+		int lX, lY, lZ;       // left stick X, Y + left trigger
+		int lRx, lRy, lRz;    // right stick X, Y + right trigger
+		int hatAngle;          // D-pad as POV angle (0-35900, 0xFFFF=centered)
+		bool buttons[16];
+		bool connected;
+	};
+	const JoyState& GetJoyState() const { return m_joy; }
+
 private:
 	void HandleKeyEvent(const SDL_KeyboardEvent &key);
 	void HandleMouseMotion(const SDL_MouseMotionEvent &motion);
@@ -100,6 +111,11 @@ private:
 
 	// Queued mouse click events (consumed by Orbiter each frame)
 	std::vector<SDLMouseEvent> m_mouseEvents;
+
+	// Joystick
+	SDL_GameController *m_gameController;
+	JoyState m_joy;
+	void UpdateJoystick();
 };
 
 } // namespace orbiter

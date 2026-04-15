@@ -33,37 +33,31 @@
 - **Distance normalization**: Prevents float precision loss at astronomical distances
 - **Camera tracking**: View-projection from Orbiter's camera rotation matrix
 
-### Vessel Mesh Pipeline (implemented but not yet visible)
+### Vessel Mesh Pipeline (WORKING)
 - **Mesh loading**: ShuttlePB.msh loaded (7 groups)
 - **GPU caching**: NTVERTEX data + indices uploaded to VAO/VBO/EBO
-- **Vessel shader**: GLSL with position/normal/UV, material diffuse+emissive
-- **Issue**: Camera Z convention mismatch prevents vessel visibility (see below)
+- **Vessel shader**: GLSL with position/normal/UV, material diffuse+emissive+texture
+- **Rendering**: ShuttlePB visible as gray mesh with solar lighting at screen center
 
 ---
 
 ## Known Issues
 
-### Critical: Camera Z Convention (blocks vessel visibility)
-**File**: `OVP/OGLClient/OGLClient.cpp` lines ~370-395
+### RESOLVED: Camera Z Convention
+**Fixed in**: `OVP/OGLClient/OGLClient.cpp` - view matrix construction
 
-Orbiter's camera looks along **+Z** (D3D convention).
-OpenGL looks along **-Z**.
+The root cause was twofold:
+1. **Wrong view matrix encoding**: `oapiCameraRotationMatrix` returns GRot (local→global).
+   The D3D9Client stores it directly because D3D uses row-vector multiplication (v*M)
+   which implicitly transposes. OpenGL uses column-vector multiplication (M*v), so we
+   need GRot^T. The old code stored GRot's columns as OpenGL columns (= GRot), but
+   the fix stores GRot's rows as OpenGL columns (= GRot^T).
+2. **Z convention flip**: Orbiter looks along +Z, OpenGL expects -Z. The third row of
+   the transposed view matrix is negated: V = flipZ * GRot^T.
 
-The current projection matrix uses OpenGL's -Z convention which works
-for **planet rendering** (distance normalization places planets at coordinates
-that happen to work with -Z). But **vessel rendering** places vessels at +Z
-in camera space, which the -Z projection clips.
-
-**Attempted fixes**: 
-- Negating Z row in view matrix: broke planets
-- Using Orbiter's +Z projection: needs `glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE)` from GL 4.5 (not available in GL 4.1)
-- Adapting +Z projection for GL NDC [-1,1]: broke planets
-
-**Proper fix approaches**:
-1. Negate Z in BOTH the planet model matrices AND view matrix consistently
-2. Use a two-pass approach: planet pass with current -Z, vessel pass with +Z
-3. Upgrade to GL 4.5+ for glClipControl
-4. Pre-multiply all camera-relative coordinates by a Z-flip before entering the rendering pipeline
+Additionally, `GetMeshTemplate()` returns null on macOS, and the fallback mesh loading
+was only attempted once (frame 1) due to a `static bool` guard. Fixed by caching
+fallback mesh handles per vessel class name.
 
 ### Module Loading: Symlinks Required
 After clean rebuild, `Modules/Celbody/` symlinks to `Modules/lib*.dylib` must
@@ -71,7 +65,12 @@ be manually recreated. The CMake install doesn't create them automatically.
 
 ### Vessel Module Loading: GetMeshTemplate returns null
 ShuttlePB's module loads but `vessel->GetMeshTemplate(0)` returns null.
-Workaround in place: `oapiLoadMeshGlobal(className)` as fallback.
+Workaround: `oapiLoadMeshGlobal(className)` as fallback, cached per class name.
+
+### Font Loading: Missing font files
+`fa-solid-900.ttf`, `Lekton-Bold.ttf`, `architext.regular.ttf` are not shipped.
+Font loading now falls back to ImGui default font when files are missing
+(`Src/Orbiter/DlgMgr.cpp`).
 
 ### Screenshot Capture
 Debug code in OGLClient saves frame 15 as `screenshot.bmp` (2560x1600 BMP).
@@ -177,36 +176,61 @@ EOF
 
 ## Next Steps (Priority Order)
 
-### 1. Fix Camera Z Convention (HIGH - blocks vessel visibility)
-The entire rendering pipeline needs a consistent coordinate convention.
-Best approach: in `clbkRenderScene`, after computing camera-relative coordinates
-for ALL objects (planets and vessels), negate Z before passing to OpenGL.
-This means: in planet model matrix, use `nrz = -nrz`; in vessel model matrix,
-use `nvz = -nvz`. The view matrix stays as-is (transpose of camRot).
-The standard OpenGL -Z projection stays as-is.
+### 1. ~~Fix Camera Z Convention~~ DONE
+View matrix fixed: V = flipZ * GRot^T. Fallback mesh caching fixed.
+Vessels now render correctly alongside planets and stars.
 
-### 2. Keyboard Input (HIGH - for interactive use)  
-The SDL keyboard mapping is implemented but needs testing.
-Users need Ctrl+arrow for camera rotation, T for time warp, etc.
-File: `Src/Orbiter/SDLPlatform.cpp` + `Src/Orbiter/Orbiter.cpp::UserInput()`
+### 2. ~~Keyboard Input~~ DONE (buffered events added)
+SDL keyboard mapping was already in place (95+ key mappings). The missing piece
+was **buffered key event generation**: the macOS path only had immediate (continuous)
+key processing but not buffered (edge-triggered) events. Time warp (T/R), MFD
+controls, and all single-press actions now work via key-state-transition detection.
+Files: `Src/Orbiter/Orbiter.cpp::UserInput()`, `Orbiter.h`, `platform_stubs_posix.cpp`
 
-### 3. HUD / Text Rendering (MEDIUM)
-Implement `clbkCreateFont` using stb_truetype or FreeType.
-Implement `clbkGetSketchpad` for 2D line/text rendering.
-This enables the flight HUD, speed indicator, altitude display.
+### 3. ~~HUD / Text Rendering~~ DONE (ImGui-backed Sketchpad)
+Implemented OGLFont (wraps ImFont), OGLPen, OGLBrush, and OGLSketchpad using
+ImGui's `ImDrawList` API. Supports: Text(), Line(), MoveTo/LineTo(), Rectangle(),
+Ellipse(), Polygon(), Polyline(), SetTextAlign(), SetTextColor(), font metrics.
+The HUD renders green text/line overlays for speed, altitude, heading indicators.
+Screenshot capture moved to `clbkDisplayFrame()` to include ImGui overlay.
 
-### 4. Texture .tex Container (MEDIUM)
-Parse `.tex` files (concatenated DDS) for planet surface textures.
-This enables proper Earth/Moon/Mars surface rendering instead of flat colors.
+### 4. ~~Texture .tex Container~~ DONE
+Parse `.tex` files implemented — scans for `'DDS '` markers, extracts first DDS texture.
+Mercury, Venus, Saturn, Uranus, Neptune, Titan, and all moons now render with textures.
+Earth is flat-color only (no Earth.tex in base distribution — needs hi-res data pack).
 
-### 5. Module Symlink Automation (LOW)
-Add CMake post-build step to create Modules/Celbody symlinks automatically.
+### 5. ~~PNG Texture Loading~~ DONE
+Added stb_image.h (from Tracy dependency) for PNG support.
+All MenuInfoBar icons (ship, camera, speed, etc.) now load successfully.
 
-### 6. PNG Texture Loading (LOW)
-Add stb_image or similar for PNG support (MenuInfoBar icons).
+### 6. ~~Module Symlink Automation~~ DONE
+CMake post-build step creates Modules/Celbody symlinks and copies ImGui fonts.
 
 ### 7. Audio (LOW)
 OpenAL or SDL_mixer backend for sound effects.
 
-### 8. macOS .app Bundle (LOW)
-Info.plist, icon, proper distribution packaging.
+### 8. ~~macOS .app Bundle~~ DONE
+`cmake --build ... --target macos-bundle` creates `Orbiter.app` with proper
+Info.plist, executable in MacOS/, data symlinks in Resources/. Startup chdir
+resolves to Resources/ when in .app or to exe dir when running standalone.
+
+---
+
+## What's Missing for Production
+
+### Working Now
+- 3D scene: stars (4000), planets (textured from .tex/DDS), vessel meshes (ShuttlePB)
+- Camera: correct view matrix (flipZ * GRot^T), mouse wheel zoom, external tracking
+- HUD: green text/line overlay via ImGui-backed Sketchpad
+- Keyboard: immediate + buffered events (T/R time warp, Ctrl+arrow camera, RCS)
+- Textures: DDS, BMP, .tex container, PNG all loading
+- Font/Pen/Brush/Sketchpad: full 2D drawing via ImDrawList
+- ImGui dialogs: rendering with SDL2+OpenGL3 backends
+
+### Remaining Gaps (all visual/polish — core sim is functional)
+1. **Cloud layers**: Earth clouds overlay
+2. **Atmospheric scattering**: Sunset/haze effects
+3. **Exhaust particles**: Thruster flame visualization
+4. **Planetary rings**: Saturn/Uranus rings
+5. **Night city lights**: Texture overlay on dark side
+6. **Audio**: Sound effects via OpenAL or SDL_mixer

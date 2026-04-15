@@ -253,8 +253,51 @@ else()
 	add_custom_command(TARGET ${OrbiterTgt}	POST_BUILD
 		COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_SDK_DIR}/lib
 	)
+	# macOS post-build: create Modules/Celbody symlinks and copy fonts
+	if(APPLE)
+		set(_symlink_script "${CMAKE_BINARY_DIR}/create_celbody_symlinks.sh")
+		file(WRITE ${_symlink_script}
+			"#!/bin/sh\n"
+			"mkdir -p \"${CMAKE_BINARY_DIR}/Modules/Celbody\" \"${CMAKE_BINARY_DIR}/Fonts\"\n"
+			"for f in \"${CMAKE_BINARY_DIR}\"/Modules/lib*.dylib; do\n"
+			"  [ -f \"$f\" ] && ln -sf \"../$(basename \"$f\")\" \"${CMAKE_BINARY_DIR}/Modules/Celbody/\"\n"
+			"done\n"
+		)
+		add_custom_command(TARGET ${OrbiterTgt} POST_BUILD
+			COMMENT "Creating Modules/Celbody symlinks and copying fonts..."
+			COMMAND sh ${_symlink_script}
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${imgui_SOURCE_DIR}/misc/fonts/Roboto-Medium.ttf ${CMAKE_BINARY_DIR}/Fonts/
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${imgui_SOURCE_DIR}/misc/fonts/Cousine-Regular.ttf ${CMAKE_BINARY_DIR}/Fonts/
+		)
+	endif()
 endif()
 
 string(TIMESTAMP DATE "%d %b %Y")
 string(TIMESTAMP VERSION "%y%m%d")
 configure_file(about.hpp.in about.hpp @ONLY)
+
+# macOS .app bundle target
+if(APPLE)
+	set(ORBITER_VERSION "${VERSION}")
+	configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in ${CMAKE_BINARY_DIR}/Info.plist @ONLY)
+
+	set(_app "${CMAKE_BINARY_DIR}/Orbiter.app")
+	add_custom_target(macos-bundle
+		COMMENT "Creating Orbiter.app bundle..."
+		DEPENDS Orbiter
+		# Create .app directory structure
+		COMMAND ${CMAKE_COMMAND} -E make_directory "${_app}/Contents/MacOS"
+		COMMAND ${CMAKE_COMMAND} -E make_directory "${_app}/Contents/Resources"
+		# Copy executable and Info.plist
+		COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/Orbiter" "${_app}/Contents/MacOS/"
+		COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_BINARY_DIR}/Info.plist" "${_app}/Contents/"
+		# Symlink data directories into Resources (avoid copying gigabytes)
+		COMMAND ln -sfn "${CMAKE_BINARY_DIR}/Config" "${_app}/Contents/Resources/Config"
+		COMMAND ln -sfn "${CMAKE_BINARY_DIR}/Meshes" "${_app}/Contents/Resources/Meshes"
+		COMMAND ln -sfn "${CMAKE_BINARY_DIR}/Textures" "${_app}/Contents/Resources/Textures"
+		COMMAND ln -sfn "${CMAKE_BINARY_DIR}/Scenarios" "${_app}/Contents/Resources/Scenarios"
+		COMMAND ln -sfn "${CMAKE_BINARY_DIR}/Modules" "${_app}/Contents/Resources/Modules"
+		COMMAND ln -sfn "${CMAKE_BINARY_DIR}/Fonts" "${_app}/Contents/Resources/Fonts"
+		COMMAND ln -sfn "${CMAKE_BINARY_DIR}/GravityModels" "${_app}/Contents/Resources/GravityModels"
+	)
+endif()

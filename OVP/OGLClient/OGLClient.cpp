@@ -134,7 +134,7 @@ void main() {
     vec4 worldPos = uModel * vec4(aPos, 1.0);
     gl_Position = uViewProj * worldPos;
     vec3 worldNormal = normalize(mat3(uModel) * aNormal);
-    vLight = max(0.08, dot(worldNormal, uSunDir));
+    vLight = max(0.15, dot(worldNormal, uSunDir));
     vNormal = worldNormal;
     vUV = aUV;
 }
@@ -425,15 +425,33 @@ void OGLClient::clbkRenderScene()
 		0,               0, B,  0
 	};
 
-	// View matrix: inverse of camera rotation = transpose (orthonormal)
-	// Orbiter's grot: rows are camera-local X,Y,Z axes in global frame.
-	// This works with positive-Z-forward convention used by both Orbiter
-	// and the D3D-style projection we're emulating.
+	// View matrix: transforms from global coordinates to OpenGL eye space.
+	//
+	// oapiCameraRotationMatrix returns GRot, the camera's local→global
+	// rotation (Body.h: "p_glob = GRot * p_loc + GPos"). Its COLUMNS
+	// are the camera axes in global frame:
+	//   col0 = (m11,m21,m31) = right
+	//   col1 = (m12,m22,m32) = up
+	//   col2 = (m13,m23,m33) = forward (+Z in Orbiter)
+	//
+	// The D3D9Client stores GRot directly as the view matrix because D3D
+	// uses row-vector multiplication (v*M), which implicitly transposes.
+	// OpenGL uses column-vector multiplication (M*v), so we need GRot^T
+	// to compute dot(axis, pos) for each camera axis.
+	//
+	// Additionally, Orbiter's camera looks along +Z, but OpenGL's
+	// projection expects the camera to look along -Z. We negate the
+	// third row of the transposed matrix to flip the Z axis.
+	//
+	// Result: V = flipZ * GRot^T   (global → eye with -Z forward)
+	//   row0 = GRot col0        →  eye_x = dot(right, pos)
+	//   row1 = GRot col1        →  eye_y = dot(up, pos)
+	//   row2 = -GRot col2       →  eye_z = -dot(forward, pos)
 	float view[16] = {
-		(float)camRot.m11, (float)camRot.m21, (float)camRot.m31, 0,
-		(float)camRot.m12, (float)camRot.m22, (float)camRot.m32, 0,
-		(float)camRot.m13, (float)camRot.m23, (float)camRot.m33, 0,
-		0,                 0,                  0,                  1
+		(float)camRot.m11,  (float)camRot.m12, -(float)camRot.m13, 0,  // column 0
+		(float)camRot.m21,  (float)camRot.m22, -(float)camRot.m23, 0,  // column 1
+		(float)camRot.m31,  (float)camRot.m32, -(float)camRot.m33, 0,  // column 2
+		0,                  0,                   0,                 1   // column 3
 	};
 
 	// View-Projection: P * V (column-major multiply: result[col][row] = sum(P[k][row] * V[col][k]))
@@ -655,19 +673,22 @@ void OGLClient::clbkRenderScene()
 			for (DWORD m = 0; m < nMesh; m++) {
 				MESHHANDLE hMesh = vessel->GetMeshTemplate(m);
 				if (!hMesh) {
-					// Fallback: try loading the mesh by vessel class name
-					static bool tryFallback = true;
-					if (tryFallback) {
-						const char *className = vessel->GetClassName();
-						if (className) {
+					// Fallback: GetMeshTemplate may return null on macOS.
+					// Use a static map to cache fallback mesh handles per class
+					// so we can render on every frame (not just the first).
+					static std::map<std::string, MESHHANDLE> fallbackMeshes;
+					const char *className = vessel->GetClassName();
+					if (className) {
+						auto it = fallbackMeshes.find(className);
+						if (it != fallbackMeshes.end()) {
+							hMesh = it->second;
+						} else {
 							hMesh = oapiLoadMeshGlobal(className);
+							fallbackMeshes[className] = hMesh;
 							if (hMesh)
 								fprintf(stderr, "[OGLClient] Loaded fallback mesh '%s': %u groups\n",
 									className, oapiMeshGroupCount(hMesh));
-							else
-								fprintf(stderr, "[OGLClient] Fallback mesh '%s' not found\n", className);
 						}
-						tryFallback = false;
 					}
 					if (!hMesh) continue;
 				}
@@ -678,16 +699,6 @@ void OGLClient::clbkRenderScene()
 
 				// Get cached OpenGL buffers for this mesh
 				CachedMesh *cached = GetOrCreateMeshCache(hMesh);
-				static bool meshDbg = true;
-				if (meshDbg) {
-					fprintf(stderr, "[OGLClient] Mesh %u: hMesh=%p cached=%p groups=%zu\n",
-						m, (void*)hMesh, (void*)cached, cached ? cached->groups.size() : 0);
-					if (cached) for (size_t gi = 0; gi < cached->groups.size(); gi++)
-						fprintf(stderr, "  group %zu: vao=%u vbo=%u ebo=%u idx=%d\n",
-							gi, cached->groups[gi].vao, cached->groups[gi].vbo,
-							cached->groups[gi].ebo, cached->groups[gi].indexCount);
-					meshDbg = false;
-				}
 				if (!cached) continue;
 
 				// Build model matrix: rotation * translation
@@ -775,54 +786,8 @@ void OGLClient::clbkRenderScene()
 
 	// 5) Render 2D overlay (HUD, panels, ImGui dialogs)
 	Render2DOverlay();
-
-	// Debug: save first few frames as BMP for visual inspection
-	static int frameCount = 0;
-	if (frameCount < 20) {
-		frameCount++;
-		if (frameCount == 15) { // save 15th frame (let physics stabilize)
-			fprintf(stderr, "[OGLClient] Frame %d: cam=(%.3e,%.3e,%.3e) valid=%d\n",
-				frameCount, camPos.x, camPos.y, camPos.z, validCamera);
-			int w = m_viewW, h = m_viewH;
-			std::vector<unsigned char> pixels(w * h * 4);
-			glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-			// Write as BMP (bottom-up, RGB)
-			FILE *f = fopen("screenshot.bmp", "wb");
-			if (f) {
-				int rowSize = w * 3;
-				int pad = (4 - rowSize % 4) % 4;
-				int imgSize = (rowSize + pad) * h;
-				// BMP File Header (14 bytes)
-				unsigned char bmpFileHeader[14] = {'B','M', 0,0,0,0, 0,0,0,0, 54,0,0,0};
-				int fileSize = 54 + imgSize;
-				bmpFileHeader[2] = fileSize; bmpFileHeader[3] = fileSize>>8;
-				bmpFileHeader[4] = fileSize>>16; bmpFileHeader[5] = fileSize>>24;
-				fwrite(bmpFileHeader, 1, 14, f);
-				// BMP Info Header (40 bytes)
-				unsigned char bmpInfoHeader[40] = {};
-				bmpInfoHeader[0] = 40;
-				bmpInfoHeader[4] = w; bmpInfoHeader[5] = w>>8;
-				bmpInfoHeader[6] = w>>16; bmpInfoHeader[7] = w>>24;
-				bmpInfoHeader[8] = h; bmpInfoHeader[9] = h>>8;
-				bmpInfoHeader[10] = h>>16; bmpInfoHeader[11] = h>>24;
-				bmpInfoHeader[12] = 1; // planes
-				bmpInfoHeader[14] = 24; // bpp
-				fwrite(bmpInfoHeader, 1, 40, f);
-				// Pixel data (OpenGL is bottom-up, BMP is bottom-up, but we need BGR)
-				unsigned char padBytes[3] = {0,0,0};
-				for (int y = 0; y < h; y++) {
-					for (int x = 0; x < w; x++) {
-						int idx = (y * w + x) * 4;
-						unsigned char bgr[3] = {pixels[idx+2], pixels[idx+1], pixels[idx]};
-						fwrite(bgr, 1, 3, f);
-					}
-					if (pad) fwrite(padBytes, 1, pad, f);
-				}
-				fclose(f);
-				fprintf(stderr, "[OGLClient] Screenshot saved: screenshot.bmp (%dx%d)\n", w, h);
-			}
-		}
-	}
+	// Note: screenshot capture moved to clbkDisplayFrame() so it includes
+	// ImGui overlay (HUD, dialogs) which is rendered after clbkRenderScene.
 }
 
 // ============================================================================
@@ -945,6 +910,47 @@ void OGLClient::clbkDestroyRenderWindow(bool fastclose)
 
 bool OGLClient::clbkDisplayFrame()
 {
+	// Debug: save screenshot after ALL rendering (3D + ImGui overlay)
+	static int frameCount = 0;
+	if (frameCount < 20) {
+		frameCount++;
+		if (frameCount == 15) {
+			int w = m_viewW, h = m_viewH;
+			std::vector<unsigned char> pixels(w * h * 4);
+			glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+			FILE *f = fopen("screenshot.bmp", "wb");
+			if (f) {
+				int rowSize = w * 3;
+				int pad = (4 - rowSize % 4) % 4;
+				int imgSize = (rowSize + pad) * h;
+				unsigned char bmpFileHeader[14] = {'B','M', 0,0,0,0, 0,0,0,0, 54,0,0,0};
+				int fileSize = 54 + imgSize;
+				bmpFileHeader[2] = fileSize; bmpFileHeader[3] = fileSize>>8;
+				bmpFileHeader[4] = fileSize>>16; bmpFileHeader[5] = fileSize>>24;
+				fwrite(bmpFileHeader, 1, 14, f);
+				unsigned char bmpInfoHeader[40] = {};
+				bmpInfoHeader[0] = 40;
+				bmpInfoHeader[4] = w; bmpInfoHeader[5] = w>>8;
+				bmpInfoHeader[6] = w>>16; bmpInfoHeader[7] = w>>24;
+				bmpInfoHeader[8] = h; bmpInfoHeader[9] = h>>8;
+				bmpInfoHeader[10] = h>>16; bmpInfoHeader[11] = h>>24;
+				bmpInfoHeader[12] = 1;
+				bmpInfoHeader[14] = 24;
+				fwrite(bmpInfoHeader, 1, 40, f);
+				unsigned char padBytes[3] = {0,0,0};
+				for (int y = 0; y < h; y++) {
+					for (int x = 0; x < w; x++) {
+						int idx = (y * w + x) * 4;
+						unsigned char bgr[3] = {pixels[idx+2], pixels[idx+1], pixels[idx]};
+						fwrite(bgr, 1, 3, f);
+					}
+					if (pad) fwrite(padBytes, 1, pad, f);
+				}
+				fclose(f);
+				fprintf(stderr, "[OGLClient] Screenshot saved: screenshot.bmp (%dx%d)\n", w, h);
+			}
+		}
+	}
 	if (m_sdlWindow) { SDL_GL_SwapWindow(m_sdlWindow); return true; }
 	return false;
 }
@@ -981,15 +987,13 @@ SURFHANDLE OGLClient::clbkLoadTexture(const char *fname, DWORD flags)
 	// Try common extensions if no extension given
 	const char *ext = strrchr(normalizedName.c_str(), '.');
 	if (!ext) {
-		std::string ddsPath = m_texturePath + normalizedName + ".dds";
-		if (FileExists(ddsPath.c_str())) {
-			OGLTexture *tex = OGLTexture::LoadTexture(ddsPath.c_str());
-			if (tex) return (SURFHANDLE)tex;
-		}
-		std::string bmpPath = m_texturePath + normalizedName + ".bmp";
-		if (FileExists(bmpPath.c_str())) {
-			OGLTexture *tex = OGLTexture::LoadTexture(bmpPath.c_str());
-			if (tex) return (SURFHANDLE)tex;
+		const char *tryExts[] = { ".dds", ".bmp", ".tex", ".png", nullptr };
+		for (int i = 0; tryExts[i]; i++) {
+			std::string tryP = m_texturePath + normalizedName + tryExts[i];
+			if (FileExists(tryP.c_str())) {
+				OGLTexture *tex = OGLTexture::LoadTexture(tryP.c_str());
+				if (tex) return (SURFHANDLE)tex;
+			}
 		}
 	}
 
@@ -1110,9 +1114,10 @@ OGLTexture *OGLClient::LoadPlanetTexture(const char *planetName)
 	if (!planetName || !planetName[0]) return nullptr;
 
 	// Try various naming conventions used by Orbiter:
-	// Note: <Name>M.bmp are mask/elevation maps, NOT color textures - skip those
-	// Real color textures are in .tex container files (not yet supported)
-	const char *extensions[] = { ".dds", ".bmp", nullptr };
+	// .tex = concatenated DDS container (primary planet texture format)
+	// .dds = standalone DDS texture
+	// .bmp = Windows bitmap fallback
+	const char *extensions[] = { ".tex", ".dds", ".bmp", nullptr };
 
 	for (int i = 0; extensions[i]; i++) {
 		std::string tryPath = m_texturePath + planetName + extensions[i];
@@ -1129,10 +1134,252 @@ OGLTexture *OGLClient::LoadPlanetTexture(const char *planetName)
 	fprintf(stderr, "[OGLClient] No texture found for planet '%s'\n", planetName);
 	return nullptr;
 }
-oapi::Font *OGLClient::clbkCreateFont(int, bool, const char*, FontStyle, int) const { return nullptr; }
-void OGLClient::clbkReleaseFont(oapi::Font*) const {}
-oapi::Sketchpad *OGLClient::clbkGetSketchpad(SURFHANDLE) { return nullptr; }
-void OGLClient::clbkReleaseSketchpad(oapi::Sketchpad*) {}
+// ============================================================================
+// OGL Font / Pen / Brush / Sketchpad — ImGui-backed 2D drawing
+// ============================================================================
+
+// Helper: convert Orbiter 0xBBGGRR colour to ImGui 0xAABBGGRR (alpha = 0xFF)
+static ImU32 OrbiterColToImU32(DWORD col) {
+	return IM_COL32(col & 0xFF, (col >> 8) & 0xFF, (col >> 16) & 0xFF, 0xFF);
+}
+
+// --- OGLFont ---
+class OGLFont : public oapi::Font {
+public:
+	ImFont *imFont;
+	float  fontSize;
+	OGLFont(int height, bool prop, const char *face, FontStyle style, int orientation)
+		: oapi::Font(height, prop, face, style, orientation),
+		  imFont(nullptr), fontSize((float)(height < 0 ? -height : height))
+	{
+		// Map generic face names to available ImGui fonts.
+		// ImGui font atlas is built once at startup; we pick the closest match.
+		ImGuiIO &io = ImGui::GetIO();
+		if (!io.Fonts || io.Fonts->Fonts.Size == 0) return;
+		// Default font (index 0) is Roboto-Medium (proportional)
+		// Console font (index 2, if loaded) is Cousine-Regular (monospace)
+		if (!prop || (face && (strcmp(face, "Fixed") == 0 || strcmp(face, "Courier") == 0 ||
+		              strcmp(face, "Courier New") == 0))) {
+			// Use monospace font if available (index 2 from DlgMgr loading order)
+			if (io.Fonts->Fonts.Size > 2)
+				imFont = io.Fonts->Fonts[2];
+			else
+				imFont = io.Fonts->Fonts[0];
+		} else {
+			imFont = io.Fonts->Fonts[0]; // default proportional
+		}
+	}
+};
+
+// --- OGLPen ---
+class OGLPen : public oapi::Pen {
+public:
+	int    style;  // 0=invisible, 1=solid, 2=dashed
+	int    width;
+	ImU32  color;
+	OGLPen(int s, int w, DWORD col) : oapi::Pen(s, w, col), style(s), width(w), color(OrbiterColToImU32(col)) {}
+};
+
+// --- OGLBrush ---
+class OGLBrush : public oapi::Brush {
+public:
+	ImU32 color;
+	OGLBrush(DWORD col) : oapi::Brush(col), color(OrbiterColToImU32(col)) {}
+};
+
+// --- OGLSketchpad ---
+class OGLSketchpad : public oapi::Sketchpad {
+public:
+	OGLSketchpad(SURFHANDLE surf, DWORD w, DWORD h)
+		: oapi::Sketchpad(surf), m_dl(nullptr), m_font(nullptr), m_pen(nullptr), m_brush(nullptr),
+		  m_textCol(IM_COL32(255,255,255,255)), m_bgCol(IM_COL32(0,0,0,255)),
+		  m_bkMode(BK_TRANSPARENT), m_tah(LEFT), m_tav(TOP), m_cx(0), m_cy(0),
+		  m_ox(0), m_oy(0), m_viewW(w), m_viewH(h)
+	{
+		m_dl = ImGui::GetForegroundDrawList();
+	}
+
+	oapi::Font *SetFont(oapi::Font *font) override {
+		oapi::Font *prev = m_font;
+		m_font = font;
+		return prev;
+	}
+	oapi::Pen *SetPen(oapi::Pen *pen) override {
+		oapi::Pen *prev = m_pen;
+		m_pen = pen;
+		return prev;
+	}
+	oapi::Brush *SetBrush(oapi::Brush *brush) override {
+		oapi::Brush *prev = m_brush;
+		m_brush = brush;
+		return prev;
+	}
+
+	void SetTextAlign(TAlign_horizontal tah = LEFT, TAlign_vertical tav = TOP) override {
+		m_tah = tah; m_tav = tav;
+	}
+	DWORD SetTextColor(DWORD col) override {
+		DWORD prev = ImGuiColToOrbiter(m_textCol);
+		m_textCol = OrbiterColToImU32(col);
+		return prev;
+	}
+	DWORD SetBackgroundColor(DWORD col) override {
+		DWORD prev = ImGuiColToOrbiter(m_bgCol);
+		m_bgCol = OrbiterColToImU32(col);
+		return prev;
+	}
+	void SetBackgroundMode(BkgMode mode) override { m_bkMode = mode; }
+
+	void SetOrigin(int x, int y) override { m_ox = x; m_oy = y; }
+	void GetOrigin(int *x, int *y) const override { *x = m_ox; *y = m_oy; }
+
+	DWORD GetCharSize() override {
+		OGLFont *f = static_cast<OGLFont*>(m_font);
+		float sz = f ? f->fontSize : 14.0f;
+		int h = (int)sz;
+		int w = (int)(sz * 0.6f); // approximate monospace width
+		return MAKELONG(w, h);
+	}
+
+	DWORD GetTextWidth(const char *str, int len = 0) override {
+		OGLFont *f = static_cast<OGLFont*>(m_font);
+		ImFont *imf = f ? f->imFont : ImGui::GetFont();
+		float sz = f ? f->fontSize : 14.0f;
+		if (!str) return 0;
+		std::string s = (len > 0) ? std::string(str, len) : std::string(str);
+		ImVec2 tsz = imf->CalcTextSizeA(sz, FLT_MAX, 0, s.c_str());
+		return (DWORD)tsz.x;
+	}
+
+	bool Text(int x, int y, const char *str, int len) override {
+		if (!m_dl || !str) return false;
+		OGLFont *f = static_cast<OGLFont*>(m_font);
+		ImFont *imf = f ? f->imFont : ImGui::GetFont();
+		float sz = f ? f->fontSize : 14.0f;
+		std::string s = (len > 0) ? std::string(str, len) : std::string(str);
+		ImVec2 tsz = imf->CalcTextSizeA(sz, FLT_MAX, 0, s.c_str());
+		float dx = (float)(x + m_ox), dy = (float)(y + m_oy);
+		if (m_tah == CENTER) dx -= tsz.x * 0.5f;
+		else if (m_tah == RIGHT) dx -= tsz.x;
+		if (m_tav == BASELINE) dy -= sz * 0.8f;
+		else if (m_tav == BOTTOM) dy -= tsz.y;
+		if (m_bkMode == BK_OPAQUE)
+			m_dl->AddRectFilled(ImVec2(dx, dy), ImVec2(dx + tsz.x, dy + tsz.y), m_bgCol);
+		m_dl->AddText(imf, sz, ImVec2(dx, dy), m_textCol, s.c_str());
+		return true;
+	}
+
+	void MoveTo(int x, int y) override { m_cx = x + m_ox; m_cy = y + m_oy; }
+
+	void LineTo(int x, int y) override {
+		int nx = x + m_ox, ny = y + m_oy;
+		OGLPen *p = static_cast<OGLPen*>(m_pen);
+		if (m_dl && p && p->style != 0)
+			m_dl->AddLine(ImVec2((float)m_cx, (float)m_cy), ImVec2((float)nx, (float)ny),
+			              p->color, (float)std::max(1, p->width));
+		m_cx = nx; m_cy = ny;
+	}
+
+	void Line(int x0, int y0, int x1, int y1) override {
+		OGLPen *p = static_cast<OGLPen*>(m_pen);
+		if (m_dl && p && p->style != 0)
+			m_dl->AddLine(ImVec2((float)(x0+m_ox), (float)(y0+m_oy)),
+			              ImVec2((float)(x1+m_ox), (float)(y1+m_oy)),
+			              p->color, (float)std::max(1, p->width));
+	}
+
+	void Rectangle(int x0, int y0, int x1, int y1) override {
+		if (!m_dl) return;
+		ImVec2 a((float)(x0+m_ox), (float)(y0+m_oy)), b((float)(x1+m_ox), (float)(y1+m_oy));
+		OGLBrush *br = static_cast<OGLBrush*>(m_brush);
+		if (br) m_dl->AddRectFilled(a, b, br->color);
+		OGLPen *p = static_cast<OGLPen*>(m_pen);
+		if (p && p->style != 0) m_dl->AddRect(a, b, p->color, 0, 0, (float)std::max(1, p->width));
+	}
+
+	void Ellipse(int x0, int y0, int x1, int y1) override {
+		if (!m_dl) return;
+		float cx = (x0 + x1) * 0.5f + m_ox, cy = (y0 + y1) * 0.5f + m_oy;
+		float rx = (x1 - x0) * 0.5f, ry = (y1 - y0) * 0.5f;
+		float r = (rx + ry) * 0.5f; // ImGui only supports circles; approximate
+		OGLBrush *br = static_cast<OGLBrush*>(m_brush);
+		if (br) m_dl->AddCircleFilled(ImVec2(cx, cy), r, br->color);
+		OGLPen *p = static_cast<OGLPen*>(m_pen);
+		if (p && p->style != 0) m_dl->AddCircle(ImVec2(cx, cy), r, p->color, 0, (float)std::max(1, p->width));
+	}
+
+	void Polygon(const oapi::IVECTOR2 *pt, int npt) override {
+		if (!m_dl || npt < 3) return;
+		std::vector<ImVec2> pts(npt);
+		for (int i = 0; i < npt; i++) pts[i] = ImVec2((float)(pt[i].x+m_ox), (float)(pt[i].y+m_oy));
+		OGLBrush *br = static_cast<OGLBrush*>(m_brush);
+		if (br) m_dl->AddConvexPolyFilled(pts.data(), npt, br->color);
+		OGLPen *p = static_cast<OGLPen*>(m_pen);
+		if (p && p->style != 0) m_dl->AddPolyline(pts.data(), npt, p->color, ImDrawFlags_Closed, (float)std::max(1, p->width));
+	}
+
+	void Polyline(const oapi::IVECTOR2 *pt, int npt) override {
+		if (!m_dl || npt < 2) return;
+		OGLPen *p = static_cast<OGLPen*>(m_pen);
+		if (!p || p->style == 0) return;
+		std::vector<ImVec2> pts(npt);
+		for (int i = 0; i < npt; i++) pts[i] = ImVec2((float)(pt[i].x+m_ox), (float)(pt[i].y+m_oy));
+		m_dl->AddPolyline(pts.data(), npt, p->color, 0, (float)std::max(1, p->width));
+	}
+
+	void Pixel(int x, int y, DWORD col) override {
+		if (m_dl) m_dl->AddRectFilled(ImVec2((float)(x+m_ox), (float)(y+m_oy)),
+		                               ImVec2((float)(x+m_ox+1), (float)(y+m_oy+1)),
+		                               OrbiterColToImU32(col));
+	}
+
+private:
+	static DWORD ImGuiColToOrbiter(ImU32 c) {
+		return (c & 0xFF) | ((c >> 8) & 0xFF) << 8 | ((c >> 16) & 0xFF) << 16;
+	}
+	ImDrawList *m_dl;
+	oapi::Font *m_font;
+	oapi::Pen  *m_pen;
+	oapi::Brush *m_brush;
+	ImU32 m_textCol, m_bgCol;
+	BkgMode m_bkMode;
+	TAlign_horizontal m_tah;
+	TAlign_vertical m_tav;
+	int m_cx, m_cy;   // current pen position
+	int m_ox, m_oy;   // origin offset
+	DWORD m_viewW, m_viewH;
+};
+
+// --- clbk implementations ---
+
+oapi::Font *OGLClient::clbkCreateFont(int height, bool prop, const char *face,
+	FontStyle style, int orientation) const
+{
+	return new OGLFont(height, prop, face, style, orientation);
+}
+
+void OGLClient::clbkReleaseFont(oapi::Font *font) const { delete font; }
+
+oapi::Pen *OGLClient::clbkCreatePen(int style, int width, DWORD col) const {
+	return new OGLPen(style, width, col);
+}
+void OGLClient::clbkReleasePen(oapi::Pen *pen) const { delete pen; }
+
+oapi::Brush *OGLClient::clbkCreateBrush(DWORD col) const {
+	return new OGLBrush(col);
+}
+void OGLClient::clbkReleaseBrush(oapi::Brush *brush) const { delete brush; }
+
+oapi::Sketchpad *OGLClient::clbkGetSketchpad(SURFHANDLE surf) {
+	// Only create ImGui-backed sketchpad when ImGui is initialized and in a frame
+	if (!m_imguiInitialized) return nullptr;
+	if (!ImGui::GetCurrentContext()) return nullptr;
+	// GetForegroundDrawList requires an active frame; check via GetIO
+	if (!ImGui::GetIO().Fonts || !ImGui::GetIO().Fonts->IsBuilt()) return nullptr;
+	return new OGLSketchpad(surf, m_viewW, m_viewH);
+}
+
+void OGLClient::clbkReleaseSketchpad(oapi::Sketchpad *sp) { delete sp; }
 
 void OGLClient::SetSDLWindow(SDL_Window *w, SDL_GLContext c) { m_sdlWindow = w; m_sdlContext = c; }
 

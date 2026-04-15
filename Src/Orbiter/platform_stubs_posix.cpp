@@ -68,11 +68,11 @@ void ConsoleNG::EchoIntro() const {}
 // Orbiter methods that reference Win32-only features
 // ======================================================================
 
-bool Orbiter::MouseEvent(UINT, DWORD, DWORD, DWORD) { return false; }
+// MouseEvent, BroadcastMouseEvent, BroadcastImmediateKeyboardEvent,
+// BroadcastBufferedKeyboardEvent, KbdInputBuffered_System/OnRunning are now
+// compiled from Orbiter.cpp for all platforms (no longer Windows-only).
 bool Orbiter::SendKbdBuffered(DWORD, DWORD*, DWORD, bool) { return false; }
 bool Orbiter::SendKbdImmediate(char[256], bool) { return false; }
-bool Orbiter::BroadcastMouseEvent(UINT, DWORD, DWORD, DWORD) { return false; }
-bool Orbiter::BroadcastImmediateKeyboardEvent(char*) { return false; }
 
 // MemStat is compiled from Memstat.cpp - no stub needed
 
