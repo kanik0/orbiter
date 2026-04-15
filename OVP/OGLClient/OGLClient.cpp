@@ -8,6 +8,7 @@
 #include "OGLClient.h"
 #include "OGLTexture.h"
 #include "OrbiterAPI.h"
+#include "VesselAPI.h"
 #include <cstdio>
 #include <cmath>
 #include <cstdlib>
@@ -114,6 +115,49 @@ out vec4 FragColor;
 void main() {
     vec4 texColor = texture(uTexture, vUV);
     FragColor = vec4(texColor.rgb * vLight, texColor.a);
+}
+)";
+
+// Vessel mesh shader - supports NTVERTEX (pos + normal + UV) with material color
+static const char *vesselVertSrc = R"(
+#version 410 core
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec2 aUV;
+uniform mat4 uViewProj;
+uniform mat4 uModel;
+uniform vec3 uSunDir;
+out float vLight;
+out vec3 vNormal;
+out vec2 vUV;
+void main() {
+    vec4 worldPos = uModel * vec4(aPos, 1.0);
+    gl_Position = uViewProj * worldPos;
+    vec3 worldNormal = normalize(mat3(uModel) * aNormal);
+    vLight = max(0.08, dot(worldNormal, uSunDir));
+    vNormal = worldNormal;
+    vUV = aUV;
+}
+)";
+
+static const char *vesselFragSrc = R"(
+#version 410 core
+in float vLight;
+in vec3 vNormal;
+in vec2 vUV;
+uniform vec4 uDiffuse;
+uniform vec3 uEmissive;
+uniform bool uHasTexture;
+uniform sampler2D uTexture;
+out vec4 FragColor;
+void main() {
+    vec4 baseColor = uDiffuse;
+    if (uHasTexture) {
+        vec4 texColor = texture(uTexture, vUV);
+        baseColor *= texColor;
+    }
+    vec3 lit = baseColor.rgb * vLight + uEmissive;
+    FragColor = vec4(lit, baseColor.a);
 }
 )";
 
@@ -261,7 +305,8 @@ OGLClient::OGLClient(HINSTANCE hInstance)
 	  m_starVAO(0), m_starVBO(0), m_starShader(0), m_numStars(0),
 	  m_planetShader(0), m_sphereVAO(0), m_sphereVBO(0), m_sphereEBO(0), m_sphereIndexCount(0),
 	  m_texPlanetShader(0), m_texSphereVAO(0), m_texSphereVBO(0), m_texSphereEBO(0), m_texSphereIndexCount(0),
-	  m_planetTexLoaded(false)
+	  m_planetTexLoaded(false),
+	  m_vesselShader(0)
 {
 	fprintf(stderr, "[OGLClient] Created\n");
 }
@@ -376,9 +421,8 @@ void OGLClient::clbkRenderScene()
 	};
 
 	// View matrix: inverse of camera rotation = transpose (orthonormal)
-	// Orbiter's grot: rows are camera-local X,Y,Z axes in global frame
-	// Column-major storage: [col0, col1, col2, col3]
-	// View = transpose(grot) as column-major
+	// Orbiter's grot: rows are camera-local X,Y,Z axes in global frame.
+	// The transpose converts from global-to-camera space.
 	float view[16] = {
 		(float)camRot.m11, (float)camRot.m21, (float)camRot.m31, 0,
 		(float)camRot.m12, (float)camRot.m22, (float)camRot.m32, 0,
@@ -426,8 +470,9 @@ void OGLClient::clbkRenderScene()
 		}
 	}
 
-	// 3) Render planets (depth test off - we use distance-normalized rendering)
+	// 3) Render planets (depth test+write off - we use distance-normalized rendering)
 	glDisable(GL_DEPTH_TEST);
+	glDepthMask(GL_FALSE);
 	if (m_planetShader && m_sphereVAO && validCamera) {
 		// Sun position
 		VECTOR3 sunPos;
@@ -530,8 +575,199 @@ void OGLClient::clbkRenderScene()
 	}
 
 	glEnable(GL_DEPTH_TEST);
+	glDepthMask(GL_TRUE);
 
-	// 4) Render 2D overlay (HUD, panels, ImGui dialogs)
+	// 4) Render vessels with mesh data
+	if (m_vesselShader && validCamera) {
+		// Sun position for lighting
+		VECTOR3 sunPos;
+		OBJHANDLE hSun = oapiGetObjectByName((char*)"Sun");
+		if (hSun) oapiGetGlobalPos(hSun, &sunPos);
+		else sunPos = {0, 0, 0};
+
+		glUseProgram(m_vesselShader);
+		glUniformMatrix4fv(glGetUniformLocation(m_vesselShader, "uViewProj"), 1, GL_FALSE, vp);
+
+		DWORD nVessel = oapiGetVesselCount();
+		static bool vesselDbg = true;
+		if (vesselDbg) {
+			fprintf(stderr, "[OGLClient] Vessels: %u\n", nVessel);
+			vesselDbg = false;
+		}
+		for (DWORD v = 0; v < nVessel; v++) {
+			OBJHANDLE hVessel = oapiGetVesselByIndex(v);
+			if (!hVessel) continue;
+			VESSEL *vessel = oapiGetVesselInterface(hVessel);
+			if (!vessel) continue;
+
+			// Get vessel global position relative to camera
+			VECTOR3 vpos;
+			oapiGetGlobalPos(hVessel, &vpos);
+			double vx = vpos.x - camPos.x;
+			double vy = vpos.y - camPos.y;
+			double vz = vpos.z - camPos.z;
+			double vdist = sqrt(vx*vx + vy*vy + vz*vz);
+
+			static bool vesselDistDbg = true;
+			if (vesselDistDbg) {
+				char vname[64]; oapiGetObjectName(hVessel, vname, 64);
+				fprintf(stderr, "[OGLClient] Vessel '%s': dist=%.1f pos=(%.1f,%.1f,%.1f) meshes=%d\n",
+					vname, vdist, vx, vy, vz, vessel->GetMeshCount());
+				vesselDistDbg = false;
+			}
+			// Skip vessels that are too far away (beyond ~100km)
+			if (vdist > 1e5) continue;
+
+			// Get vessel rotation matrix
+			MATRIX3 vrot;
+			oapiGetRotationMatrix(hVessel, &vrot);
+
+			// Sun direction at vessel position (in global frame)
+			double sdx = sunPos.x - vpos.x;
+			double sdy = sunPos.y - vpos.y;
+			double sdz = sunPos.z - vpos.z;
+			double sdist = sqrt(sdx*sdx + sdy*sdy + sdz*sdz);
+			if (sdist > 0) { sdx /= sdist; sdy /= sdist; sdz /= sdist; }
+			float sunDir[3] = {(float)sdx, (float)sdy, (float)sdz};
+			glUniform3fv(glGetUniformLocation(m_vesselShader, "uSunDir"), 1, sunDir);
+
+			// Distance normalization to avoid float precision issues.
+			// Vessels are small objects at potentially large distances from origin.
+			// We normalize the position to keep it within float range.
+			double normDist = vdist;
+			double scale = 1.0;
+			if (vdist > 1000.0) {
+				// Normalize: render at a closer distance, scaling the whole scene
+				normDist = 1000.0;
+				scale = normDist / vdist;
+			}
+			double nvx = vx * scale;
+			double nvy = vy * scale;
+			double nvz = vz * scale;
+
+			DWORD nMesh = vessel->GetMeshCount();
+			for (DWORD m = 0; m < nMesh; m++) {
+				MESHHANDLE hMesh = vessel->GetMeshTemplate(m);
+				if (!hMesh) {
+					// Fallback: try loading the mesh by vessel class name
+					static bool tryFallback = true;
+					if (tryFallback) {
+						const char *className = vessel->GetClassName();
+						if (className) {
+							hMesh = oapiLoadMeshGlobal(className);
+							if (hMesh)
+								fprintf(stderr, "[OGLClient] Loaded fallback mesh '%s': %u groups\n",
+									className, oapiMeshGroupCount(hMesh));
+							else
+								fprintf(stderr, "[OGLClient] Fallback mesh '%s' not found\n", className);
+						}
+						tryFallback = false;
+					}
+					if (!hMesh) continue;
+				}
+
+				// Get mesh offset in vessel frame
+				VECTOR3 meshOfs = {0, 0, 0};
+				vessel->GetMeshOffset(m, meshOfs);
+
+				// Get cached OpenGL buffers for this mesh
+				CachedMesh *cached = GetOrCreateMeshCache(hMesh);
+				static bool meshDbg = true;
+				if (meshDbg) {
+					fprintf(stderr, "[OGLClient] Mesh %u: hMesh=%p cached=%p groups=%zu\n",
+						m, (void*)hMesh, (void*)cached, cached ? cached->groups.size() : 0);
+					if (cached) for (size_t gi = 0; gi < cached->groups.size(); gi++)
+						fprintf(stderr, "  group %zu: vao=%u vbo=%u ebo=%u idx=%d\n",
+							gi, cached->groups[gi].vao, cached->groups[gi].vbo,
+							cached->groups[gi].ebo, cached->groups[gi].indexCount);
+					meshDbg = false;
+				}
+				if (!cached) continue;
+
+				// Build model matrix: rotation * translation
+				// The model matrix combines vessel rotation with position.
+				// Mesh offset is applied in vessel-local space before rotation.
+				// Model = Translation(vessel_pos) * Rotation(vrot) * Translation(meshOfs) * Scale(scale)
+				// In column-major:
+
+				// First apply mesh offset in local frame, then rotate, then translate
+				// offset in world frame = vrot * meshOfs
+				double ox = vrot.m11 * meshOfs.x + vrot.m12 * meshOfs.y + vrot.m13 * meshOfs.z;
+				double oy = vrot.m21 * meshOfs.x + vrot.m22 * meshOfs.y + vrot.m23 * meshOfs.z;
+				double oz = vrot.m31 * meshOfs.x + vrot.m32 * meshOfs.y + vrot.m33 * meshOfs.z;
+
+				float tx = (float)(nvx + ox * scale);
+				float ty = (float)(nvy + oy * scale);
+				float tz = (float)(nvz + oz * scale);
+				float s = (float)scale;
+
+				// Column-major model matrix: Scale * Rotation * Translation
+				float model[16] = {
+					(float)(vrot.m11 * s), (float)(vrot.m21 * s), (float)(vrot.m31 * s), 0.0f,  // column 0
+					(float)(vrot.m12 * s), (float)(vrot.m22 * s), (float)(vrot.m32 * s), 0.0f,  // column 1
+					(float)(vrot.m13 * s), (float)(vrot.m23 * s), (float)(vrot.m33 * s), 0.0f,  // column 2
+					tx,                    ty,                    tz,                    1.0f   // column 3
+				};
+				glUniformMatrix4fv(glGetUniformLocation(m_vesselShader, "uModel"), 1, GL_FALSE, model);
+
+				// Get material and texture info for this mesh
+				DWORD nMat = oapiMeshMaterialCount(hMesh);
+				DWORD nTex = oapiMeshTextureCount(hMesh);
+
+				// Render each group
+				for (DWORD g = 0; g < (DWORD)cached->groups.size(); g++) {
+					CachedMeshGroup &cmg = cached->groups[g];
+					if (!cmg.vao || cmg.indexCount == 0) continue;
+
+					// Get the mesh group info for material/texture indices
+					MESHGROUPEX *grp = oapiMeshGroupEx(hMesh, g);
+
+					// Set material uniforms
+					float diffuse[4] = {0.8f, 0.8f, 0.8f, 1.0f};
+					float emissive[3] = {0.0f, 0.0f, 0.0f};
+
+					if (grp && grp->MtrlIdx > 0 && grp->MtrlIdx <= nMat) {
+						MATERIAL *mat = oapiMeshMaterial(hMesh, grp->MtrlIdx - 1);
+						if (mat) {
+							diffuse[0] = mat->diffuse.r;
+							diffuse[1] = mat->diffuse.g;
+							diffuse[2] = mat->diffuse.b;
+							diffuse[3] = mat->diffuse.a;
+							emissive[0] = mat->emissive.r;
+							emissive[1] = mat->emissive.g;
+							emissive[2] = mat->emissive.b;
+						}
+					}
+					glUniform4fv(glGetUniformLocation(m_vesselShader, "uDiffuse"), 1, diffuse);
+					glUniform3fv(glGetUniformLocation(m_vesselShader, "uEmissive"), 1, emissive);
+
+					// Set texture if available
+					bool hasTexture = false;
+					if (grp && grp->TexIdx > 0 && grp->TexIdx <= nTex) {
+						SURFHANDLE hSurf = oapiGetTextureHandle(hMesh, grp->TexIdx);
+						if (hSurf) {
+							OGLTexture *tex = (OGLTexture*)hSurf;
+							if (tex->texId) {
+								glActiveTexture(GL_TEXTURE0);
+								glBindTexture(GL_TEXTURE_2D, tex->texId);
+								glUniform1i(glGetUniformLocation(m_vesselShader, "uTexture"), 0);
+								hasTexture = true;
+							}
+						}
+					}
+					glUniform1i(glGetUniformLocation(m_vesselShader, "uHasTexture"), hasTexture ? 1 : 0);
+
+					glBindVertexArray(cmg.vao);
+					glDrawElements(GL_TRIANGLES, cmg.indexCount, GL_UNSIGNED_INT, 0);
+				}
+			}
+		}
+		glBindVertexArray(0);
+		glBindTexture(GL_TEXTURE_2D, 0);
+		glUseProgram(0);
+	}
+
+	// 5) Render 2D overlay (HUD, panels, ImGui dialogs)
 	Render2DOverlay();
 
 	// Debug: save first few frames as BMP for visual inspection
@@ -641,6 +877,9 @@ HWND OGLClient::clbkCreateRenderWindow()
 	m_texPlanetShader = CreateProgram(texPlanetVertSrc, texPlanetFragSrc);
 	CreateTexturedSphere(64, 32, m_texSphereVAO, m_texSphereVBO, m_texSphereEBO, m_texSphereIndexCount);
 
+	// Create vessel mesh shader
+	m_vesselShader = CreateProgram(vesselVertSrc, vesselFragSrc);
+
 	// Determine texture search path from the executable location
 	// Try to find "Textures/" relative to current working dir or the binary location
 	{
@@ -661,8 +900,8 @@ HWND OGLClient::clbkCreateRenderWindow()
 		fprintf(stderr, "[OGLClient] Texture path: %s\n", m_texturePath.c_str());
 	}
 
-	fprintf(stderr, "[OGLClient] Stars: %d, PlanetShader: %u, TexPlanetShader: %u, SphereIdx: %d, TexSphereIdx: %d\n",
-		m_numStars, m_planetShader, m_texPlanetShader, m_sphereIndexCount, m_texSphereIndexCount);
+	fprintf(stderr, "[OGLClient] Stars: %d, PlanetShader: %u, TexPlanetShader: %u, VesselShader: %u, SphereIdx: %d, TexSphereIdx: %d\n",
+		m_numStars, m_planetShader, m_texPlanetShader, m_vesselShader, m_sphereIndexCount, m_texSphereIndexCount);
 
 	return (HWND)m_sdlWindow;
 }
@@ -678,6 +917,12 @@ void OGLClient::clbkDestroyRenderWindow(bool fastclose)
 	m_planetTexCache.clear();
 	m_planetTexLoaded = false;
 
+	// Clean up vessel mesh cache
+	for (auto &kv : m_meshCache) {
+		delete kv.second; // CachedMesh destructor releases GL objects
+	}
+	m_meshCache.clear();
+
 	if (m_starVAO) { glDeleteVertexArrays(1, &m_starVAO); m_starVAO = 0; }
 	if (m_starVBO) { glDeleteBuffers(1, &m_starVBO); m_starVBO = 0; }
 	if (m_starShader) { glDeleteProgram(m_starShader); m_starShader = 0; }
@@ -689,6 +934,7 @@ void OGLClient::clbkDestroyRenderWindow(bool fastclose)
 	if (m_texSphereVBO) { glDeleteBuffers(1, &m_texSphereVBO); m_texSphereVBO = 0; }
 	if (m_texSphereEBO) { glDeleteBuffers(1, &m_texSphereEBO); m_texSphereEBO = 0; }
 	if (m_texPlanetShader) { glDeleteProgram(m_texPlanetShader); m_texPlanetShader = 0; }
+	if (m_vesselShader) { glDeleteProgram(m_vesselShader); m_vesselShader = 0; }
 }
 
 bool OGLClient::clbkDisplayFrame()
@@ -785,6 +1031,68 @@ bool OGLClient::clbkGetSurfaceSize(SURFHANDLE surf, DWORD *w, DWORD *h)
 	*w = tex->width;
 	*h = tex->height;
 	return true;
+}
+
+// ============================================================================
+// GetOrCreateMeshCache - lazy-upload mesh data to GPU
+// ============================================================================
+
+CachedMesh *OGLClient::GetOrCreateMeshCache(MESHHANDLE hMesh)
+{
+	uintptr_t key = (uintptr_t)hMesh;
+	auto it = m_meshCache.find(key);
+	if (it != m_meshCache.end()) return it->second;
+
+	// Create new cache entry
+	CachedMesh *cached = new CachedMesh();
+	DWORD nGrp = oapiMeshGroupCount(hMesh);
+
+	for (DWORD g = 0; g < nGrp; g++) {
+		MESHGROUPEX *grp = oapiMeshGroupEx(hMesh, g);
+		if (!grp || !grp->nVtx || !grp->nIdx) {
+			cached->groups.push_back({0, 0, 0, 0});
+			continue;
+		}
+
+		CachedMeshGroup cmg;
+		cmg.indexCount = (int)grp->nIdx;
+
+		glGenVertexArrays(1, &cmg.vao);
+		glGenBuffers(1, &cmg.vbo);
+		glGenBuffers(1, &cmg.ebo);
+
+		glBindVertexArray(cmg.vao);
+
+		// Upload NTVERTEX data (32 bytes per vertex: x,y,z,nx,ny,nz,tu,tv)
+		glBindBuffer(GL_ARRAY_BUFFER, cmg.vbo);
+		glBufferData(GL_ARRAY_BUFFER, grp->nVtx * sizeof(NTVERTEX), grp->Vtx, GL_STATIC_DRAW);
+
+		// Upload WORD indices - convert to unsigned int for OpenGL
+		std::vector<unsigned int> indices(grp->nIdx);
+		for (DWORD i = 0; i < grp->nIdx; i++)
+			indices[i] = (unsigned int)grp->Idx[i];
+
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, cmg.ebo);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, grp->nIdx * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+
+		// layout(location = 0) in vec3 aPos
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(NTVERTEX), (void*)0);
+		glEnableVertexAttribArray(0);
+		// layout(location = 1) in vec3 aNormal
+		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(NTVERTEX), (void*)(3 * sizeof(float)));
+		glEnableVertexAttribArray(1);
+		// layout(location = 2) in vec2 aUV
+		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(NTVERTEX), (void*)(6 * sizeof(float)));
+		glEnableVertexAttribArray(2);
+
+		glBindVertexArray(0);
+
+		cached->groups.push_back(cmg);
+	}
+
+	m_meshCache[key] = cached;
+	fprintf(stderr, "[OGLClient] Cached mesh %p: %d groups\n", hMesh, (int)nGrp);
+	return cached;
 }
 
 // ============================================================================

@@ -14,9 +14,30 @@
 #include <OpenGL/gl3.h>
 #include <map>
 #include <string>
+#include <vector>
 #endif
 
 struct OGLTexture;
+
+// Cached OpenGL buffers for a single mesh group
+struct CachedMeshGroup {
+	GLuint vao;
+	GLuint vbo;
+	GLuint ebo;
+	int indexCount;
+};
+
+// Cached OpenGL buffers for an entire mesh (all groups)
+struct CachedMesh {
+	std::vector<CachedMeshGroup> groups;
+	~CachedMesh() {
+		for (auto &g : groups) {
+			if (g.vao) glDeleteVertexArrays(1, &g.vao);
+			if (g.vbo) glDeleteBuffers(1, &g.vbo);
+			if (g.ebo) glDeleteBuffers(1, &g.ebo);
+		}
+	}
+};
 
 namespace ogl {
 
@@ -104,6 +125,13 @@ private:
 
 	// Texture base directory
 	std::string m_texturePath;
+
+	// Vessel rendering
+	GLuint m_vesselShader;
+	std::map<uintptr_t, CachedMesh*> m_meshCache;
+
+	// Helper: get or create cached OpenGL buffers for a mesh
+	CachedMesh *GetOrCreateMeshCache(MESHHANDLE hMesh);
 };
 
 } // namespace ogl
