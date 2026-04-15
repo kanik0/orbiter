@@ -2281,10 +2281,12 @@ oapi::ParticleStream *Vessel::AddExhaustStream (ThrustSpec *ts, PARTICLESTREAMSP
 	}
 	contrail = tmp;
 	contrail[ncontrail] = gc->clbkCreateExhaustStream (pss, (OBJHANDLE)this, &ts->level, &ts->ref, &ts->dir);
-	if (pos) // local position reference
-		contrail[ncontrail]->SetFixedPos (MakeVECTOR3(*pos));
-	if (dir) // local direction reference
-		contrail[ncontrail]->SetFixedDir (MakeVECTOR3(*dir));
+	if (contrail[ncontrail]) {
+		if (pos) // local position reference
+			contrail[ncontrail]->SetFixedPos (MakeVECTOR3(*pos));
+		if (dir) // local direction reference
+			contrail[ncontrail]->SetFixedDir (MakeVECTOR3(*dir));
+	}
 	return contrail[ncontrail++];
 }
 

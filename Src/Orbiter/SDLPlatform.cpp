@@ -308,8 +308,9 @@ bool SDLPlatform::ProcessEvents()
 {
 	SDL_Event event;
 	while (SDL_PollEvent(&event)) {
-		// Forward all events to ImGui SDL2 backend
-		ImGui_ImplSDL2_ProcessEvent(&event);
+		// Forward events to ImGui SDL2 backend (only if ImGui is initialized)
+		if (ImGui::GetCurrentContext())
+			ImGui_ImplSDL2_ProcessEvent(&event);
 
 		switch (event.type) {
 		case SDL_QUIT:

@@ -297,7 +297,10 @@ void OGLClient::clbkImGuiInit() {
 	if (m_imguiInitialized) return;
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
-	ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+	ImGuiIO &io = ImGui::GetIO();
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+	// Disable viewports/platform windows (requires UpdatePlatformWindows which we don't call)
+	io.ConfigFlags &= ~ImGuiConfigFlags_ViewportsEnable;
 	ImGui::StyleColorsDark();
 	ImGui_ImplSDL2_InitForOpenGL(m_sdlWindow, m_sdlContext);
 	ImGui_ImplOpenGL3_Init("#version 410");
@@ -314,9 +317,10 @@ void OGLClient::clbkImGuiShutdown() {
 
 void OGLClient::clbkImGuiNewFrame() {
 	if (!m_imguiInitialized) return;
+	// Only do backend-specific new frame here.
+	// DlgMgr::ImGuiNewFrame() calls ImGui::NewFrame() after this.
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplSDL2_NewFrame();
-	ImGui::NewFrame();
 }
 
 void OGLClient::clbkImGuiRenderDrawData() {
@@ -509,6 +513,52 @@ void OGLClient::clbkRenderScene()
 
 	// 3) Render 2D overlay (HUD, panels, ImGui dialogs)
 	Render2DOverlay();
+
+	// Debug: save first few frames as BMP for visual inspection
+	static int frameCount = 0;
+	if (frameCount < 5) {
+		frameCount++;
+		if (frameCount == 3) { // save 3rd frame (let scene stabilize)
+			int w = m_viewW, h = m_viewH;
+			std::vector<unsigned char> pixels(w * h * 4);
+			glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+			// Write as BMP (bottom-up, RGB)
+			FILE *f = fopen("screenshot.bmp", "wb");
+			if (f) {
+				int rowSize = w * 3;
+				int pad = (4 - rowSize % 4) % 4;
+				int imgSize = (rowSize + pad) * h;
+				// BMP File Header (14 bytes)
+				unsigned char bmpFileHeader[14] = {'B','M', 0,0,0,0, 0,0,0,0, 54,0,0,0};
+				int fileSize = 54 + imgSize;
+				bmpFileHeader[2] = fileSize; bmpFileHeader[3] = fileSize>>8;
+				bmpFileHeader[4] = fileSize>>16; bmpFileHeader[5] = fileSize>>24;
+				fwrite(bmpFileHeader, 1, 14, f);
+				// BMP Info Header (40 bytes)
+				unsigned char bmpInfoHeader[40] = {};
+				bmpInfoHeader[0] = 40;
+				bmpInfoHeader[4] = w; bmpInfoHeader[5] = w>>8;
+				bmpInfoHeader[6] = w>>16; bmpInfoHeader[7] = w>>24;
+				bmpInfoHeader[8] = h; bmpInfoHeader[9] = h>>8;
+				bmpInfoHeader[10] = h>>16; bmpInfoHeader[11] = h>>24;
+				bmpInfoHeader[12] = 1; // planes
+				bmpInfoHeader[14] = 24; // bpp
+				fwrite(bmpInfoHeader, 1, 40, f);
+				// Pixel data (OpenGL is bottom-up, BMP is bottom-up, but we need BGR)
+				unsigned char padBytes[3] = {0,0,0};
+				for (int y = 0; y < h; y++) {
+					for (int x = 0; x < w; x++) {
+						int idx = (y * w + x) * 4;
+						unsigned char bgr[3] = {pixels[idx+2], pixels[idx+1], pixels[idx]};
+						fwrite(bgr, 1, 3, f);
+					}
+					if (pad) fwrite(padBytes, 1, pad, f);
+				}
+				fclose(f);
+				fprintf(stderr, "[OGLClient] Screenshot saved: screenshot.bmp (%dx%d)\n", w, h);
+			}
+		}
+	}
 }
 
 // ============================================================================
