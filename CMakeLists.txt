@@ -146,8 +146,9 @@ elseif(APPLE)
   set(CMAKE_BUILD_WITH_INSTALL_RPATH true)
   set(CMAKE_INSTALL_RPATH "@executable_path")
   # Allow dylibs to link against symbols from the Orbiter executable
-  # (on Windows these are resolved via the .lib import library)
   set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -undefined dynamic_lookup")
+  # Put all shared libraries (vessel/plugin modules) in the Modules directory
+  set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${ORBITER_BINARY_MODULE_DIR})
   add_compile_definitions(NOMINMAX)
   # Suppress OpenGL deprecation warnings on macOS
   add_compile_definitions(GL_SILENCE_DEPRECATION)

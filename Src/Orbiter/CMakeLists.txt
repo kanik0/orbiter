@@ -216,7 +216,7 @@ else()
 		OUTPUT_NAME Orbiter
 		FOLDER Core
 	)
-	target_compile_definitions(Orbiter PRIVATE NOGRAPHICS)
+	target_compile_definitions(Orbiter PRIVATE NOGRAPHICS GENERATE_LOG)
 endif()
 
 target_include_directories(Orbiter PUBLIC ${Orbiter_includes} ${TRACY_CLIENT_INCLUDE} ${imgui_SOURCE_DIR}/ ${imgui_SOURCE_DIR}/backends ${implot_SOURCE_DIR}/)

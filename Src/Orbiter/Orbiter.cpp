@@ -251,22 +251,38 @@ INT WINAPI WinMain (HINSTANCE hInstance, HINSTANCE, LPSTR strCmdLine, INT nCmdSh
 int main (int argc, char *argv[])
 {
 	// Verify working directory
+	// Debug: trace startup
+	{ FILE *f = fopen("Orbiter_startup.log", "w");
+	  if (f) { fprintf(f, "Orbiter starting...\n"); fclose(f); } }
+
 	char dir[1024];
 	GetCurrentDirectory(1024, dir);
 
 	SetEnvironmentVars();
+	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "Creating Orbiter instance...\n"); fclose(f); }
 	g_pOrbiter = new Orbiter; // application instance
 
+	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "Building cmdline...\n"); fclose(f); }
 	// Build a command line string from argv for the parser
 	std::string cmdline;
 	for (int i = 1; i < argc; i++) {
 		if (i > 1) cmdline += ' ';
 		cmdline += argv[i];
 	}
-	orbiter::CommandLine::Parse(g_pOrbiter, (char*)cmdline.c_str());
+	// Create a mutable copy - ParseCmdLine modifies the string in-place
+	char *cmdlineBuf = new char[cmdline.size() + 1];
+	strcpy(cmdlineBuf, cmdline.c_str());
+	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "Parsing: '%s'\n", cmdlineBuf); fclose(f); }
+	orbiter::CommandLine::Parse(g_pOrbiter, cmdlineBuf);
+	delete[] cmdlineBuf;
+	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "Parse done\n"); fclose(f); }
 
+	{ FILE *f = fopen("Orbiter_startup.log", "a");
+	  fprintf(f, "Initializing log... Cfg=%p\n", (void*)g_pOrbiter->Cfg());
+	  if (g_pOrbiter->Cfg()) fprintf(f, "  bAppendLog=%d\n", g_pOrbiter->Cfg()->CfgCmdlinePrm.bAppendLog);
+	  fclose(f); }
 	// Initialise the log
-	INITLOG("Orbiter.log", g_pOrbiter->Cfg()->CfgCmdlinePrm.bAppendLog);
+	INITLOG("Orbiter.log", false);  // Force non-append for debugging
 #ifdef ISBETA
 	LOGOUT("Build %s BETA [v.%06d]", __DATE__, g_pOrbiter->GetVersion());
 #else
@@ -492,9 +508,9 @@ HRESULT Orbiter::Create (HINSTANCE hInstance)
 
 	// Initialize SDL2 platform layer
 	m_pSDL = new orbiter::SDLPlatform(this);
-	if (!m_pSDL->Initialize(
-		pConfig->CfgDevPrm.WinW ? pConfig->CfgDevPrm.WinW : 1280,
-		pConfig->CfgDevPrm.WinH ? pConfig->CfgDevPrm.WinH : 800))
+	int sdlW = (pConfig->CfgDevPrm.WinW > 0 && pConfig->CfgDevPrm.WinW < 8192) ? pConfig->CfgDevPrm.WinW : 1280;
+	int sdlH = (pConfig->CfgDevPrm.WinH > 0 && pConfig->CfgDevPrm.WinH < 8192) ? pConfig->CfgDevPrm.WinH : 800;
+	if (!m_pSDL->Initialize(sdlW, sdlH))
 	{
 		LOGOUT("SDL2 initialization failed");
 		return E_FAIL;
@@ -535,11 +551,13 @@ HRESULT Orbiter::Create (HINSTANCE hInstance)
 
 	script = new ScriptInterface(this); TRACENEW
 
-	// preload modules from command line requests
+#ifdef _WIN32
 	LoadModules("Modules\\Plugin", pConfig->CfgCmdlinePrm.LoadPlugins);
-
-	// preload active plugin modules
 	LoadModules("Modules\\Plugin", pConfig->GetActiveModules());
+#else
+	LoadModules("Modules/Plugin", pConfig->CfgCmdlinePrm.LoadPlugins);
+	LoadModules("Modules/Plugin", pConfig->GetActiveModules());
+#endif
 
 	// preload startup plugin modules
 	LoadStartupModules();
@@ -625,7 +643,16 @@ int Orbiter::GetVersion () const
 //! @param cbufOut returns path to the plugin DLL
 static bool FindStandaloneDll(const char *path, const char *name, char* cbufOut)
 {
+#ifdef _WIN32
 	sprintf (cbufOut, "%s\\%s.dll", path, name);
+#else
+	sprintf (cbufOut, "%s/lib%s.dylib", path, name);
+	if (fs::exists(cbufOut)) return true;
+	sprintf (cbufOut, "%s/%s.dylib", path, name);
+	if (fs::exists(cbufOut)) return true;
+	// Also try without lib prefix in subdirectory
+	sprintf (cbufOut, "%s/%s", path, name);
+#endif
 	return fs::exists(cbufOut);
 }
 
@@ -634,7 +661,13 @@ static bool FindStandaloneDll(const char *path, const char *name, char* cbufOut)
 //! @param cbufOut returns path to the plugin DLL
 static bool FindDllInPluginFolder(const char *path, const char *name, char* cbufOut)
 {
+#ifdef _WIN32
 	sprintf(cbufOut, "%s\\%s\\%s.dll", path, name, name);
+#else
+	sprintf(cbufOut, "%s/%s/lib%s.dylib", path, name, name);
+	if (fs::exists(cbufOut)) return true;
+	sprintf(cbufOut, "%s/%s/%s.dylib", path, name, name);
+#endif
 	return fs::exists(cbufOut);
 }
 
@@ -646,9 +679,20 @@ void Orbiter::LoadModules(const std::string& path, const std::list<std::string>&
 
 void Orbiter::LoadModules(const std::string& path)
 {
+	if (!fs::is_directory(path)) return;
 	for (const auto& entry : fs::directory_iterator(path)) {
 		auto fpath = entry.path();
-		if (fpath.extension().string() == ".dll") {
+		auto ext = fpath.extension().string();
+#ifdef _WIN32
+		if (ext == ".dll") {
+#else
+		if (ext == ".dylib") {
+			std::string stem = fpath.stem().string();
+			// Remove "lib" prefix if present (CMake generates libFoo.dylib)
+			if (stem.substr(0, 3) == "lib") stem = stem.substr(3);
+			LoadModule(path.c_str(), stem.c_str());
+		} else if (ext == ".dll") {
+#endif
 			LoadModule(path.c_str(), fpath.stem().string().c_str());
 		}
 	}
@@ -660,7 +704,11 @@ void Orbiter::LoadModules(const std::string& path)
 //-----------------------------------------------------------------------------
 void Orbiter::LoadStartupModules()
 {
+#ifdef _WIN32
 	LoadModules("Modules\\Startup");
+#else
+	LoadModules("Modules/Startup");
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -683,10 +731,14 @@ HINSTANCE Orbiter::LoadModule (const char *path, const char *name)
 		char cbuf2[256];
 		if (FindDllInPluginFolder(path, name, cbuf2))
 		{
+#ifdef _WIN32
 			// Convert to absolute path, otherwise LoadLibraryEx fails with error code 87.
-			// See https://stackoverflow.com/questions/36275535/loadlibraryex-error-87-the-parameter-is-incorrect
 			sprintf(cbuf, "%s\\%s", cwd, cbuf2);
 			hDLL = LoadLibraryEx(cbuf, NULL, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+#else
+			sprintf(cbuf, "%s/%s", cwd, cbuf2);
+			hDLL = LoadLibrary(cbuf);
+#endif
 		}
 		else
 		{
