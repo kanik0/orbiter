@@ -58,6 +58,7 @@
 #include "imgui_impl_win32.h"
 #else
 #include "SDLPlatform.h"
+#include "OGLClient.h"
 #include <OpenGL/gl.h>
 #endif
 #include <filesystem>
@@ -502,6 +503,16 @@ HRESULT Orbiter::Create (HINSTANCE hInstance)
 	viewH = m_pSDL->GetHeight();
 	hRenderWnd = m_pSDL->GetWindow();
 	LOGOUT("SDL2 window created: %dx%d", viewW, viewH);
+
+	// Register OpenGL graphics client
+	ogl::OGLClient *oglClient = new ogl::OGLClient(nullptr);
+	oglClient->SetSDLWindow(m_pSDL->GetWindow(), m_pSDL->GetGLContext());
+	if (!oapiRegisterGraphicsClient(oglClient)) {
+		fprintf(stderr, "[Orbiter] Failed to register OGL graphics client\n");
+		delete oglClient;
+	} else {
+		fprintf(stderr, "[Orbiter] OpenGL graphics client registered\n");
+	}
 #endif
 
 	if (pConfig->CfgCmdlinePrm.bFastExit)
@@ -1138,14 +1149,7 @@ INT Orbiter::Run ()
 		}
 
 		if (bRenderOnce) {
-			if (m_pSDL) {
-				// Clear to a dark blue background (space)
-				glClearColor(0.0f, 0.0f, 0.05f, 1.0f);
-				glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-				// TODO: call graphics client render here
-				Render3DEnvironment();
-				m_pSDL->SwapBuffers();
-			}
+			Render3DEnvironment();
 			bRenderOnce = FALSE;
 		}
 

@@ -175,6 +175,7 @@ elseif(APPLE)
 		${OPENGL_LIBRARIES}
 		$<TARGET_FILE:Orbitersdk>
 		$<TARGET_FILE:DlgCtrl>
+		$<TARGET_FILE:OGLClient>
 		"-framework CoreFoundation"
 		"-framework IOKit"
 		dl
@@ -221,11 +222,14 @@ endif()
 target_include_directories(Orbiter PUBLIC ${Orbiter_includes} ${TRACY_CLIENT_INCLUDE} ${imgui_SOURCE_DIR}/ ${imgui_SOURCE_DIR}/backends ${implot_SOURCE_DIR}/)
 
 if(APPLE)
-	target_include_directories(Orbiter PUBLIC ${SDL2_INCLUDE_DIRS})
+	target_include_directories(Orbiter PUBLIC ${SDL2_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/OVP/OGLClient)
 endif()
 
 target_link_libraries(Orbiter ${Orbiter_common_libs} ${Orbiter_libs} ${TRACY_CLIENT})
 
+if(NOT WIN32)
+	list(APPEND Orbiter_depends OGLClient)
+endif()
 add_dependencies(Orbiter ${Orbiter_depends})
 
 # Installation: Orbiter executable
