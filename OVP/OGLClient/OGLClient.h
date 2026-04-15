@@ -67,9 +67,6 @@ public:
 #endif
 
 private:
-	void RenderStarfield();
-	void RenderHUD();
-
 #ifndef _WIN32
 	SDL_Window *m_sdlWindow;
 	SDL_GLContext m_sdlContext;
@@ -79,10 +76,15 @@ private:
 	bool m_fullscreen;
 	bool m_imguiInitialized;
 
-	// Simple star shader
+	// Starfield
 	GLuint m_starVAO, m_starVBO;
 	GLuint m_starShader;
 	int m_numStars;
+
+	// Planet rendering
+	GLuint m_planetShader;
+	GLuint m_sphereVAO, m_sphereVBO, m_sphereEBO;
+	int m_sphereIndexCount;
 };
 
 } // namespace ogl
