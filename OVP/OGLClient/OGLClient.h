@@ -137,6 +137,16 @@ private:
 	// Helper: get or create cached OpenGL buffers for a mesh
 	CachedMesh *GetOrCreateMeshCache(MESHHANDLE hMesh);
 
+	// Exhaust rendering
+	GLuint m_exhaustShader;
+	GLuint m_exhaustVAO, m_exhaustVBO, m_exhaustEBO;
+	OGLTexture *m_exhaustTexture;
+	bool m_exhaustInitialized;
+	void InitExhaust();
+	void RenderExhausts(VESSEL *vessel, const MATRIX3 &vrot,
+	                    float tx, float ty, float tz, float scale,
+	                    const float *vp, const VECTOR3 &camPos);
+
 	// Planetary ring rendering
 	GLuint m_ringShader;
 	GLuint m_ringVAO, m_ringVBO, m_ringEBO;

@@ -230,11 +230,10 @@ resolves to Resources/ when in .app or to exe dir when running standalone.
 ### Remaining Gaps (all visual/polish — core sim is functional)
 1. **Cloud layers**: Earth clouds overlay
 2. **Atmospheric scattering**: Sunset/haze effects
-3. **Exhaust particles**: Thruster flame visualization
-4. **Night city lights**: Texture overlay on dark side
-5. **Audio**: Sound effects via OpenAL or SDL_mixer
+3. **Night city lights**: Texture overlay on dark side
+4. **Audio**: Sound effects via OpenAL or SDL_mixer
 
 ### Completed Visual Features
-- **Planetary rings**: Saturn rings implemented via textured annulus with alpha blending.
-  Ring texture (4096x1 DDS) loaded, geometry generated as 72-segment annulus scaled
-  by inner/outer radius uniforms. Rendered with GL_BLEND, no face culling.
+- **Planetary rings**: Saturn rings via textured annulus with alpha blending
+- **Exhaust plumes**: Billboard quads with additive blending, per-thruster
+  position/direction/level from EXHAUSTSPEC API, Exhaust.dds texture

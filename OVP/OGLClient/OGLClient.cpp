@@ -194,6 +194,31 @@ void main() {
 }
 )";
 
+// Exhaust shader - additive blended billboard quad
+static const char *exhaustVertSrc = R"(
+#version 410 core
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec2 aUV;
+uniform mat4 uViewProj;
+out vec2 vUV;
+void main() {
+    gl_Position = uViewProj * vec4(aPos, 1.0);
+    vUV = aUV;
+}
+)";
+
+static const char *exhaustFragSrc = R"(
+#version 410 core
+in vec2 vUV;
+uniform sampler2D uTexture;
+uniform float uAlpha;
+out vec4 FragColor;
+void main() {
+    vec4 color = texture(uTexture, vUV);
+    FragColor = vec4(color.rgb * uAlpha, color.a * uAlpha);
+}
+)";
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -340,6 +365,8 @@ OGLClient::OGLClient(HINSTANCE hInstance)
 	  m_texPlanetShader(0), m_texSphereVAO(0), m_texSphereVBO(0), m_texSphereEBO(0), m_texSphereIndexCount(0),
 	  m_planetTexLoaded(false),
 	  m_vesselShader(0),
+	  m_exhaustShader(0), m_exhaustVAO(0), m_exhaustVBO(0), m_exhaustEBO(0),
+	  m_exhaustTexture(nullptr), m_exhaustInitialized(false),
 	  m_ringShader(0), m_ringVAO(0), m_ringVBO(0), m_ringEBO(0),
 	  m_ringIndexCount(0), m_ringTexture(nullptr), m_ringsInitialized(false)
 {
@@ -833,6 +860,22 @@ void OGLClient::clbkRenderScene()
 		glBindVertexArray(0);
 		glBindTexture(GL_TEXTURE_2D, 0);
 		glUseProgram(0);
+
+		// Render exhaust plumes for all vessels
+		InitExhaust();
+		for (DWORD v = 0; v < nVessel; v++) {
+			OBJHANDLE hV = oapiGetVesselByIndex(v);
+			if (!hV) continue;
+			VESSEL *vsl = oapiGetVesselInterface(hV);
+			if (!vsl) continue;
+			VECTOR3 vgp; oapiGetGlobalPos(hV, &vgp);
+			double vvx = vgp.x - camPos.x, vvy = vgp.y - camPos.y, vvz = vgp.z - camPos.z;
+			double vd = sqrt(vvx*vvx + vvy*vvy + vvz*vvz);
+			if (vd > 1e5) continue;
+			double sc = (vd > 1000.0) ? 1000.0/vd : 1.0;
+			MATRIX3 vr; oapiGetRotationMatrix(hV, &vr);
+			RenderExhausts(vsl, vr, (float)(vvx*sc), (float)(vvy*sc), (float)(vvz*sc), (float)sc, vp, camPos);
+		}
 	}
 
 	// 5) Render 2D overlay (HUD, panels, ImGui dialogs)
@@ -1185,6 +1228,126 @@ OGLTexture *OGLClient::LoadPlanetTexture(const char *planetName)
 	fprintf(stderr, "[OGLClient] No texture found for planet '%s'\n", planetName);
 	return nullptr;
 }
+// ============================================================================
+// Exhaust Rendering
+// ============================================================================
+
+void OGLClient::InitExhaust()
+{
+	if (m_exhaustInitialized) return;
+	m_exhaustInitialized = true;
+
+	m_exhaustShader = CreateProgram(exhaustVertSrc, exhaustFragSrc);
+
+	// Load exhaust texture
+	std::string path = m_texturePath + "Exhaust.dds";
+	if (FileExists(path.c_str()))
+		m_exhaustTexture = OGLTexture::LoadDDS(path.c_str());
+
+	// Create a unit quad (vertices updated per-exhaust via glBufferSubData)
+	// 4 vertices for the main flame quad
+	float verts[] = {
+		// pos x,y,z, uv u,v
+		0,0,0, 0.24f,0,
+		0,0,0, 0.24f,1,
+		0,0,0, 0.01f,0,
+		0,0,0, 0.01f,1,
+	};
+	unsigned int idx[] = {0,1,2, 3,2,1};
+
+	glGenVertexArrays(1, &m_exhaustVAO);
+	glGenBuffers(1, &m_exhaustVBO);
+	glGenBuffers(1, &m_exhaustEBO);
+	glBindVertexArray(m_exhaustVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, m_exhaustVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_DYNAMIC_DRAW);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_exhaustEBO);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(idx), idx, GL_STATIC_DRAW);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5*sizeof(float), (void*)0);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5*sizeof(float), (void*)(3*sizeof(float)));
+	glEnableVertexAttribArray(1);
+	glBindVertexArray(0);
+}
+
+void OGLClient::RenderExhausts(VESSEL *vessel, const MATRIX3 &vrot,
+                                float tx, float ty, float tz, float scale,
+                                const float *vp, const VECTOR3 &camPos)
+{
+	if (!m_exhaustShader || !m_exhaustVAO || !m_exhaustTexture) return;
+
+	DWORD nExhaust = vessel->GetExhaustCount();
+	if (nExhaust == 0) return;
+
+	glUseProgram(m_exhaustShader);
+	glUniformMatrix4fv(glGetUniformLocation(m_exhaustShader, "uViewProj"), 1, GL_FALSE, vp);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, m_exhaustTexture->texId);
+	glUniform1i(glGetUniformLocation(m_exhaustShader, "uTexture"), 0);
+
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_ONE, GL_ONE); // additive blending
+	glDepthMask(GL_FALSE);
+
+	// Camera direction for billboarding (from camera-relative vessel position)
+	float cdx = -tx, cdy = -ty, cdz = -tz;
+	float cdlen = sqrtf(cdx*cdx + cdy*cdy + cdz*cdz);
+	if (cdlen > 0) { cdx /= cdlen; cdy /= cdlen; cdz /= cdlen; }
+
+	for (DWORD i = 0; i < nExhaust; i++) {
+		double level = vessel->GetExhaustLevel(i);
+		if (level < 0.01) continue;
+
+		EXHAUSTSPEC es;
+		if (!vessel->GetExhaustSpec(i, &es)) continue;
+		if (!es.lpos || !es.ldir) continue;
+
+		float lsz = (float)(es.lsize * level * scale);
+		float wsz = (float)(es.wsize * level * scale);
+		if (lsz < 0.001f) continue;
+
+		// Exhaust position in vessel-local frame
+		VECTOR3 lp = *es.lpos;
+		VECTOR3 ld = *es.ldir;
+		// Transform to global camera-relative frame
+		float ex = (float)(vrot.m11*lp.x + vrot.m12*lp.y + vrot.m13*lp.z) * scale + tx;
+		float ey = (float)(vrot.m21*lp.x + vrot.m22*lp.y + vrot.m23*lp.z) * scale + ty;
+		float ez = (float)(vrot.m31*lp.x + vrot.m32*lp.y + vrot.m33*lp.z) * scale + tz;
+		// Exhaust direction in global frame (negative = flame direction)
+		float dx = -(float)(vrot.m11*ld.x + vrot.m12*ld.y + vrot.m13*ld.z);
+		float dy = -(float)(vrot.m21*ld.x + vrot.m22*ld.y + vrot.m23*ld.z);
+		float dz = -(float)(vrot.m31*ld.x + vrot.m32*ld.y + vrot.m33*ld.z);
+
+		// Billboard: perpendicular to camera-exhaust direction
+		float sx = cdy*dz - cdz*dy;
+		float sy = cdz*dx - cdx*dz;
+		float sz = cdx*dy - cdy*dx;
+		float slen = sqrtf(sx*sx + sy*sy + sz*sz);
+		if (slen < 1e-6f) { sx = 1; sy = 0; sz = 0; slen = 1; }
+		sx /= slen; sy /= slen; sz /= slen;
+
+		// Build quad vertices: base at exhaust pos, tip along direction
+		float hw = wsz * 0.5f;
+		float verts[] = {
+			ex - sx*hw, ey - sy*hw, ez - sz*hw,  0.24f, 0.0f,
+			ex + sx*hw, ey + sy*hw, ez + sz*hw,  0.24f, 1.0f,
+			ex + dx*lsz - sx*hw*0.2f, ey + dy*lsz - sy*hw*0.2f, ez + dz*lsz - sz*hw*0.2f,  0.01f, 0.0f,
+			ex + dx*lsz + sx*hw*0.2f, ey + dy*lsz + sy*hw*0.2f, ez + dz*lsz + sz*hw*0.2f,  0.01f, 1.0f,
+		};
+
+		glBindVertexArray(m_exhaustVAO);
+		glBindBuffer(GL_ARRAY_BUFFER, m_exhaustVBO);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
+		glUniform1f(glGetUniformLocation(m_exhaustShader, "uAlpha"), (float)level);
+		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+	}
+
+	glBindVertexArray(0);
+	glDepthMask(GL_TRUE);
+	glDisable(GL_BLEND);
+	glUseProgram(0);
+}
+
 // ============================================================================
 // Planetary Ring Rendering
 // ============================================================================
