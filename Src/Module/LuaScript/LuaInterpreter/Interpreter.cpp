@@ -12,6 +12,8 @@
 
 using std::min;
 using std::max;
+using oapi::Sketchpad;
+using oapi::FVECTOR4;
 
 typedef struct {
 	NTVERTEX *vtx;  // vertex array

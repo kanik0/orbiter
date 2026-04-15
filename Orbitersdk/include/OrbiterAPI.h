@@ -6408,7 +6408,7 @@ OAPIFUNC void oapiWriteLogV (const char *format, ...);
 	* \param ... List of output parameters. Must match the parameter flags in the format string.
 	* \sa oapiWriteLog, oapiWriteLogV
 	*/
-#define oapiWriteLogError(format, ...) __writeLogError(__FUNCTION__,__FILE__,__LINE__, format, __VA_ARGS__)
+#define oapiWriteLogError(format, ...) __writeLogError(__FUNCTION__,__FILE__,__LINE__, format, ##__VA_ARGS__)
 OAPIFUNC void __writeLogError(const char *func, const char *file, int line, const char *format, ...);
 
    /**

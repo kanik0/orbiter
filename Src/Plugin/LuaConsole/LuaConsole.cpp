@@ -198,7 +198,6 @@ public:
 // Global parameters
 
 LuaConsole *g_Module = NULL;
-ConsoleConfig *g_Config = NULL;
 
 // ==============================================================
 // class LuaConsole
@@ -331,7 +330,7 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 
 DLLCLBK void ExitModule (HINSTANCE hDLL)
 {
-	delete g_Config;
+	// ConsoleConfig removed (was Launchpad-era config)
 }
 
 // ==============================================================

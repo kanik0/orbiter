@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstdio>
+#include <cstdarg>
 #include <cstdlib>
 #include <cerrno>
 #include <string>
@@ -207,7 +208,24 @@ inline BOOL OrbiterFreeLibrary(HMODULE mod) {
 #define __int64 int64_t
 #define lstrlen strlen
 #define _snprintf snprintf
-#define sprintf_s snprintf
+// sprintf_s: MSVC has template overload for arrays that deduces size.
+// Provide both: sprintf_s(buf, size, fmt, ...) and sprintf_s(buf, fmt, ...)
+// by detecting if second arg is integer (size) or char* (format).
+template<size_t N>
+inline int sprintf_s(char (&buf)[N], const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    int r = vsnprintf(buf, N, fmt, args);
+    va_end(args);
+    return r;
+}
+inline int sprintf_s(char* buf, size_t n, const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    int r = vsnprintf(buf, n, fmt, args);
+    va_end(args);
+    return r;
+}
 inline int strcpy_s(char* dest, size_t destsz, const char* src) {
 	strncpy(dest, src, destsz);
 	if (destsz > 0) dest[destsz-1] = '\0';
@@ -273,13 +291,14 @@ inline BOOL DestroyWindow(HWND) { return FALSE; }
 inline HCURSOR SetCursor(HCURSOR) { return nullptr; }
 inline HCURSOR LoadCursor(HINSTANCE, const char*) { return nullptr; }
 inline HICON LoadIcon(HINSTANCE, const char*) { return nullptr; }
+inline HBITMAP LoadBitmap(HINSTANCE, const char*) { return nullptr; }
 inline void InitCommonControls() {}
 inline BOOL SystemParametersInfo(UINT, UINT, void*, UINT) { return FALSE; }
 inline BOOL GetClassInfo(HINSTANCE, const char*, void*) { return FALSE; }
 inline BOOL RegisterClass(const void*) { return FALSE; }
 inline BOOL UnregisterClass(const char*, HINSTANCE) { return FALSE; }
 inline HWND CreateDialog(HINSTANCE, const char*, HWND, DLGPROC) { return nullptr; }
-inline int DialogBox(HINSTANCE, const char*, HWND, void*) { return 0; }
+inline int DialogBox(HINSTANCE, const char*, HWND, DLGPROC) { return 0; }
 inline void RegisterHtmlCtrl(HINSTANCE, bool) {}
 #define MAKEINTRESOURCE(i) ((const char*)(uintptr_t)(i))
 #define IDC_WAIT nullptr
@@ -311,7 +330,7 @@ typedef char  TCHAR;
 typedef char* LPTSTR;
 typedef const char* LPCTSTR;
 typedef struct { SHORT x; SHORT y; } POINTS;
-typedef void* LPNMHDR;
+// LPNMHDR defined after NMHDR struct below
 #define SW_HIDE 0
 #define SW_SHOW 5
 #define CP_UTF8 65001
@@ -483,6 +502,8 @@ inline BOOL IsDialogMessage(HWND, MSG*) { return FALSE; }
 typedef DWORD (*LPTHREAD_START_ROUTINE)(void*);
 inline HANDLE CreateThread(void*, size_t, LPTHREAD_START_ROUTINE, void*, DWORD, DWORD*) { return nullptr; }
 inline HANDLE CreateEvent(void*, BOOL, BOOL, const char*) { return nullptr; }
+inline HANDLE CreateMutex(void*, BOOL, const char*) { return (HANDLE)1; }
+inline BOOL ReleaseMutex(HANDLE) { return TRUE; }
 inline BOOL CloseHandle(HANDLE) { return FALSE; }
 inline DWORD WaitForSingleObject(HANDLE, DWORD) { return 0; }
 inline BOOL PostThreadMessage(DWORD, UINT, WPARAM, LPARAM) { return FALSE; }
@@ -535,6 +556,60 @@ inline BOOL DeleteDC(HDC) { return FALSE; }
 #define NULL_PEN 0
 #define WHITE_PEN 0
 
+// DLL entry point constants
+#ifndef DLL_PROCESS_ATTACH
+#define DLL_PROCESS_ATTACH 1
+#endif
+#ifndef DLL_PROCESS_DETACH
+#define DLL_PROCESS_DETACH 0
+#endif
+
+// GDI background mode
+#ifndef OPAQUE
+#define OPAQUE 2
+#endif
+
+// Bitmap file/info header types (for loading BMP files)
+typedef struct {
+	WORD  bfType;
+	DWORD bfSize;
+	WORD  bfReserved1;
+	WORD  bfReserved2;
+	DWORD bfOffBits;
+} __attribute__((packed)) BITMAPFILEHEADER;
+
+#ifndef __BITMAPINFOHEADER_DEFINED
+#define __BITMAPINFOHEADER_DEFINED
+typedef struct {
+	DWORD biSize; LONG biWidth; LONG biHeight;
+	WORD biPlanes; WORD biBitCount; DWORD biCompression;
+	DWORD biSizeImage; LONG biXPelsPerMeter; LONG biYPelsPerMeter;
+	DWORD biClrUsed; DWORD biClrImportant;
+} BITMAPINFOHEADER;
+typedef struct { BITMAPINFOHEADER bmiHeader; } BITMAPINFO;
+#define BI_RGB 0
+#define DIB_RGB_COLORS 0
+#endif
+
+typedef struct { BYTE rgbtBlue; BYTE rgbtGreen; BYTE rgbtRed; } RGBTRIPLE;
+
+typedef unsigned char byte;
+
+// Additional GDI drawing stubs
+inline BOOL Ellipse(HDC, int, int, int, int) { return FALSE; }
+inline BOOL Arc(HDC, int, int, int, int, int, int, int, int) { return FALSE; }
+inline BOOL Polygon(HDC, const POINT*, int) { return FALSE; }
+inline BOOL Pie(HDC, int, int, int, int, int, int, int, int) { return FALSE; }
+inline HBITMAP CreateCompatibleBitmap(HDC, int, int) { return nullptr; }
+inline BOOL SetDIBits(HDC, HBITMAP, UINT, UINT, const void*, const void*, UINT) { return FALSE; }
+#define PS_NULL 5
+#define HS_BDIAGONAL 3
+#define OUT_RASTER_PRECIS 6
+#define PROOF_QUALITY 2
+#define DEFAULT_PITCH 0
+#define VARIABLE_PITCH 2
+inline void* CreateHatchBrush(int, COLORREF) { return nullptr; }
+
 // DirectInput type stubs
 typedef struct { char tszProductName[260]; } DIDEVICEINSTANCE;
 typedef struct { DWORD dwOfs; DWORD dwData; DWORD dwTimeStamp; DWORD dwSequence; } DIDEVICEOBJECTDATA;
@@ -544,7 +619,9 @@ typedef struct { LONG lX; LONG lY; LONG lZ; LONG lRx; LONG lRy; LONG lRz; LONG r
 
 // Common Control types
 typedef void* HTREEITEM;
+typedef void* HIMAGELIST;
 typedef struct { HWND hwndFrom; UINT_PTR idFrom; UINT code; } NMHDR;
+typedef NMHDR* LPNMHDR;
 
 // More Win32 API stubs
 #define _strdup strdup
@@ -651,8 +728,34 @@ namespace ConsoleManager {
 // Additional Win32 API stubs for vessel/plugin modules
 #define ZeroMemory(p,n) memset((p),0,(n))
 #define CopyMemory(dst,src,n) memcpy((dst),(src),(n))
+#ifndef ARRAYSIZE
+#define ARRAYSIZE(a) (sizeof(a)/sizeof(a[0]))
+#endif
 typedef void* HGLRC;
 typedef void* CAMERAHANDLE;
+
+// WGL (Windows OpenGL) stubs
+typedef struct {
+	WORD nSize; WORD nVersion; DWORD dwFlags;
+	BYTE iPixelType; BYTE cColorBits; BYTE cRedBits; BYTE cRedShift;
+	BYTE cGreenBits; BYTE cGreenShift; BYTE cBlueBits; BYTE cBlueShift;
+	BYTE cAlphaBits; BYTE cAlphaShift; BYTE cAccumBits;
+	BYTE cAccumRedBits; BYTE cAccumGreenBits; BYTE cAccumBlueBits;
+	BYTE cAccumAlphaBits; BYTE cDepthBits; BYTE cStencilBits;
+	BYTE cAuxBuffers; BYTE iLayerType; BYTE bReserved;
+	DWORD dwLayerMask; DWORD dwVisibleMask; DWORD dwDamageMask;
+} PIXELFORMATDESCRIPTOR;
+#define PFD_DRAW_TO_BITMAP  0x00000008
+#define PFD_SUPPORT_OPENGL  0x00000020
+#define PFD_SUPPORT_GDI     0x00000010
+#define PFD_TYPE_RGBA       0
+inline int ChoosePixelFormat(HDC, const PIXELFORMATDESCRIPTOR*) { return 1; }
+inline BOOL SetPixelFormat(HDC, int, const PIXELFORMATDESCRIPTOR*) { return FALSE; }
+inline HGLRC wglCreateContext(HDC) { return nullptr; }
+inline BOOL wglMakeCurrent(HDC, HGLRC) { return FALSE; }
+inline BOOL wglDeleteContext(HGLRC) { return FALSE; }
+inline int DescribePixelFormat(HDC, int, UINT, PIXELFORMATDESCRIPTOR*) { return 0; }
+inline HBITMAP CreateDIBSection(HDC, const BITMAPINFO*, UINT, void**, HANDLE, DWORD) { return nullptr; }
 #define TCM_INSERTITEM 0
 typedef struct { NMHDR hdr; int iPos; int iDelta; } *LPNMUPDOWN;
 #define _beginthreadex(sec,stack,fn,arg,flags,id) 0
@@ -679,7 +782,17 @@ inline BOOL TerminateThread(HANDLE, DWORD) { return FALSE; }
 inline int SetBkMode(HDC, int) { return 0; }
 inline COLORREF SetTextColor(HDC, COLORREF) { return 0; }
 inline COLORREF SetBkColor(HDC, COLORREF) { return 0; }
+inline UINT SetTextAlign(HDC, UINT) { return 0; }
 #define TRANSPARENT 1
+#ifndef TA_CENTER
+#define TA_CENTER 6
+#endif
+#ifndef TA_RIGHT
+#define TA_RIGHT  2
+#endif
+#ifndef TA_LEFT
+#define TA_LEFT   0
+#endif
 
 #endif // _WIN32
 

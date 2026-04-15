@@ -2,8 +2,13 @@
 // Licensed under the MIT License
 
 #include "instruments.h"
-#include < GL/gl.h >                                
-#include < GL/glu.h >
+#ifdef __APPLE__
+#include <OpenGL/gl.h>
+#include <OpenGL/glu.h>
+#else
+#include <GL/gl.h>
+#include <GL/glu.h>
+#endif
 #include "vectors.h"        
 #include "panel.cpp"
 #include "math.h"

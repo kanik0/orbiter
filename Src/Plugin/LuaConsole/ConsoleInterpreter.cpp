@@ -2,6 +2,7 @@
 // Licensed under the MIT License
 
 #include "ConsoleInterpreter.h"
+#include "LuaConsole.h"
 
 // ==============================================================
 // Console interpreter class implementation

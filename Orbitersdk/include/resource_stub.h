@@ -21,6 +21,12 @@
 #ifndef CB_SETCURSEL
 #define CB_SETCURSEL 0x014E
 #endif
+#ifndef CB_GETCOUNT
+#define CB_GETCOUNT 0x0146
+#endif
+#ifndef CB_ERR
+#define CB_ERR (-1)
+#endif
 #ifndef CB_ADDSTRING
 #define CB_ADDSTRING 0x0143
 #endif
@@ -213,8 +219,7 @@ inline BOOL VerQueryValueA(const void*, const char*, void**, UINT*) { return FAL
 // Shell stubs
 inline int SHCreateDirectoryEx(HWND, const char*, void*) { return 0; }
 
-// GDI text
-inline UINT SetTextAlign(HDC, UINT) { return 0; }
+// GDI text (SetTextAlign now in OrbiterPlatform.h)
 
 // Window styles
 #define WS_OVERLAPPED   0x00000000L
@@ -266,10 +271,12 @@ inline HGLOBAL LoadResource(HMODULE, HRSRC) { return nullptr; }
 inline void* LockResource(HGLOBAL) { return nullptr; }
 
 // Bitmap info
+#ifndef __BITMAPINFOHEADER_DEFINED
 typedef struct { DWORD biSize; LONG biWidth; LONG biHeight; WORD biPlanes; WORD biBitCount; DWORD biCompression; } BITMAPINFOHEADER;
 typedef struct { BITMAPINFOHEADER bmiHeader; } BITMAPINFO;
 #define BI_RGB 0
 #define DIB_RGB_COLORS 0
+#endif
 #define ARRAYSIZE(a) (sizeof(a)/sizeof(a[0]))
 
 // Listbox
@@ -314,7 +321,7 @@ typedef struct { DWORD Data1; WORD Data2; WORD Data3; BYTE Data4[8]; } GUID;
 
 // Additional dialog/UI stubs
 inline BOOL EndDialog(HWND, INT_PTR) { return FALSE; }
-inline HBITMAP LoadBitmap(HINSTANCE, const char*) { return nullptr; }
+// LoadBitmap now in OrbiterPlatform.h
 #define _access access
 #define IDCANCEL 2
 #define IDOK 1
@@ -351,6 +358,15 @@ typedef struct { DWORD style; WNDPROC lpfnWndProc; int cbClsExtra; int cbWndExtr
 #define TCM_INSERTITEM 0x1307
 #define TCIF_TEXT 1
 typedef struct { UINT mask; char* pszText; int cchTextMax; int iImage; LPARAM lParam; } TCITEM;
+typedef TCITEM TC_ITEM;
+inline int TabCtrl_GetCurSel(HWND) { return 0; }
+inline int TabCtrl_InsertItem(HWND, int, const TCITEM*) { return 0; }
+#define TCN_SELCHANGE (-551)
+
+// Common controls init
+typedef struct { DWORD dwSize; DWORD dwICC; } INITCOMMONCONTROLSEX;
+#define ICC_TREEVIEW_CLASSES 0x0002
+inline BOOL InitCommonControlsEx(const INITCOMMONCONTROLSEX*) { return FALSE; }
 
 // Up-down control
 #ifndef UDM_SETRANGE
@@ -365,6 +381,62 @@ typedef struct { UINT mask; char* pszText; int cchTextMax; int iImage; LPARAM lP
 // Draw item
 #define WM_DRAWITEM 0x002B
 typedef struct { UINT CtlType; UINT CtlID; UINT itemID; UINT itemAction; HWND hwndItem; HDC hDC; RECT rcItem; } DRAWITEMSTRUCT;
+
+// ImageList stubs
+inline HIMAGELIST ImageList_Create(int, int, UINT, int, int) { return nullptr; }
+inline int ImageList_Add(HIMAGELIST, HBITMAP, HBITMAP) { return 0; }
+inline BOOL ImageList_Destroy(HIMAGELIST) { return FALSE; }
+#define ILC_COLOR8 0x0008
+
+// Combobox additional messages
+#define CB_SELECTSTRING  0x014D
+
+// Listbox additional messages
+#define LB_FINDSTRING    0x018F
+#define LB_ERR           (-1)
+#define LB_SETCURSEL     0x0186
+#define LB_DELETESTRING  0x0182
+#define LB_SETTABSTOPS   0x0192
+
+// TreeView additional messages and constants
+#define TVM_SETIMAGELIST 0x1109
+#define TVSIL_NORMAL     0
+#define NM_DBLCLK        (-3)
+#define TVIF_IMAGE       0x0002
+#define TVIF_SELECTEDIMAGE 0x0020
+#define TVI_SORT         ((HTREEITEM)(uintptr_t)-0x0FFFD)
+#define TVI_FIRST        ((HTREEITEM)(uintptr_t)-0x0FFFF)
+#define TVI_ROOT         ((HTREEITEM)(uintptr_t)-0x10000)
+#define TVM_INSERTITEM   0x1100
+#define TVM_GETNEXTITEM  0x110A
+#define TVM_GETITEM      0x110C
+#define TVM_DELETEITEM   0x1101
+#define TVGN_CHILD       0x0004
+#define TVGN_NEXT        0x0001
+#define TVGN_PREVIOUS    0x0002
+#define TVGN_CARET       0x0009
+typedef TVITEM TV_ITEM;
+inline HTREEITEM TreeView_GetSelection(HWND h) { return (HTREEITEM)SendMessage(h, TVM_GETNEXTITEM, TVGN_CARET, 0); }
+inline HTREEITEM TreeView_GetParent2(HWND h, HTREEITEM i) { return (HTREEITEM)SendMessage(h, TVM_GETNEXTITEM, 0x0003, (LPARAM)i); }
+#define TreeView_GetParent(h, i) TreeView_GetParent2(h, i)
+
+// Window position stubs
+#define SWP_NOMOVE   0x0002
+#define SWP_NOZORDER 0x0004
+inline BOOL SetWindowPos(HWND, HWND, int, int, int, int, UINT) { return FALSE; }
+
+// String resource
+inline int LoadString(HINSTANCE, UINT, char*, int) { return 0; }
+
+// Sound
+inline BOOL MessageBeep(UINT) { return FALSE; }
+
+// Combobox additional notifications
+#define CBN_EDITCHANGE 5
+#define CB_FINDSTRING  0x014C
+
+// Listbox additional notifications
+#define LBN_DBLCLK 2
 
 // Sketchpad namespace helper (some plugins use Sketchpad without oapi::)
 namespace oapi { class Sketchpad; }

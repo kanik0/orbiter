@@ -16,11 +16,9 @@
 #define ORBITER_MODULE
 #ifdef _WIN32
 #include <windows.h>
-#ifndef _WIN32
-#include "resource_stub.h"
-#endif
 #else
 #include "OrbiterPlatform.h"
+#include "resource_stub.h"
 #endif
 #include "orbitersdk.h"
 #include "resource.h"

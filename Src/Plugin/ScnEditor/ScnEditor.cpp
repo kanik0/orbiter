@@ -17,6 +17,9 @@
 #include "resource.h"
 #include "Editor.h"
 #include "DlgCtrl.h"
+#ifndef _WIN32
+#include "resource_stub.h"
+#endif
 
 // ==============================================================
 // Global variables and constants

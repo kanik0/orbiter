@@ -7,7 +7,8 @@
 #include <stdio.h> // temp
 #define NSAT 8
 
-using namespace std;
+using std::min;
+using std::max;
 
 // ===========================================================
 // Local prototypes

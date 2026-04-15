@@ -213,8 +213,7 @@ inline BOOL VerQueryValueA(const void*, const char*, void**, UINT*) { return FAL
 // Shell stubs
 inline int SHCreateDirectoryEx(HWND, const char*, void*) { return 0; }
 
-// GDI text
-inline UINT SetTextAlign(HDC, UINT) { return 0; }
+// GDI text (SetTextAlign now in OrbiterPlatform.h)
 
 // Window styles
 #define WS_OVERLAPPED   0x00000000L
@@ -266,10 +265,12 @@ inline HGLOBAL LoadResource(HMODULE, HRSRC) { return nullptr; }
 inline void* LockResource(HGLOBAL) { return nullptr; }
 
 // Bitmap info
+#ifndef __BITMAPINFOHEADER_DEFINED
 typedef struct { DWORD biSize; LONG biWidth; LONG biHeight; WORD biPlanes; WORD biBitCount; DWORD biCompression; } BITMAPINFOHEADER;
 typedef struct { BITMAPINFOHEADER bmiHeader; } BITMAPINFO;
 #define BI_RGB 0
 #define DIB_RGB_COLORS 0
+#endif
 #define ARRAYSIZE(a) (sizeof(a)/sizeof(a[0]))
 
 // Listbox
@@ -314,7 +315,7 @@ typedef struct { DWORD Data1; WORD Data2; WORD Data3; BYTE Data4[8]; } GUID;
 
 // Additional dialog/UI stubs
 inline BOOL EndDialog(HWND, INT_PTR) { return FALSE; }
-inline HBITMAP LoadBitmap(HINSTANCE, const char*) { return nullptr; }
+// LoadBitmap now in OrbiterPlatform.h
 #define _access access
 #define IDCANCEL 2
 #define IDOK 1
@@ -346,6 +347,26 @@ typedef struct { DWORD dwSignature; DWORD dwFileVersionMS; DWORD dwFileVersionLS
 
 // Window class (for GraphicsAPI.cpp)
 typedef struct { DWORD style; WNDPROC lpfnWndProc; int cbClsExtra; int cbWndExtra; HINSTANCE hInstance; HICON hIcon; HCURSOR hCursor; HBRUSH hbrBackground; const char* lpszMenuName; const char* lpszClassName; } WNDCLASS;
+
+// Tab control (if not already defined by OrbiterPlatform.h)
+#ifndef TCM_INSERTITEM
+#define TCM_INSERTITEM 0x1307
+#endif
+#ifndef TCIF_TEXT
+#define TCIF_TEXT 1
+typedef struct { UINT mask; char* pszText; int cchTextMax; int iImage; LPARAM lParam; } TCITEM;
+typedef TCITEM TC_ITEM;
+inline int TabCtrl_GetCurSel(HWND) { return 0; }
+inline int TabCtrl_InsertItem(HWND, int, const TCITEM*) { return 0; }
+#define TCN_SELCHANGE (-551)
+#endif
+
+// Common controls init
+#ifndef ICC_TREEVIEW_CLASSES
+typedef struct { DWORD dwSize; DWORD dwICC; } INITCOMMONCONTROLSEX;
+#define ICC_TREEVIEW_CLASSES 0x0002
+inline BOOL InitCommonControlsEx(const INITCOMMONCONTROLSEX*) { return FALSE; }
+#endif
 
 #endif // !_WIN32
 
