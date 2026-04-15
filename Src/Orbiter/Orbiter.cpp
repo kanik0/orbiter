@@ -2198,11 +2198,51 @@ const char *Orbiter::KeyState() const
 #ifndef _WIN32
 HRESULT Orbiter::UserInput ()
 {
-	// TODO: SDL2 input handling will replace this on non-Windows
 	memset(simkstate, 0, 256);
-	for (DWORD i = 0; i < 15; i++) ctrlKeyboard[i] = ctrlJoystick[i] = ctrlTotal[i] = 0;
+	for (DWORD i = 0; i < 15; i++) ctrlKeyboard[i] = ctrlJoystick[i] = 0;
+
+	bool skipkbd = false;
+	if ((g_input && g_input->IsActive()) ||
+	    (g_select && g_select->IsActive())) skipkbd = true;
+
+	// Get keyboard state from SDL platform layer
+	if (m_pSDL) {
+		const char *sdlKeys = m_pSDL->GetKeyState();
+		ImGuiIO& io = ImGui::GetIO();
+
+		if (!io.WantCaptureKeyboard) {
+			for (int i = 0; i < 256; i++)
+				simkstate[i] |= sdlKeys[i];
+		}
+
+		bool consume = BroadcastImmediateKeyboardEvent(simkstate);
+		if (!skipkbd && !consume) {
+			KbdInputImmediate_System(simkstate);
+			if (bRunning) KbdInputImmediate_OnRunning(simkstate);
+		}
+
+		// Process queued mouse events
+		for (auto &me : m_pSDL->GetMouseEvents()) {
+			MouseEvent(me.event, me.state, me.x, me.y);
+		}
+		m_pSDL->ClearMouseEvents();
+
+		// Mouse wheel -> camera zoom
+		int wheel = m_pSDL->GetWheelAccum();
+		if (wheel != 0 && !io.WantCaptureMouse) {
+			double ap = oapiCameraAperture();
+			double factor = (wheel > 0) ? 0.95 : 1.05;
+			for (int i = 0; i < abs(wheel); i++) ap *= factor;
+			ap = std::max(0.003, std::min(1.4, ap));
+			oapiCameraSetAperture(ap);
+		}
+		m_pSDL->ClearWheelAccum();
+	}
+
+	for (DWORD i = 0; i < 15; i++) ctrlTotal[i] = ctrlKeyboard[i];
+
 	g_camera->UpdateMouse();
-	g_focusobj->ApplyUserAttitudeControls (ctrlTotal);
+	g_focusobj->ApplyUserAttitudeControls(ctrlTotal);
 	return S_OK;
 }
 #else
@@ -2306,6 +2346,10 @@ bool Orbiter::SendKbdImmediate(char kstate[256], bool onRunningOnly)
 	bAllowInput = true; // make sure the render window processes inputs
 	return true;
 }
+
+// End of Win32-specific buffered input methods. The following immediate
+// keyboard handlers are cross-platform (they just read the kstate array).
+#endif // _WIN32 -- SendKbdBuffered, SendKbdImmediate
 
 //-----------------------------------------------------------------------------
 // Name: KbdInputImmediate_System ()
@@ -2481,6 +2525,9 @@ void Orbiter::KbdInputImmediate_OnRunning (char *kstate)
 	}
 }
 
+// The following buffered/joystick input methods use DirectInput types
+// and are only compiled on Windows.
+#ifdef _WIN32
 //-----------------------------------------------------------------------------
 // Name: KbdInputBuffered_System ()
 // Desc: General user keyboard buffered key interpretation. Processes keys
