@@ -21,8 +21,11 @@
 // ==============================================================
 
 class AerodynSelector;
+class AerodynSelectorDial;
 class Airbrake;
+class AirbrakeLever;
 class ElevatorTrim;
+class ElevatorTrimWheel;
 
 class AerodynCtrlSubsystem: public DGSubsystem {
 public:

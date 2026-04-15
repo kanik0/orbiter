@@ -39,7 +39,7 @@
 // Basic Windows types
 // -----------------------------------------------------------
 typedef uint32_t       DWORD;
-typedef long           LONG;
+typedef int32_t        LONG;
 typedef int64_t        LONGLONG;
 typedef uint16_t       WORD;
 typedef unsigned char  BYTE;

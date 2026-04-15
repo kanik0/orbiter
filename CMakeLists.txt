@@ -148,8 +148,8 @@ elseif(APPLE)
   add_compile_definitions(NOMINMAX)
   # Suppress OpenGL deprecation warnings on macOS
   add_compile_definitions(GL_SILENCE_DEPRECATION)
-  # Allow more errors per TU during porting (many Win32 stubs are no-ops)
-  add_compile_options(-ferror-limit=200 -Wno-c++11-narrowing)
+  # MSVC compatibility: friend class as forward declaration, etc.
+  add_compile_options(-fms-extensions -ferror-limit=200 -Wno-c++11-narrowing -Wno-microsoft-anon-tag)
 else()
   set(CMAKE_BUILD_WITH_INSTALL_RPATH true)
 endif()
