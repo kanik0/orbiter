@@ -16,6 +16,8 @@
 
 // ==============================================================
 
+class ShuttleA;
+
 class AuxPodCtrl: public PanelElement {
 	friend class ShuttleA;
 

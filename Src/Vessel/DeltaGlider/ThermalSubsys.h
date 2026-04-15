@@ -20,6 +20,7 @@
 // ==============================================================
 
 class RadiatorControl;
+class CoolantLoop;
 
 class ThermalSubsystem: public DGSubsystem {
 	friend class CoolantLoop;
@@ -109,6 +110,11 @@ private:
 // ==============================================================
 // Coolant loop
 // ==============================================================
+
+class CoolantLoopDisplay;
+class CoolantPumpSwitch;
+class CoolantPumpDial;
+class CoolantReftempDial;
 
 class CoolantLoop: public DGSubsystem {
 	friend class CoolantLoopDisplay;
@@ -240,6 +246,8 @@ private:
 // ==============================================================
 // Radiator control
 // ==============================================================
+
+class RadiatorSwitch;
 
 class RadiatorControl: public DGSubsystem {
 	friend class RadiatorSwitch;

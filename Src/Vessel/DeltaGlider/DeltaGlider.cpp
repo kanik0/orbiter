@@ -12,6 +12,9 @@
 #define ORBITER_MODULE
 
 #include "DeltaGlider.h"
+#ifndef _WIN32
+#include "resource_stub.h"
+#endif
 #include "HudCtrl.h"
 #include "MainRetroSubsys.h"
 #include "HoverSubsys.h"

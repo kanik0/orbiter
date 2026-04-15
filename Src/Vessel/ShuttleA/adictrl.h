@@ -16,6 +16,8 @@
 
 // ==============================================================
 
+class ShuttleA;
+
 class ADICtrl: public PanelElement {
 	friend class ShuttleA;
 

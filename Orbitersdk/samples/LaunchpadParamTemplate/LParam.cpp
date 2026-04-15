@@ -17,6 +17,9 @@
 #define STRICT 1
 #define ORBITER_MODULE
 #include "orbitersdk.h"
+#ifndef _WIN32
+#include "resource_stub.h"
+#endif
 #include "resource.h"
 #include <stdio.h>
 

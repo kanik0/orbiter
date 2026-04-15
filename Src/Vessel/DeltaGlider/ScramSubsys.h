@@ -120,6 +120,8 @@ private:
 // Throttle control
 // ==============================================================
 
+class ScramThrottleLever;
+
 class ScramThrottle: public DGSubsystem {
 	friend class ScramThrottleLever;
 

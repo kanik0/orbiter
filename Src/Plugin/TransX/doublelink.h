@@ -21,6 +21,9 @@
 #ifndef __DBLLIST_H
 #define __DBLLIST_H
 
+class listelement;
+class dblliter;
+
 class dbllist
 {
 	class listelement *first,*last;
@@ -37,6 +40,8 @@ public:
 	friend class listelement;
 	friend class dblliter;
 };
+
+class dbllist;
 
 class listelement
 {

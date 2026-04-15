@@ -245,6 +245,9 @@ public:
 // Interface for derived vessel class: Atlantis
 // ==========================================================
 
+class AscentAP;
+class PayloadBayOp;
+
 class Atlantis: public VESSEL4 {
 	friend class AscentAP;
 	friend class PayloadBayOp;

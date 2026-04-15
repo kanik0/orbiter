@@ -278,7 +278,7 @@ inline BOOL SystemParametersInfo(UINT, UINT, void*, UINT) { return FALSE; }
 inline BOOL GetClassInfo(HINSTANCE, const char*, void*) { return FALSE; }
 inline BOOL RegisterClass(const void*) { return FALSE; }
 inline BOOL UnregisterClass(const char*, HINSTANCE) { return FALSE; }
-inline HWND CreateDialog(HINSTANCE, const char*, HWND, void*) { return nullptr; }
+inline HWND CreateDialog(HINSTANCE, const char*, HWND, DLGPROC) { return nullptr; }
 inline int DialogBox(HINSTANCE, const char*, HWND, void*) { return 0; }
 inline void RegisterHtmlCtrl(HINSTANCE, bool) {}
 #define MAKEINTRESOURCE(i) ((const char*)(uintptr_t)(i))
@@ -647,6 +647,17 @@ namespace ConsoleManager {
 	inline bool IsConsoleExclusive() { return false; }
 	inline void ShowConsole(bool) {}
 }
+
+// Additional Win32 API stubs for vessel/plugin modules
+#define ZeroMemory(p,n) memset((p),0,(n))
+#define CopyMemory(dst,src,n) memcpy((dst),(src),(n))
+typedef void* HGLRC;
+typedef void* CAMERAHANDLE;
+#define TCM_INSERTITEM 0
+typedef struct { NMHDR hdr; int iPos; int iDelta; } *LPNMUPDOWN;
+#define _beginthreadex(sec,stack,fn,arg,flags,id) 0
+#define _endthreadex(code)
+inline BOOL TerminateThread(HANDLE, DWORD) { return FALSE; }
 
 // iequal is defined in Util.cpp, declared in Util.h
 

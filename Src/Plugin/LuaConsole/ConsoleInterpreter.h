@@ -5,7 +5,8 @@
 #define __CONSOLEINTERPRETER_H
 
 #include "Interpreter.h"
-#include "LuaConsole.h"
+
+class LuaConsole;
 
 // ==============================================================
 // class ConsoleInterpreter

@@ -46,6 +46,8 @@ private:
 // Main/retro engine throttle
 // ==============================================================
 
+class MainRetroThrottleLevers;
+
 class MainRetroThrottle: public DGSubsystem {
 	friend class MainRetroThrottleLevers;
 
@@ -207,6 +209,9 @@ private:
 // ==============================================================
 // Retro cover control
 // ==============================================================
+
+class RetroCoverSwitch;
+class RetroCoverIndicator;
 
 class RetroCoverControl: public DGSubsystem {
 	friend class RetroCoverSwitch;

@@ -50,6 +50,9 @@ private:
 // Nosecone control
 // ==============================================================
 
+class NoseconeLever;
+class NoseconeIndicator;
+
 class NoseconeCtrl: public DGSubsystem {
 	friend class NoseconeLever;
 	friend class NoseconeIndicator;
@@ -117,6 +120,8 @@ private:
 // Undock control
 // ==============================================================
 
+class UndockLever;
+
 class UndockCtrl: public DGSubsystem {
 	friend class UndockLever;
 
@@ -154,6 +159,9 @@ private:
 // ==============================================================
 // Escape ladder control
 // ==============================================================
+
+class LadderSwitch;
+class LadderIndicator;
 
 class EscapeLadderCtrl: public DGSubsystem {
 	friend class LadderSwitch;
@@ -213,6 +221,8 @@ private:
 // ==============================================================
 // Dock seal control
 // ==============================================================
+
+class DocksealIndicator;
 
 class DocksealCtrl: public DGSubsystem {
 	friend class DocksealIndicator;

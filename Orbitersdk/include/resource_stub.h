@@ -347,6 +347,28 @@ typedef struct { DWORD dwSignature; DWORD dwFileVersionMS; DWORD dwFileVersionLS
 // Window class (for GraphicsAPI.cpp)
 typedef struct { DWORD style; WNDPROC lpfnWndProc; int cbClsExtra; int cbWndExtra; HINSTANCE hInstance; HICON hIcon; HCURSOR hCursor; HBRUSH hbrBackground; const char* lpszMenuName; const char* lpszClassName; } WNDCLASS;
 
+// Tab control
+#define TCM_INSERTITEM 0x1307
+#define TCIF_TEXT 1
+typedef struct { UINT mask; char* pszText; int cchTextMax; int iImage; LPARAM lParam; } TCITEM;
+
+// Up-down control
+#ifndef UDM_SETRANGE
+#define UDM_SETRANGE 0x0465
+#define UDM_SETPOS   0x0467
+#define UDM_GETPOS   0x0468
+#endif
+#ifndef UDN_DELTAPOS
+#define UDN_DELTAPOS (-722)
+#endif
+
+// Draw item
+#define WM_DRAWITEM 0x002B
+typedef struct { UINT CtlType; UINT CtlID; UINT itemID; UINT itemAction; HWND hwndItem; HDC hDC; RECT rcItem; } DRAWITEMSTRUCT;
+
+// Sketchpad namespace helper (some plugins use Sketchpad without oapi::)
+namespace oapi { class Sketchpad; }
+
 #endif // !_WIN32
 
 #endif // __RESOURCE_STUB_H

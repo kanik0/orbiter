@@ -5,6 +5,9 @@
 #define ORBITER_MODULE
 
 #include "orbitersdk.h"
+#ifndef _WIN32
+#include "resource_stub.h"
+#endif
 #include "resource.h"
 #include <filesystem>
 namespace fs = std::filesystem;

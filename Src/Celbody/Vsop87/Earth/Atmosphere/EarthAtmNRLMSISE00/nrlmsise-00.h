@@ -173,8 +173,8 @@ struct nrlmsise_output {
 #ifndef NRLMSISE00_IMPLEMENTATION
 extern "C" {
 #endif
-void gtd7 (struct nrlmsise_input *input, /
-           struct nrlmsise_flags *flags, /
+void gtd7 (struct nrlmsise_input *input,
+           struct nrlmsise_flags *flags,
            struct nrlmsise_output *output);
 
 
@@ -184,16 +184,16 @@ void gtd7 (struct nrlmsise_input *input, /
  *   affect satellite drag above 500 km. See the section "output" for
  *   additional details.
  */
-void gtd7d(struct nrlmsise_input *input, /
-           struct nrlmsise_flags *flags, /
+void gtd7d(struct nrlmsise_input *input,
+           struct nrlmsise_flags *flags,
            struct nrlmsise_output *output);
 
 
 /* GTS7 */
 /*   Thermospheric portion of NRLMSISE-00
  */
-void gts7 (struct nrlmsise_input *input, /
-	   struct nrlmsise_flags *flags, /
+void gts7 (struct nrlmsise_input *input,
+	   struct nrlmsise_flags *flags,
 	   struct nrlmsise_output *output);
 
 
@@ -201,9 +201,9 @@ void gts7 (struct nrlmsise_input *input, /
 /*   To specify outputs at a pressure level (press) rather than at
  *   an altitude.
  */
-void ghp7 (struct nrlmsise_input *input, /
-           struct nrlmsise_flags *flags, /
-           struct nrlmsise_output *output, /
+void ghp7 (struct nrlmsise_input *input,
+           struct nrlmsise_flags *flags,
+           struct nrlmsise_output *output,
            double press);
 
 #ifndef NRLMSISE00_IMPLEMENTATION

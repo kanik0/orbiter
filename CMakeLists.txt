@@ -145,6 +145,9 @@ if(MSVC)
 elseif(APPLE)
   set(CMAKE_BUILD_WITH_INSTALL_RPATH true)
   set(CMAKE_INSTALL_RPATH "@executable_path")
+  # Allow dylibs to link against symbols from the Orbiter executable
+  # (on Windows these are resolved via the .lib import library)
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -undefined dynamic_lookup")
   add_compile_definitions(NOMINMAX)
   # Suppress OpenGL deprecation warnings on macOS
   add_compile_definitions(GL_SILENCE_DEPRECATION)
@@ -191,7 +194,12 @@ endif()
 # =====================================================================================
 
 set(OrbiterTgt Orbiter)
-set(ORBITER_LIB $<TARGET_LINKER_FILE:Orbiter>)
+if(WIN32)
+	set(ORBITER_LIB $<TARGET_LINKER_FILE:Orbiter>)
+else()
+	# On macOS/Linux, modules resolve symbols at runtime via -undefined dynamic_lookup
+	set(ORBITER_LIB "")
+endif()
 
 # =====================================================================================
 # Configure Orbiter.cfg for externally installed planet textures

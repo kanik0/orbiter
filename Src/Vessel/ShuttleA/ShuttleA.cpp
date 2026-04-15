@@ -13,6 +13,9 @@
 #define ORBITER_MODULE
 
 #include "ShuttleA.h"
+#ifndef _WIN32
+#include "resource_stub.h"
+#endif
 #include "ScnEditorAPI.h"
 #include "DlgCtrl.h"
 #include "attref.h"

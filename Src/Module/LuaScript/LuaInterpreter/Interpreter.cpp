@@ -10198,10 +10198,10 @@ int Interpreter::skp_set_worldtransform2d (lua_State *L)
 	ASSERT_SYNTAX(skp, "Invalid sketchpad object");
 	float scale = 1.0f;
 	float rot = 0.0f;
-	IVECTOR2 ctr;
-	IVECTOR2 *pctr = nullptr;
-	IVECTOR2 trl;
-	IVECTOR2 *ptrl = nullptr;
+	oapi::IVECTOR2 ctr;
+	oapi::IVECTOR2 *pctr = nullptr;
+	oapi::IVECTOR2 trl;
+	oapi::IVECTOR2 *ptrl = nullptr;
 
 	if(lua_gettop(L)>=2) {
 		scale = luaL_checknumber(L,2);

@@ -235,15 +235,25 @@ add_dependencies(Orbiter ${Orbiter_depends})
 # Installation: Orbiter executable
 install(TARGETS Orbiter	RUNTIME DESTINATION ${ORBITER_INSTALL_ROOT_DIR})
 
-set_target_properties(Orbiter PROPERTIES ENABLE_EXPORTS 1)
-
-install(FILES $<TARGET_LINKER_FILE:Orbiter>	DESTINATION ${ORBITER_INSTALL_SDK_DIR}/lib)
+if(WIN32)
+	set_target_properties(Orbiter PROPERTIES ENABLE_EXPORTS 1)
+	install(FILES $<TARGET_LINKER_FILE:Orbiter>	DESTINATION ${ORBITER_INSTALL_SDK_DIR}/lib)
+else()
+	# On macOS: export all symbols so dylib plugins can resolve at runtime
+	set_target_properties(Orbiter PROPERTIES ENABLE_EXPORTS 1)
+endif()
 
 # Copy library to its Orbitersdk/lib location so that external project integrated into the build can find it
-add_custom_command(TARGET ${OrbiterTgt}	POST_BUILD
-	COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_SDK_DIR}/lib
-	COMMAND ${CMAKE_COMMAND} -E copy ${ORBITER_LIB} ${ORBITER_BINARY_SDK_DIR}/lib/
-)
+if(WIN32)
+	add_custom_command(TARGET ${OrbiterTgt}	POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_SDK_DIR}/lib
+		COMMAND ${CMAKE_COMMAND} -E copy ${ORBITER_LIB} ${ORBITER_BINARY_SDK_DIR}/lib/
+	)
+else()
+	add_custom_command(TARGET ${OrbiterTgt}	POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_SDK_DIR}/lib
+	)
+endif()
 
 string(TIMESTAMP DATE "%d %b %Y")
 string(TIMESTAMP VERSION "%y%m%d")
