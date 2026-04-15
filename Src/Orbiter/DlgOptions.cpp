@@ -162,15 +162,21 @@ void DlgOptions::DrawUI()
 void DlgOptions::DrawJoystick()
 {
 	ImGui::SeparatorText("Joystick device");
+#ifdef _WIN32
 	DWORD ndev;
 	DIDEVICEINSTANCE* joylist;
 	g_pOrbiter->GetDInput()->GetJoysticks(&joylist, &ndev);
+#else
+	DWORD ndev = 0;
+#endif
 	DWORD &jidx = g_pOrbiter->Cfg()->CfgJoystickPrm.Joy_idx;
 
 	const char *preview = "<Disabled>";
+#ifdef _WIN32
 	if(jidx > 0 && jidx <= ndev) {
 		preview = joylist[jidx - 1].tszProductName;
 	}
+#endif
 
 	if(ImGui::BeginAnimatedCombo("##joydev", preview)) {
 		bool selected = jidx == 0;
@@ -180,8 +186,9 @@ void DlgOptions::DrawJoystick()
 		if (selected) {
 			ImGui::SetItemDefaultFocus();
 		}
-		for (int i = 0; i < ndev; i++) {
-			selected = jidx == (i+1);
+#ifdef _WIN32
+		for (int i = 0; i < (int)ndev; i++) {
+			selected = jidx == (DWORD)(i+1);
 			if(ImGui::Selectable(joylist[i].tszProductName, &selected)) {
 				jidx = i + 1;
 				g_pOrbiter->OnOptionChanged(OPTCAT_JOYSTICK, OPTITEM_JOYSTICK_DEVICE);
@@ -190,6 +197,7 @@ void DlgOptions::DrawJoystick()
 				ImGui::SetItemDefaultFocus();
 			}
 		}
+#endif // _WIN32
 		ImGui::EndAnimatedCombo();
 	}
 

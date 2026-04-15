@@ -5,7 +5,11 @@
 #define __LOG_H
 
 #include <stdio.h>
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 
 // comment the following line to suppress log file output
 #define GENERATE_LOG
@@ -49,7 +53,7 @@ void PrintModules();
 #define LOGOUT_ERR_FILENOTFOUND_MSG(file,msg,...) { \
 	LogOut_Error_Start(); \
 	LogOut("File not found: %s", file); \
-	LogOut(msg, __VA_ARGS__); \
+	LogOut(msg, ##__VA_ARGS__); \
 	LogOut_Location(__FUNCTION__,__FILE__,__LINE__); \
 	LogOut_Error_End(); \
 }

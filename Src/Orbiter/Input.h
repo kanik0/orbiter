@@ -27,12 +27,16 @@ public:
 	void DestroyDevices ();
 
 	inline CDIFramework7 *GetDIFrame() const { return diframe; }
+
+#ifdef _WIN32
 	inline const LPDIRECTINPUTDEVICE8 GetKbdDevice() const { return diframe->GetKbdDevice(); }
 	inline const LPDIRECTINPUTDEVICE8 GetJoyDevice() const { return diframe->GetJoyDevice(); }
+	bool PollJoystick (DIJOYSTATE2 *js);
+#else
+	bool PollJoystick (void *js);
+#endif
 
 	void OptionChanged(DWORD cat, DWORD item);
-
-	bool PollJoystick (DIJOYSTATE2 *js);
 
 	struct JoyProp {
 		bool bThrottle;  // joystick has throttle control

@@ -13,7 +13,7 @@
 #ifndef __D3DUTIL_H
 #define __D3DUTIL_H
 
-#include <d3d.h>
+#include "d3d_compat.h"
 #include "OrbiterAPI.h"
 
 struct VECTOR2D     { D3DVALUE x, y; };

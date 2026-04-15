@@ -20,7 +20,11 @@
 
 #define STRICT
 
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 #include "doublelink.h"
 
 

@@ -8,7 +8,11 @@
 #ifndef __KEYMAP_H
 #define __KEYMAP_H
 
+#ifdef _WIN32
 #include "windows.h"
+#else
+#include "OrbiterPlatform.h"
+#endif
 #include "Orbitersdk.h"
 
 // key modifier list

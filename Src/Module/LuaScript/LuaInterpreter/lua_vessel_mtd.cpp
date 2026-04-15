@@ -2399,7 +2399,7 @@ Returns the vessel's current angular acceleration components around its
 principal axes.
 
 The returned vector contains the angular accelerations
-   \f$ \partial\omega_x/\partial t, \partial\omega_y/\partial t, \partial\omega_z/\partial t \f$
+   /f$ /partial/omega_x//partial t, /partial/omega_y//partial t, /partial/omega_z//partial t /f$
    around the vessel's x, y and z axes, in the rotating vessel frame.
 
 @function get_angularacc
@@ -2447,7 +2447,7 @@ Returns the sum of angular moments currently acting on the vessel.
 
 Given all force components <b>F</b><sub>i</sub> acting on the vessel at
    positions <b>r</b><sub>i</sub>, the angular moment is defined as
-   \f[ \vec{M} = \sum_i \vec{F}_i \times \vec{r}_i \f]
+   /f[ /vec{M} = /sum_i /vec{F}_i /times /vec{r}_i /f]
    (note the left-handed reference frame in the order of operands for the
    cross product).
 
@@ -2787,8 +2787,8 @@ _prm_ can contain the following fields:
 
 - href (handle): orbit reference object. Default: current dominant gravity
 source (see @{get_gravityref}).
-- mjd\_ref (number): reference date (MJD format) to which the el.L (mean
-longitude) value refers. mjd\_ref=0 is interpreted as the current time.
+- mjd/_ref (number): reference date (MJD format) to which the el.L (mean
+longitude) value refers. mjd/_ref=0 is interpreted as the current time.
 Default: 0.
 - frame (string): reference frame. Choices are 'ecl' (ecliptic frame) or
 'equ' (equatorial frame of the reference object). Default: 'ecl'.
@@ -2936,7 +2936,7 @@ Get periapsis distance.
 Returns the periapsis distance of the current osculating orbit.
 
 The periapsis distance is the smallest radius of the orbit (see
-   \ref orbit).
+   /ref orbit).
 
 @function get_pedist
 @treturn number periapsis distance [m]
@@ -2967,7 +2967,7 @@ Get apoapsis distance.
 Returns the apoapsis distance of the current osculating orbit.
 
 The apoapsis distance is the largest radius of the orbit (see
-   \ref orbit).
+   /ref orbit).
 
 @function get_apdist
 @treturn number apoapsis distance [m]
@@ -7470,7 +7470,7 @@ _meshName_ defines a path to an existing mesh file. The mesh must be in Orbiter'
 (see 3DModel.pdf).
 
 The file name (including optional directory path) is relative to Orbiter's mesh directory
-(usually ".\Meshes"). The file extension must not be specified (.msh is assumed.)
+(usually "./Meshes"). The file extension must not be specified (.msh is assumed.)
 
 _hMesh_ is a handle to a mesh previously loaded with oapi.load_meshglobal.
 
@@ -7524,7 +7524,7 @@ _meshName_ defines a path to an existing mesh file. The mesh must be in Orbiter'
 (see 3DModel.pdf).
 
 The file name (including optional directory path) is relative to Orbiter's mesh directory
-(usually ".\Meshes"). The file extension must not be specified (.msh is assumed.)
+(usually "./Meshes"). The file extension must not be specified (.msh is assumed.)
 
 _hMesh_ is a handle to a mesh previously loaded with oapi.load_meshglobal.
 
@@ -7955,7 +7955,7 @@ In the current implementation, the component must not have children
 @function del_animationcomponent
 @tparam int anim animation identifier
 @tparam handle hAC animation component handle
-@treturn bool _false_ indicates failure (\a anim out of range, or \a hAC invalid)
+@treturn bool _false_ indicates failure (/a anim out of range, or /a hAC invalid)
 @see add_animationcomponent
 */
 int Interpreter::v_del_animationcomponent (lua_State *L)
@@ -8172,8 +8172,8 @@ frame.
 This function is equivalent to multiplying rloc with the
    rotation matrix returned by @{get_rotationmatrix}.
 
-Should be used to transform \e directions. To transform
-   \e points, use @{local2global}, which additionally adds the
+Should be used to transform /e directions. To transform
+   /e points, use @{local2global}, which additionally adds the
    vessel's global position to the rotated point.
 
 @function globalrot
@@ -8224,7 +8224,7 @@ int Interpreter::v_horizonrot (lua_State *L)
 Perform a rotation of a direction from the current local horizon frame to the
 local vessel frame.
 
-This function performs the inverse operation of \ref
+This function performs the inverse operation of /ref
    HorizonRot.
 
 @function horizoninvrot
@@ -8252,9 +8252,9 @@ This function maps a point from the vessel's local coordinate
    system (centered at the solar system barycentre).
 
 The transform has the form
-   \f[ \vec{p}_g = \mathsf{R}_v \vec{p}_l + \vec{p}_v \f]
+   /f[ /vec{p}_g = /mathsf{R}_v /vec{p}_l + /vec{p}_v /f]
    where R<sub>v</sub> is the vessel's global rotation matrix
-   (as given by @{get_rotationmatrix}), and \f$\vec{p}_v\f$
+   (as given by @{get_rotationmatrix}), and /f$/vec{p}_v/f$
    is the vessel position in the global frame.
 
 @function local2global
@@ -8282,9 +8282,9 @@ This is the inverse transform of @{local2global}. It maps
    frame.
 
 The transformation has the form
-   \f[ \vec{p}_l = \mathsf{R}_v^{-1} (\vec{p}_g - \vec{p}_v) \f]
+   /f[ /vec{p}_l = /mathsf{R}_v^{-1} (/vec{p}_g - /vec{p}_v) /f]
    where R<sub>v</sub> is the vessel's global rotation matrix
-   (as given by @{get_rotationmatrix}), and \f$\vec{p}_v\f$ is the
+   (as given by @{get_rotationmatrix}), and /f$/vec{p}_v/f$ is the
    vessel position in the global frame.
 
 @function global2local
@@ -8341,16 +8341,16 @@ Pass a line read from a scenario file to Orbiter for default processing.
 This function should be used within the body of clbk_loadstateex.
 
 The parser clbk_loadstateex should forward all lines not recognised
-by the module to Orbiter via parse\_scenario\_line\_ex to allow processing of
+by the module to Orbiter via parse/_scenario/_line/_ex to allow processing of
 standard vessel settings.
 
-clbk\_loadstateex currently provides a VESSELSTATUS2 status definition.
+clbk/_loadstateex currently provides a VESSELSTATUS2 status definition.
 This may change in future versions, so status should not be used within
-clbk\_loadstateex other than passing it to parse\_scenario\_line\_ex.
+clbk/_loadstateex other than passing it to parse/_scenario/_line/_ex.
 
 @function v_parse_scenario_line_ex
-@tparam line string obtain via oapi\_readscenario\_nextline
-@tparam status status obtained from the clbk\_loadstateex callback
+@tparam line string obtain via oapi/_readscenario/_nextline
+@tparam status status obtained from the clbk/_loadstateex callback
 @usage
 function clbk_loadstateex(scn, vs)
    for line in scenario_lines(scn) do
@@ -8388,11 +8388,11 @@ The function does nothing if no recording is active, so it is not
 necessary to check for a running recording before invoking RecordEvent.
 
 To read the recorded articulation tags during the playback of a
-recorded session, overload the clbk\_playbackevent callback
+recorded session, overload the clbk/_playbackevent callback
 function.
 
 @function record_event
-@tparam string event\_type event tag label
+@tparam string event/_type event tag label
 @tparam string event event string
 */
 int Interpreter::v_record_event(lua_State* L)
@@ -8538,10 +8538,10 @@ the registered area, it is the responsibility of the caller not to draw
 outside the area.
 
 The area boundaries defined in pos are only used for generating
-mouse events. If the area does not process mouse events (PANEL\_MOUSE.IGNORE),
+mouse events. If the area does not process mouse events (PANEL/_MOUSE.IGNORE),
 the pos parameter is ignored.
 
-The PANEL\_REDRAW.SKETCHPAD flags can not be used in
+The PANEL/_REDRAW.SKETCHPAD flags can not be used in
 the draw_event parameter. If Sketchpad access is required during
 redraw events, either the surface surf must have been created with the
 appropriate attributes, or another version of register_panelarea must be used.
@@ -8574,7 +8574,7 @@ can be redrawn with this function. To redraw other textures in the background
 texture array, use another version of register_panelarea instead.
 
 For backward compatibility, this method automatically adds the
-PANEL\_REDRAW.SKETCHPAD flags to draw_event. If Sketchpad access to the area drawing surface
+PANEL/_REDRAW.SKETCHPAD flags to draw_event. If Sketchpad access to the area drawing surface
 is not required, using another version of register_panelarea can improve graphics performance.
 
 @function register_panelarea
@@ -8594,17 +8594,17 @@ This method activates a rectangular area of the panel for receiving mouse
 and redraw events.
 
 pos specifies the borders of the area in 'logical' coordinates
-(0,0,width,height) as specified by set\_panelbackground. Registered mouse
-events within this area will trigger a call to clbk\_panelmouseevent.
+(0,0,width,height) as specified by set/_panelbackground. Registered mouse
+events within this area will trigger a call to clbk/_panelmouseevent.
 
 texidx is the index of the panel background texture the area texture should
 be copied into, in the order the textures were specified in the array passed to
 set_panelbackground. If only a single texture is used for the panel,
 texidx should be set to 0. If the area doesn't need to be redrawn
-(PANEL\_REDRAW.NEVER), this parameter is ignored.
+(PANEL/_REDRAW.NEVER), this parameter is ignored.
 
 If the area texture should allow Sketchpad access during redraw
-events, the PANEL\_REDRAW.SKETCHPAD flags should be added
+events, the PANEL/_REDRAW.SKETCHPAD flags should be added
 to draw_event. If only blitting access is required, these flags should be omitted
 for improved performance.
 	 
@@ -9275,9 +9275,9 @@ The supplied direction vector must be normalised to length 1.
 Calling this function automatically sets the current actual view
 direction to the default direction.
 
-This function can either be called during clbk\_setclasscaps,
+This function can either be called during clbk/_setclasscaps,
 to define the default camera direction globally for the vessel, or during
-clbk\_loadgenericcockpit, clbk\_loadpanel2d and clbk\_loadVC,
+clbk/_loadgenericcockpit, clbk/_loadpanel2d and clbk/_loadVC,
 to define different default directions for different instrument panels or
 virtual cockpit positions.
 
@@ -9570,7 +9570,7 @@ OAPI_MSGTYPE Interpreter::MsgProcMFD(UINT msg, UINT mfd, WPARAM wparam, LPARAM l
 			lua_pushmfd(L, vmfd);
 
 			if (lua_pcall(L,  6, 1, 0) != 0) {
-				fprintf(stderr, "Error MsgProcMFD: %s\n", lua_tostring(L, -1));
+				fprintf(stderr, "Error MsgProcMFD: %s/n", lua_tostring(L, -1));
 				//return 0;
 			} else {
 				vmfd->mfd_ref = luaL_ref(L, LUA_REGISTRYINDEX);
@@ -9747,7 +9747,7 @@ User interface
 /***
 Send keycode message to the vessel.
 
-The key codes correspond to the values for the OAPI\_KEY.xxx constants defined in OrbiterAPI.h.
+The key codes correspond to the values for the OAPI/_KEY.xxx constants defined in OrbiterAPI.h.
 A convenient way to pick a keycode is via the _ktable_ table. For example, ktable.A has value 0x1E,
 which represents the keycode for A. Only a subset of keycodes is currently defined in the ktable
 table.

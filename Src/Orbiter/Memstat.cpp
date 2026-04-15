@@ -2,6 +2,9 @@
 // Licensed under the MIT License
 
 #include "Memstat.h"
+#ifndef _WIN32
+#include "resource_stub.h"
+#endif
 
 bool MemStat::bLib = false;
 HMODULE MemStat::hLib = 0;

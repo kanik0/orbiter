@@ -4,15 +4,19 @@
 #define STRICT 1
 #define OAPI_IMPLEMENTATION
 
+#ifdef _WIN32
 // Enable visual styles. Source: https://msdn.microsoft.com/en-us/library/windows/desktop/bb773175(v=vs.85).aspx
 #pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
-
 #include <windows.h>
 #include <direct.h>
+#include <process.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
+
 #include <stdio.h>
 #include <time.h>
 #include <fstream>
-#include <process.h> 
 #include "cmdline.h"
 #include "D3d7util.h"
 #include "D3dmath.h"
@@ -27,7 +31,9 @@
 #include "Psys.h"
 #include "Base.h"
 #include "Vessel.h"
+#ifdef _WIN32
 #include "resource.h"
+#endif
 #include "Orbiter.h"
 #include "Launchpad.h"
 #include "MenuInfoBar.h"
@@ -36,15 +42,25 @@
 #include "Script.h"
 #include "Memstat.h"
 #include "CustomControls.h"
+#ifdef _WIN32
 #include "Help.h"
-#include "Util.h"
-#include "DlgHelp.h" // temporary
 #include "htmlctrl.h"
+#endif
+#include "DlgHelp.h"
 #include "DlgCtrl.h"
 #include "GraphicsAPI.h"
+#include "Util.h"
+#ifdef _WIN32
 #include "ConsoleManager.h"
+#endif
 #include "imgui.h"
+#ifdef _WIN32
 #include "imgui_impl_win32.h"
+#else
+#include "SDLPlatform.h"
+#include "OGLClient.h"
+#include <OpenGL/gl.h>
+#endif
 #include <filesystem>
 
 #include "Tracy.hpp"
@@ -54,7 +70,9 @@ namespace fs = std::filesystem;
 using namespace std;
 using namespace oapi;
 
+#ifdef _WIN32
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+#endif
 
 #define OUTPUT_DBG
 #define LOADSTATUSCOL 0xC08080 //0xFFD0D0
@@ -150,6 +168,7 @@ INT_PTR CALLBACK BkMsgProc (HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 VOID    DestroyWorld ();
 void    SetEnvironmentVars ();
 HANDLE hMutex = 0;
+#ifdef _WIN32
 HANDLE hConsoleMutex = 0;
 
 // =======================================================================
@@ -164,13 +183,14 @@ int _matherr(struct _exception *except )
 	}
 	return 0;
 }
+#endif
 
 
 // =======================================================================
-// WinMain()
+// WinMain() / main()
 // Application entry containing message loop
 
-
+#ifdef _WIN32
 INT WINAPI WinMain (HINSTANCE hInstance, HINSTANCE, LPSTR strCmdLine, INT nCmdShow)
 {
 #ifdef _CRTDBG_MAP_ALLOC
@@ -188,7 +208,7 @@ INT WINAPI WinMain (HINSTANCE hInstance, HINSTANCE, LPSTR strCmdLine, INT nCmdSh
     // If we're not running from actual console, hide the window
     if (ConsoleManager::IsConsoleExclusive())
         ConsoleManager::ShowConsole(false);
-    
+
     SetEnvironmentVars();
 	g_pOrbiter = new Orbiter; // application instance
 
@@ -225,6 +245,70 @@ INT WINAPI WinMain (HINSTANCE hInstance, HINSTANCE, LPSTR strCmdLine, INT nCmdSh
 	delete g_pOrbiter;
 	return 0;
 }
+
+#else // !_WIN32 -- POSIX entry point (macOS/Linux)
+
+int main (int argc, char *argv[])
+{
+	// Verify working directory
+	// Debug: trace startup
+
+	char dir[1024];
+	GetCurrentDirectory(1024, dir);
+
+	SetEnvironmentVars();
+	g_pOrbiter = new Orbiter; // application instance
+
+	// Build a command line string from argv for the parser
+	std::string cmdline;
+	for (int i = 1; i < argc; i++) {
+		if (i > 1) cmdline += ' ';
+		cmdline += argv[i];
+	}
+	// On POSIX, shell already handles quoting, but arguments with spaces
+	// need to be re-quoted for the Orbiter command line parser
+	std::string quotedCmdline;
+	for (int i = 1; i < argc; i++) {
+		if (i > 1) quotedCmdline += ' ';
+		std::string arg = argv[i];
+		if (arg.find(' ') != std::string::npos || arg.find('(') != std::string::npos)
+			quotedCmdline += "\"" + arg + "\"";
+		else
+			quotedCmdline += arg;
+	}
+	// Create a mutable copy - ParseCmdLine modifies the string in-place
+	char *cmdlineBuf = new char[quotedCmdline.size() + 1];
+	strcpy(cmdlineBuf, quotedCmdline.c_str());
+	orbiter::CommandLine::Parse(g_pOrbiter, cmdlineBuf);
+	delete[] cmdlineBuf;
+
+	// Initialise the log
+	INITLOG("Orbiter.log", false);  // Force non-append for debugging
+#ifdef ISBETA
+	LOGOUT("Build %s BETA [v.%06d]", __DATE__, g_pOrbiter->GetVersion());
+#else
+	LOGOUT("Build %s [v.%06d]", __DATE__, g_pOrbiter->GetVersion());
+#endif
+
+	srand(12345);
+	LOGOUT("Timer precision: %g sec", fine_counter_step);
+
+	oapiRegisterCustomControls(nullptr);
+
+	HRESULT hr;
+	if (FAILED (hr = g_pOrbiter->Create (nullptr))) {
+			LOGOUT("Application creation failed");
+		fprintf(stderr, "Application creation failed! Terminating.\n");
+		return 1;
+	}
+
+	setlocale (LC_CTYPE, "");
+
+	g_pOrbiter->Run ();
+	delete g_pOrbiter;
+	return 0;
+}
+#endif // _WIN32
 
 void SetEnvironmentVars ()
 {
@@ -383,16 +467,17 @@ HRESULT Orbiter::Create (HINSTANCE hInstance)
 	if (m_pLaunchpad) return S_OK; // already created
 
 	HRESULT hr;
-	WNDCLASS wndClass;
-
-	// Enable tab controls
-	InitCommonControls();
-	LoadLibrary ("riched20.dll");
 
 	// parameter manager - parses from master config file
 	hInst = hInstance;
 	pConfig->Load(MasterConfigFile);
 	strcpy (cfgpath, pConfig->CfgDirPrm.ConfigDir);   cfglen = strlen (cfgpath);
+
+#ifdef _WIN32
+	WNDCLASS wndClass;
+	InitCommonControls();
+	LoadLibrary ("riched20.dll");
+#endif
 
 	if (FAILED (hr = pDI->Create (hInstance))) return hr;
 
@@ -404,8 +489,9 @@ HRESULT Orbiter::Create (HINSTANCE hInstance)
 
     pState = new State(); TRACENEW
 
+#ifdef _WIN32
 	// Register main dialog window class
-	GetClassInfo (hInstance, "#32770", &wndClass); // override default dialog class
+	GetClassInfo (hInstance, "#32770", &wndClass);
 	wndClass.hIcon = LoadIcon (hInstance, MAKEINTRESOURCE (IDI_MAIN_ICON));
 	RegisterClass (&wndClass);
 
@@ -418,17 +504,46 @@ HRESULT Orbiter::Create (HINSTANCE hInstance)
 	// Register HTML viewer class
 	RegisterHtmlCtrl (hInstance, UseHtmlInline());
 	CustomCtrl::RegisterClass (hInstance);
+#else
+	bWINEenv = false;
+
+	// Initialize SDL2 platform layer
+	m_pSDL = new orbiter::SDLPlatform(this);
+	int sdlW = (pConfig->CfgDevPrm.WinW > 0 && pConfig->CfgDevPrm.WinW < 8192) ? pConfig->CfgDevPrm.WinW : 1280;
+	int sdlH = (pConfig->CfgDevPrm.WinH > 0 && pConfig->CfgDevPrm.WinH < 8192) ? pConfig->CfgDevPrm.WinH : 800;
+	if (!m_pSDL->Initialize(sdlW, sdlH))
+	{
+		LOGOUT("SDL2 initialization failed");
+		return E_FAIL;
+	}
+	viewW = m_pSDL->GetWidth();
+	viewH = m_pSDL->GetHeight();
+	hRenderWnd = m_pSDL->GetWindow();
+	LOGOUT("SDL2 window created: %dx%d", viewW, viewH);
+
+	// Register OpenGL graphics client
+	ogl::OGLClient *oglClient = new ogl::OGLClient(nullptr);
+	oglClient->SetSDLWindow(m_pSDL->GetWindow(), m_pSDL->GetGLContext());
+	if (!oapiRegisterGraphicsClient(oglClient)) {
+		fprintf(stderr, "[Orbiter] Failed to register OGL graphics client\n");
+		delete oglClient;
+	} else {
+		fprintf(stderr, "[Orbiter] OpenGL graphics client registered\n");
+	}
+#endif
 
 	if (pConfig->CfgCmdlinePrm.bFastExit)
 		SetFastExit(true);
 	if (pConfig->CfgCmdlinePrm.bOpenVideoTab)
 		OpenVideoTab();
 
+#ifdef _WIN32
 	if (pConfig->CfgDemoPrm.bBkImage) {
 		hBk = CreateDialog (hInstance, MAKEINTRESOURCE(IDD_DEMOBK), NULL, BkMsgProc);
 		ShowWindow (hBk, SW_MAXIMIZE);
 	}
-	
+#endif
+
 	// Create the "launchpad" main dialog window
 	m_pLaunchpad = new orbiter::LaunchpadDialog (this); TRACENEW
 	m_pLaunchpad->Create (bStartVideoTab);
@@ -437,11 +552,13 @@ HRESULT Orbiter::Create (HINSTANCE hInstance)
 
 	script = new ScriptInterface(this); TRACENEW
 
-	// preload modules from command line requests
+#ifdef _WIN32
 	LoadModules("Modules\\Plugin", pConfig->CfgCmdlinePrm.LoadPlugins);
-
-	// preload active plugin modules
 	LoadModules("Modules\\Plugin", pConfig->GetActiveModules());
+#else
+	LoadModules("Modules/Plugin", pConfig->CfgCmdlinePrm.LoadPlugins);
+	LoadModules("Modules/Plugin", pConfig->GetActiveModules());
+#endif
 
 	// preload startup plugin modules
 	LoadStartupModules();
@@ -527,7 +644,16 @@ int Orbiter::GetVersion () const
 //! @param cbufOut returns path to the plugin DLL
 static bool FindStandaloneDll(const char *path, const char *name, char* cbufOut)
 {
+#ifdef _WIN32
 	sprintf (cbufOut, "%s\\%s.dll", path, name);
+#else
+	sprintf (cbufOut, "%s/lib%s.dylib", path, name);
+	if (fs::exists(cbufOut)) return true;
+	sprintf (cbufOut, "%s/%s.dylib", path, name);
+	if (fs::exists(cbufOut)) return true;
+	// Also try without lib prefix in subdirectory
+	sprintf (cbufOut, "%s/%s", path, name);
+#endif
 	return fs::exists(cbufOut);
 }
 
@@ -536,7 +662,13 @@ static bool FindStandaloneDll(const char *path, const char *name, char* cbufOut)
 //! @param cbufOut returns path to the plugin DLL
 static bool FindDllInPluginFolder(const char *path, const char *name, char* cbufOut)
 {
+#ifdef _WIN32
 	sprintf(cbufOut, "%s\\%s\\%s.dll", path, name, name);
+#else
+	sprintf(cbufOut, "%s/%s/lib%s.dylib", path, name, name);
+	if (fs::exists(cbufOut)) return true;
+	sprintf(cbufOut, "%s/%s/%s.dylib", path, name, name);
+#endif
 	return fs::exists(cbufOut);
 }
 
@@ -548,9 +680,20 @@ void Orbiter::LoadModules(const std::string& path, const std::list<std::string>&
 
 void Orbiter::LoadModules(const std::string& path)
 {
+	if (!fs::is_directory(path)) return;
 	for (const auto& entry : fs::directory_iterator(path)) {
 		auto fpath = entry.path();
-		if (fpath.extension().string() == ".dll") {
+		auto ext = fpath.extension().string();
+#ifdef _WIN32
+		if (ext == ".dll") {
+#else
+		if (ext == ".dylib") {
+			std::string stem = fpath.stem().string();
+			// Remove "lib" prefix if present (CMake generates libFoo.dylib)
+			if (stem.substr(0, 3) == "lib") stem = stem.substr(3);
+			LoadModule(path.c_str(), stem.c_str());
+		} else if (ext == ".dll") {
+#endif
 			LoadModule(path.c_str(), fpath.stem().string().c_str());
 		}
 	}
@@ -562,7 +705,11 @@ void Orbiter::LoadModules(const std::string& path)
 //-----------------------------------------------------------------------------
 void Orbiter::LoadStartupModules()
 {
+#ifdef _WIN32
 	LoadModules("Modules\\Startup");
+#else
+	LoadModules("Modules/Startup");
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -585,10 +732,14 @@ HINSTANCE Orbiter::LoadModule (const char *path, const char *name)
 		char cbuf2[256];
 		if (FindDllInPluginFolder(path, name, cbuf2))
 		{
+#ifdef _WIN32
 			// Convert to absolute path, otherwise LoadLibraryEx fails with error code 87.
-			// See https://stackoverflow.com/questions/36275535/loadlibraryex-error-87-the-parameter-is-incorrect
 			sprintf(cbuf, "%s\\%s", cwd, cbuf2);
 			hDLL = LoadLibraryEx(cbuf, NULL, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+#else
+			sprintf(cbuf, "%s/%s", cwd, cbuf2);
+			hDLL = LoadLibrary(cbuf);
+#endif
 		}
 		else
 		{
@@ -706,13 +857,13 @@ HWND Orbiter::CreateRenderWindow (Config *pCfg, const char *scenario)
 	LOGOUT("");
 	LOGOUT("**** Creating simulation session");
 
-	m_pLaunchpad->Hide(); // hide launchpad dialog while the render window is visible
-	
+	m_pLaunchpad->Hide();
+
 	if (gclient) {
-		if(pState->SplashScreen())
+			if(pState->SplashScreen())
 			gclient->clbkSetSplashScreen(pState->SplashScreen(), pState->SplashColor());
 		hRenderWnd = gclient->InitRenderWnd (gclient->clbkCreateRenderWindow());
-		GetRenderParameters ();
+			GetRenderParameters ();
 	} else {
 		hRenderWnd = NULL;
 		m_pConsole = new orbiter::ConsoleNG(this);
@@ -736,13 +887,13 @@ HWND Orbiter::CreateRenderWindow (Config *pCfg, const char *scenario)
 
 	if (gclient) {
 		pDlgMgr = new DialogManager (this, hRenderWnd);
-
+	
 		// global dialog resources
 		g_select = new Select(); TRACENEW
 		pDlgMgr->AddEntry(g_select);
 		g_input = new InputBox(); TRACENEW
 		pDlgMgr->AddEntry(g_input);
-
+	
 		// playback screen annotation manager
 		snote_playback = gclient->clbkCreateAnnotation ();
 	}
@@ -756,7 +907,6 @@ HWND Orbiter::CreateRenderWindow (Config *pCfg, const char *scenario)
 	launch_tick = 3;
 	if (pCfg->CfgDebugPrm.TimerMode == 2) use_fine_counter = FALSE;
 
-	// Generate logical world objects
 	if (gclient) {
 		Base::CreateStaticDeviceObjects();
 	}
@@ -775,20 +925,28 @@ HWND Orbiter::CreateRenderWindow (Config *pCfg, const char *scenario)
 		return 0;
 	}
 	LOGOUT("Finished initialising world");
-	time_prev = std::chrono::steady_clock::now() - std::chrono::milliseconds(1); // make sure SimDT > 0 for first frame
+	time_prev = std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
 
 	g_psys->InitState (ScnPath (scenario));
 
 	g_focusobj = 0;
-	Vessel *vfocus = g_psys->GetVessel (pState->Focus());
-	if (!vfocus)
+	const char *focusName = pState->Focus();
+	Vessel *vfocus = nullptr;
+	if (focusName && focusName[0] && g_psys) {
+			vfocus = g_psys->GetVessel(focusName);
+		}
+	if (!vfocus && g_psys && g_psys->nVessel() > 0)
 		vfocus = g_psys->GetVessel ((DWORD)0); // in case no focus vessel was defined
-	SetFocusObject (vfocus, false);
-
-	LOGOUT("Finished initialising status");
+	if (vfocus)
+		SetFocusObject (vfocus, false);
 
 	if (g_camera) {
-		g_camera->InitState (scenario, g_focusobj);
+		if (g_focusobj)
+			g_camera->InitState (scenario, g_focusobj);
+		else {
+			// No focus vessel - initialize camera at Earth position
+			LOGOUT("WARNING: No focus vessel, initializing camera at default position");
+		}
 	}
 	LOGOUT ("Finished initialising camera");
 
@@ -996,12 +1154,14 @@ void Orbiter::BroadcastGlobalInit ()
 HRESULT Orbiter::Render3DEnvironment (bool hidedialogs)
 {
 	if (gclient) {
-		if(!hidedialogs)
+		if(!hidedialogs && pDlgMgr)
 			pDlgMgr->ImGuiNewFrame();
 		gclient->clbkRenderScene ();
 		Output2DData ();
-		if(!hidedialogs)
+		if(!hidedialogs && pDlgMgr)
 			gclient->clbkImGuiRenderDrawData();
+		else if (ImGui::GetCurrentContext())
+			ImGui::EndFrame(); // Ensure frame is always ended
 		gclient->clbkDisplayFrame ();
 	}
 	// Mark frame boundary for when using the profiler
@@ -1025,20 +1185,62 @@ void Orbiter::ScreenToClient (POINT *pt) const
 //-----------------------------------------------------------------------------
 INT Orbiter::Run ()
 {
-    // Recieve and process Windows messages
+#ifndef _WIN32
+	// SDL2 main loop
+	if (!pConfig->CfgCmdlinePrm.LaunchScenario.empty()) {
+			Launch (pConfig->CfgCmdlinePrm.LaunchScenario.c_str());
+		}
+
+	bool running = true;
+	while (running) {
+
+		// Process SDL events
+		if (m_pSDL && !m_pSDL->ProcessEvents()) {
+			running = false;
+			break;
+		}
+
+		if (bSession) {
+			if (bAllowInput) bActive = true, bAllowInput = false;
+			if (BeginTimeStep (bRunning)) {
+				UpdateWorld();
+				EndTimeStep (bRunning);
+				if (bActive) UserInput();
+				bRenderOnce = TRUE;
+			}
+			if (m_pConsole)
+				m_pConsole->ParseCmd();
+		}
+
+		if (bRenderOnce) {
+			Render3DEnvironment();
+			bRenderOnce = FALSE;
+		}
+
+		if (!bSession) {
+			// If no scenario loaded, auto-launch (Current state) or just idle
+			SDL_Delay(16); // ~60fps idle
+		}
+	}
+
+	if (m_pSDL) {
+		m_pSDL->Shutdown();
+		delete m_pSDL;
+		m_pSDL = nullptr;
+	}
+	return 0;
+
+#else
+	// Win32 main loop (original)
     BOOL  bGotMsg, bCanRender, bpCanRender = TRUE;
     MSG   msg;
     PeekMessage (&msg, NULL, 0U, 0U, PM_NOREMOVE);
 
 	if (!pConfig->CfgCmdlinePrm.LaunchScenario.empty())
 		Launch (pConfig->CfgCmdlinePrm.LaunchScenario.c_str());
-	// otherwise wait for the user to make a selection from the scenario
-	// list in the launchpad dialog
 
 	while (WM_QUIT != msg.message) {
 
-        // Use PeekMessage() if the app is active, so we can use idle time to
-        // render the scene. Else, use GetMessage() to avoid eating CPU time.
 		if (bSession) {
             bGotMsg = PeekMessage (&msg, NULL, 0U, 0U, PM_REMOVE);
 		} else {
@@ -1083,6 +1285,7 @@ INT Orbiter::Run ()
     }
 	hRenderWnd = NULL;
     return msg.wParam;
+#endif // _WIN32
 }
 
 void Orbiter::SingleFrame ()
@@ -1993,6 +2196,57 @@ const char *Orbiter::KeyState() const
 // Desc: Process user input via DirectInput keyboard and joystick (but not
 //       keyboard messages sent via window message queue)
 //-----------------------------------------------------------------------------
+#ifndef _WIN32
+HRESULT Orbiter::UserInput ()
+{
+	memset(simkstate, 0, 256);
+	for (DWORD i = 0; i < 15; i++) ctrlKeyboard[i] = ctrlJoystick[i] = 0;
+
+	bool skipkbd = false;
+	if ((g_input && g_input->IsActive()) ||
+	    (g_select && g_select->IsActive())) skipkbd = true;
+
+	// Get keyboard state from SDL platform layer
+	if (m_pSDL) {
+		const char *sdlKeys = m_pSDL->GetKeyState();
+		ImGuiIO& io = ImGui::GetIO();
+
+		if (!io.WantCaptureKeyboard) {
+			for (int i = 0; i < 256; i++)
+				simkstate[i] |= sdlKeys[i];
+		}
+
+		bool consume = BroadcastImmediateKeyboardEvent(simkstate);
+		if (!skipkbd && !consume) {
+			KbdInputImmediate_System(simkstate);
+			if (bRunning) KbdInputImmediate_OnRunning(simkstate);
+		}
+
+		// Process queued mouse events
+		for (auto &me : m_pSDL->GetMouseEvents()) {
+			MouseEvent(me.event, me.state, me.x, me.y);
+		}
+		m_pSDL->ClearMouseEvents();
+
+		// Mouse wheel -> camera zoom
+		int wheel = m_pSDL->GetWheelAccum();
+		if (wheel != 0 && !io.WantCaptureMouse) {
+			double ap = oapiCameraAperture();
+			double factor = (wheel > 0) ? 0.95 : 1.05;
+			for (int i = 0; i < abs(wheel); i++) ap *= factor;
+			ap = std::max(0.003, std::min(1.4, ap));
+			oapiCameraSetAperture(ap);
+		}
+		m_pSDL->ClearWheelAccum();
+	}
+
+	for (DWORD i = 0; i < 15; i++) ctrlTotal[i] = ctrlKeyboard[i];
+
+	if (g_camera) g_camera->UpdateMouse();
+	if (g_focusobj) g_focusobj->ApplyUserAttitudeControls(ctrlTotal);
+	return S_OK;
+}
+#else
 HRESULT Orbiter::UserInput ()
 {
 	static char buffer[256];
@@ -2093,6 +2347,10 @@ bool Orbiter::SendKbdImmediate(char kstate[256], bool onRunningOnly)
 	bAllowInput = true; // make sure the render window processes inputs
 	return true;
 }
+
+// End of Win32-specific buffered input methods. The following immediate
+// keyboard handlers are cross-platform (they just read the kstate array).
+#endif // _WIN32 -- SendKbdBuffered, SendKbdImmediate
 
 //-----------------------------------------------------------------------------
 // Name: KbdInputImmediate_System ()
@@ -2268,6 +2526,9 @@ void Orbiter::KbdInputImmediate_OnRunning (char *kstate)
 	}
 }
 
+// The following buffered/joystick input methods use DirectInput types
+// and are only compiled on Windows.
+#ifdef _WIN32
 //-----------------------------------------------------------------------------
 // Name: KbdInputBuffered_System ()
 // Desc: General user keyboard buffered key interpretation. Processes keys
@@ -2510,6 +2771,7 @@ void Orbiter::BroadcastBufferedKeyboardEvent (char *kstate, DIDEVICEOBJECTDATA *
 		if (consume) dod[i].dwData = 0; // remove key from process queue
 	}
 }
+#endif // _WIN32 - end of DirectInput-specific input methods
 
 //-----------------------------------------------------------------------------
 // Name: MsgProc()
@@ -2518,8 +2780,10 @@ void Orbiter::BroadcastBufferedKeyboardEvent (char *kstate, DIDEVICEOBJECTDATA *
 
 LRESULT Orbiter::MsgProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+#ifdef _WIN32
 	if (ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam))
 		return 0;
+#endif
 
 	switch (uMsg) {
 
@@ -2751,7 +3015,12 @@ void Orbiter::OpenHelp (const HELPCONTEXT *hcontext)
 
 void Orbiter::OpenLaunchpadHelp (HELPCONTEXT *hcontext)
 {
+#ifdef _WIN32
 	::OpenHelp (0, hcontext->helpfile, hcontext->topic);
+#else
+	// TODO: implement help viewer for non-Windows
+	LOGOUT("Help requested: %s", hcontext->topic ? hcontext->topic : "(null)");
+#endif
 }
 
 HELPCONTEXT Orbiter::DefaultHelpPage(const char* topic)

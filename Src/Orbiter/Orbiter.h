@@ -9,7 +9,9 @@
 #include "Select.h"
 #include "Keymap.h"
 #include <stdio.h>
+#ifdef _WIN32
 #include <commctrl.h>
+#endif
 #include "Mesh.h"
 #include "TimeData.h"
 #include <chrono>
@@ -20,7 +22,9 @@ class State;
 class Body;
 class Vessel;
 class ScreenNote;
+class ScriptInterface;
 class DialogManager;
+namespace orbiter { class SDLPlatform; }
 class OrbiterGraphics;
 class OrbiterConnect;
 class OrbiterServer;
@@ -174,8 +178,10 @@ public:
 
 	// DirectInput components
 	inline CDIFramework7 *GetDInput() const { return pDI->GetDIFrame(); }
+#ifdef _WIN32
 	inline LPDIRECTINPUTDEVICE8 GetKbdDevice() const { return pDI->GetKbdDevice(); }
 	inline LPDIRECTINPUTDEVICE8 GetJoyDevice() const { return pDI->GetJoyDevice(); }
+#endif
 
 	// memory monitor
 	MemStat *memstat;
@@ -319,14 +325,18 @@ protected:
 	HRESULT UserInput ();
 	void KbdInputImmediate_System    (char *kstate);
 	void KbdInputImmediate_OnRunning (char *buffer);
+#ifdef _WIN32
 	void KbdInputBuffered_System     (char *kstate, DIDEVICEOBJECTDATA *dod, DWORD n);
 	void KbdInputBuffered_OnRunning  (char *kstate, DIDEVICEOBJECTDATA *dod, DWORD n);
 	void UserJoyInput_System (DIJOYSTATE2 *js);
 	void UserJoyInput_OnRunning (DIJOYSTATE2 *js);
+#endif
 	bool MouseEvent (UINT event, DWORD state, DWORD x, DWORD y);
 	bool BroadcastMouseEvent (UINT event, DWORD state, DWORD x, DWORD y);
 	bool BroadcastImmediateKeyboardEvent (char *kstate);
+#ifdef _WIN32
 	void BroadcastBufferedKeyboardEvent (char *kstate, DIDEVICEOBJECTDATA *dod, DWORD n);
+#endif
 
 	void BroadcastGlobalInit();
 
@@ -380,6 +390,10 @@ private:
 	oapi::ScreenAnnotation *snote_playback;// onscreen annotation during playback
 	ScriptInterface *script;
 	INTERPRETERHANDLE hScnInterp;
+
+#ifndef _WIN32
+	orbiter::SDLPlatform *m_pSDL;  // SDL2 platform layer (macOS/Linux)
+#endif
 
 	// render parameters (only used if graphics client is present)
 	bool			bFullscreen;   // renderer in fullscreen mode

@@ -8,6 +8,8 @@
 
 #ifndef DI7FRAME_H
 #define DI7FRAME_H
+
+#ifdef _WIN32
 #define STRICT 1
 #include <windows.h>
 #include <dinput.h>
@@ -67,5 +69,23 @@ public:
 	inline LPDIRECTINPUTDEVICE8 GetMouseDevice() { return m_pdidMouseDevice; }
 	inline LPDIRECTINPUTDEVICE8 GetJoyDevice() { return m_pdidJoyDevice; }
 };
+
+#else // !_WIN32
+// Stub for non-Windows platforms
+#include "OrbiterPlatform.h"
+#include "d3d_compat.h"
+
+class CDIFramework7
+{
+public:
+	CDIFramework7() {}
+	~CDIFramework7() {}
+	HRESULT Create(HINSTANCE) { return S_OK; }
+	void Destroy() {}
+	DWORD NumJoysticks() const { return 0; }
+	void DestroyJoyDevice() {}
+	void DestroyDevices() {}
+};
+#endif // _WIN32
 
 #endif // !DI7FRAME_H

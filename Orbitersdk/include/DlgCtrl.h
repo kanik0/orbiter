@@ -5,7 +5,13 @@
 #define __DLGCTRL_H
 
 #define STRICT 1
+#ifdef _WIN32
 #include "windows.h"
+#else
+#include "OrbiterPlatform.h"
+#define FAR
+#define PASCAL
+#endif
 
 void oapiRegisterCustomControls (HINSTANCE hInst);
 void oapiUnregisterCustomControls (HINSTANCE hInst);
@@ -34,8 +40,15 @@ void oapiSetSwitchParams (HWND hCtrl, SWITCHPARAM *sp, bool redraw);
 int oapiSetSwitchState (HWND hCtrl, int state, bool redraw);
 int oapiGetSwitchState (HWND hCtrl);
 
+void RegisterPropertyList (HINSTANCE hInst);
+void UnregisterPropertyList (HINSTANCE hInst);
+
 // ==================================================================================
 // ==================================================================================
+
+// Forward declarations
+class PropertyGroup;
+class PropertyList;
 
 class PropertyItem {
 	friend class PropertyGroup;

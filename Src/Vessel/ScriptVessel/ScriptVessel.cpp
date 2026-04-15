@@ -791,7 +791,7 @@ static int lua_crosscall(lua_State* L) {
 	// Call the function in the target lua state
 	// use nargs - 1 because the ScriptVessel * argument has been skipped
 	if (lua_pcall(Ltgt, nargs - 1, LUA_MULTRET, 0) != 0) {
-		printf("Error cross-calling %s: %s\n", method, lua_tostring(Ltgt, -1));
+		printf("Error cross-calling %s: %s/n", method, lua_tostring(Ltgt, -1));
 	}
 	int nret = lua_gettop(Ltgt) - stacksize; // number of results
 

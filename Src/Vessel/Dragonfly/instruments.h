@@ -5,7 +5,11 @@
 #define __INSTRUMENTS_H_
 
 #include <stdlib.h>
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 #include "vectors.h"
 #include "orbitersdk.h"
 

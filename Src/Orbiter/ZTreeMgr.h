@@ -10,7 +10,11 @@
 #define __ZTREEMGR_H
 
 #include <iostream>
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 
 // =======================================================================
 // Tree node structure

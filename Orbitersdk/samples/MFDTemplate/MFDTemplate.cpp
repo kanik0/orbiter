@@ -15,7 +15,11 @@
 
 #define STRICT
 #define ORBITER_MODULE
-#include "windows.h"
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 #include "orbitersdk.h"
 #include "MFDTemplate.h"
 

@@ -20,14 +20,19 @@
 
 #if defined(_MSC_VER) && (_MSC_VER >= 1300 ) // Microsoft Visual Studio Version 2003 and higher
 #if !defined(_CRT_SECURE_NO_DEPRECATE)
-#define _CRT_SECURE_NO_DEPRECATE 
+#define _CRT_SECURE_NO_DEPRECATE
 #endif
 #endif
 #include <fstream>
-#include <windows.h>
 #include <float.h>
 #include <math.h>
 #include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 
 #if defined(_MSC_VER) && (_MSC_VER < 1920 ) // Microsoft Visual Studio Version 2017 and lower
 #include <algorithm>
@@ -37,10 +42,17 @@ extern "C" {
 #include <lua/lua.h>
 }
 
-// Assumes MS VC++ compiler. Modify these statements for other compilers
+#ifdef _WIN32
+// Windows: MS VC++ compiler
 #define DLLEXPORT __declspec(dllexport)
 #define DLLIMPORT __declspec(dllimport)
 #define DLLCLBK extern "C" __declspec(dllexport)
+#else
+// POSIX: GCC/Clang
+#define DLLEXPORT __attribute__((visibility("default")))
+#define DLLIMPORT
+#define DLLCLBK extern "C" __attribute__((visibility("default")))
+#endif
 
 #ifdef OAPI_IMPLEMENTATION
 #define OAPIFUNC DLLEXPORT
@@ -48,13 +60,17 @@ extern "C" {
 #define OAPIFUNC DLLIMPORT
 #endif
 
+#ifdef _MSC_VER
 #pragma warning(disable: 4201)
+#endif
 
-// Message loop return type - maintain backward compatibility for 32-bit
-#ifdef _WIN64
+// Message loop return type
+#if defined(_WIN64)
 #define OAPI_MSGTYPE LRESULT
-#else
+#elif defined(_WIN32)
 #define OAPI_MSGTYPE int
+#else
+#define OAPI_MSGTYPE intptr_t
 #endif
 
 // ======================================================================
@@ -1610,12 +1626,16 @@ typedef struct {
 	MFDMODESPECEX *spec;
 } MFDMODEOPENSPEC;
 
+#ifdef _WIN32
 #pragma pack(push,1)
+#endif
 typedef struct {
 	const char *line1, *line2;
 	char selchar;
 } MFDBUTTONMENU;
+#ifdef _WIN32
 #pragma pack(pop)
+#endif
 
 
 // ===========================================================================
@@ -6388,7 +6408,7 @@ OAPIFUNC void oapiWriteLogV (const char *format, ...);
 	* \param ... List of output parameters. Must match the parameter flags in the format string.
 	* \sa oapiWriteLog, oapiWriteLogV
 	*/
-#define oapiWriteLogError(format, ...) __writeLogError(__FUNCTION__,__FILE__,__LINE__, format, __VA_ARGS__)
+#define oapiWriteLogError(format, ...) __writeLogError(__FUNCTION__,__FILE__,__LINE__, format, ##__VA_ARGS__)
 OAPIFUNC void __writeLogError(const char *func, const char *file, int line, const char *format, ...);
 
    /**

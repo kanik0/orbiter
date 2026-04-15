@@ -2,8 +2,13 @@
 // Licensed under the MIT License
 
 #include "instruments.h"
-#include < GL\gl.h >                                
-#include < GL\glu.h >
+#ifdef __APPLE__
+#include <OpenGL/gl.h>
+#include <OpenGL/glu.h>
+#else
+#include <GL/gl.h>
+#include <GL/glu.h>
+#endif
 #include "vectors.h"        
 #include "panel.cpp"
 #include "math.h"
@@ -510,7 +515,7 @@ DigClock::DigClock(int x, int y, char *i_SRC,int i_lng,Panel *i_parent):instrume
 {SRC=i_SRC;
  len=i_lng;
  init=false;
- local[0] = '\0';
+ local[0] = '/0';
   //strcpy(local,SRC);
  //temps= oapiCreateSurface (LoadBitmap(parent->hModule,MAKEINTRESOURCE(IDB_BITMAP1)));
  type=40;//digclock
@@ -1093,7 +1098,7 @@ hRC=wglCreateContext(hDC2);
 ret=wglMakeCurrent(hDC2,hRC);					//all standard OpenGL init so far
 
 //We load the texture
-int texture_index=LoadOGLBitmap("Textures\\adi.dds");
+int texture_index=LoadOGLBitmap("Textures//adi.dds");
 if (texture_index>0) glEnable(GL_TEXTURE_2D);
 
 

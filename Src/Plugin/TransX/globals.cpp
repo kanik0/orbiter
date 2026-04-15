@@ -20,7 +20,11 @@
 
 #define STRICT
 
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 #include <cstdio>
 #include <cmath>
 #include "orbitersdk.h"
@@ -43,7 +47,7 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 	spec.context = NULL;
 	//Code contributed by Dave Robotham
 	ifstream kstream;
-	kstream.open("Config\\MFD\\TransX.cfg",NULL);
+	kstream.open("Config//MFD//TransX.cfg",NULL);
 	if( kstream )
 	{
 		try

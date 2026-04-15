@@ -1,9 +1,17 @@
 #include "TrackIR.h"
+#ifndef _WIN32
+#include "resource_stub.h"
+#endif
 #include "TrackIRconfig.h"
+#ifndef _WIN32
+#include "resource_stub.h"
+#endif
 #include "resource.h"
 #include <string.h>
 #include <stdio.h>
+#ifdef _WIN32
 #include <commctrl.h>
+#endif
 
 using std::min;
 using std::max;

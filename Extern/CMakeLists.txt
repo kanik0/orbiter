@@ -14,7 +14,9 @@ install(TARGETS lfs	DESTINATION ${ORBITER_BINARY_ROOT_DIR})
 install(TARGETS lfs DESTINATION ${ORBITER_INSTALL_SDK_DIR}/Utils/)
 target_include_directories(lfs PUBLIC Lua)
 target_link_libraries(lfs lua)
-SET_TARGET_PROPERTIES(lfs PROPERTIES LINK_FLAGS "/DEF:\"${CMAKE_CURRENT_SOURCE_DIR}/luafilesystem/src/lfs.def\"")
+if(MSVC)
+	SET_TARGET_PROPERTIES(lfs PROPERTIES LINK_FLAGS "/DEF:\"${CMAKE_CURRENT_SOURCE_DIR}/luafilesystem/src/lfs.def\"")
+endif()
 
 install(TARGETS lfs	DESTINATION ${ORBITER_BINARY_ROOT_DIR})
 

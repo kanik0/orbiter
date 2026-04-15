@@ -15,7 +15,11 @@
 #include "resource.h"
 #include "Editor.h"
 #include "DlgCtrl.h"
+#ifdef _WIN32
 #include <commctrl.h>
+#else
+#include "resource_stub.h"
+#endif
 #include <stdio.h>
 
 using std::min;
@@ -170,20 +174,20 @@ bool ScnEditor::SaveScenario (HWND hDlg)
 	GetWindowText(GetDlgItem(hDlg, IDC_EDIT2), text, 4096);
 
 	if (strlen(title)) {
-		sprintf(desc, "<h1>%s</h1>\n", title);
+		sprintf(desc, "<h1>%s</h1>/n", title);
 	}
 	else {
-		desc[0] = '\0';
+		desc[0] = '/0';
 	}
 	if (strlen(text)) {
 		strcat(desc, "<p>");
 		int j = strlen(desc);
 		for (int i = 0; i < strlen(text) && j < 4090; i++) {
-			if (text[i] == '\r') {
+			if (text[i] == '/r') {
 				continue;
 			}
-			else if (text[i] == '\n') {
-				strcpy(desc + j, "</p>\n<p>");
+			else if (text[i] == '/n') {
+				strcpy(desc + j, "</p>/n<p>");
 				j = strlen(desc);
 			}
 			else
@@ -306,8 +310,8 @@ void ScnEditor::VesselDeleted (OBJHANDLE hV)
 char *ScnEditor::ExtractVesselName (char *str)
 {
 	int i;
-	for (i = 0; str[i] && str[i] != '\t'; i++);
-	str[i] = '\0';
+	for (i = 0; str[i] && str[i] != '/t'; i++);
+	str[i] = '/0';
 	return str;
 }
 
@@ -483,12 +487,12 @@ void ScnEditorTab::ScanVesselList (int ResId, bool detail, OBJHANDLE hExclude)
 		strcpy (cbuf, vessel->GetName());
 		if (detail) {
 			if (cp = vessel->GetClassName())
-				sprintf (cbuf+strlen(cbuf), "\t(%s)", cp);
-			else strcat (cbuf, "\t");
+				sprintf (cbuf+strlen(cbuf), "/t(%s)", cp);
+			else strcat (cbuf, "/t");
 			if (hR = vessel->GetGravityRef()) {
 				char rname[256];
 				oapiGetObjectName (hR, rname, 256);
-				sprintf (cbuf+strlen(cbuf), "\t%s", rname);
+				sprintf (cbuf+strlen(cbuf), "/t%s", rname);
 			}
 		}
 		SendDlgItemMessage (hTab, ResId, LB_ADDSTRING, 0, (LPARAM)cbuf);
@@ -731,7 +735,7 @@ bool EditorTab_New::CreateVessel ()
 	char name[256], classname[256];
 
 	GetWindowText (GetDlgItem (hTab, IDC_NAME), name, 256);
-	if (name[0] == '\0') return false;            // no name provided
+	if (name[0] == '/0') return false;            // no name provided
 	if (oapiGetVesselByName (name)) return false; // vessel name already in use
 
 	if (GetSelVesselTp (classname, 256) != 1) return false; // no type selected
@@ -834,7 +838,7 @@ int EditorTab_New::GetSelVesselTp (char *name, int len)
 	tvi.cchTextMax = 256;
 	while (tvi.hItem = TreeView_GetParent (GetDlgItem (hTab, IDC_VESSELTP), tvi.hItem)) {
 		if (TreeView_GetItem (GetDlgItem (hTab, IDC_VESSELTP), &tvi)) {
-			strcat (cbuf, "\\");
+			strcat (cbuf, "//");
 			strcat (cbuf, name);
 			strcpy (name, cbuf);
 		}
@@ -857,7 +861,7 @@ bool EditorTab_New::UpdateVesselBmp ()
 	}
 
 	if (GetSelVesselTp (classname, 256) == 1) {
-		sprintf (pathname, "Vessels\\%s.cfg", classname);
+		sprintf (pathname, "Vessels//%s.cfg", classname);
 		FILEHANDLE hFile = oapiOpenFile (pathname, FILE_IN, CONFIG);
 		if (!hFile) return false;
 		if (oapiReadItem_string (hFile, (char*)"ImageBmp", imagename)) {
@@ -1587,10 +1591,10 @@ void EditorTab_Elements::RefreshSecondaryParams (const ELEMENTS &el, const ORBIT
 
 	sprintf (cbuf, "%g m", prm.PeD); SetWindowText (GetDlgItem (hTab, IDC_PERIAPSIS), cbuf);
 	sprintf (cbuf, "%g s", prm.PeT); SetWindowText (GetDlgItem (hTab, IDC_PET), cbuf);
-	sprintf (cbuf, "%0.3f °", prm.MnA*DEG); SetWindowText (GetDlgItem (hTab, IDC_MNANM), cbuf);
-	sprintf (cbuf, "%0.3f °", prm.TrA*DEG); SetWindowText (GetDlgItem (hTab, IDC_TRANM), cbuf);
-	sprintf (cbuf, "%0.3f °", prm.MnL*DEG); SetWindowText (GetDlgItem (hTab, IDC_MNLNG), cbuf);
-	sprintf (cbuf, "%0.3f °", prm.TrL*DEG); SetWindowText (GetDlgItem (hTab, IDC_TRLNG), cbuf);
+	sprintf (cbuf, "%0.3f ï¿½", prm.MnA*DEG); SetWindowText (GetDlgItem (hTab, IDC_MNANM), cbuf);
+	sprintf (cbuf, "%0.3f ï¿½", prm.TrA*DEG); SetWindowText (GetDlgItem (hTab, IDC_TRANM), cbuf);
+	sprintf (cbuf, "%0.3f ï¿½", prm.MnL*DEG); SetWindowText (GetDlgItem (hTab, IDC_MNLNG), cbuf);
+	sprintf (cbuf, "%0.3f ï¿½", prm.TrL*DEG); SetWindowText (GetDlgItem (hTab, IDC_TRLNG), cbuf);
 	if (closed) {
 		sprintf (cbuf, "%g s", prm.T);   SetWindowText (GetDlgItem (hTab, IDC_PERIOD), cbuf);
 		sprintf (cbuf, "%g m", prm.ApD); SetWindowText (GetDlgItem (hTab, IDC_APOAPSIS), cbuf);
@@ -3036,7 +3040,7 @@ void EditorTab_Docking::SetTargetDock (DWORD dock)
 		if (ndock) n = max ((DWORD)1, min (ndock, dock));
 	}
 	if (n) sprintf (cbuf, "%d", n);
-	else   cbuf[0] = '\0';
+	else   cbuf[0] = '/0';
 	SetWindowText (GetDlgItem (hTab, IDC_EDIT4), cbuf);
 }
 

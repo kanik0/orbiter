@@ -13,8 +13,15 @@
 
 #define STRICT
 #define ORBITER_MODULE
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#include "resource_stub.h"
+#endif
+#ifdef _WIN32
 #include <commctrl.h>
+#endif
 #include "orbitersdk.h"
 #include "resource.h"
 #include <cstdio>

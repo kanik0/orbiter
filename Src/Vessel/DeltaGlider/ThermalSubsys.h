@@ -20,6 +20,7 @@
 // ==============================================================
 
 class RadiatorControl;
+class CoolantLoop;
 
 class ThermalSubsystem: public DGSubsystem {
 	friend class CoolantLoop;
@@ -37,7 +38,7 @@ private:
 	/**
 	 * Density of solar irradiance [W/m^2] at the current vessel location.
 	 * Drops to 0 in planet shadow.
-	 * \param [out] sdir If provided, is set to direction of sun in vessel
+	 * /param [out] sdir If provided, is set to direction of sun in vessel
      *   frame on exit.
 	 */
 	double SolarRadiation(VECTOR3 *sdir=0);
@@ -109,6 +110,11 @@ private:
 // ==============================================================
 // Coolant loop
 // ==============================================================
+
+class CoolantLoopDisplay;
+class CoolantPumpSwitch;
+class CoolantPumpDial;
+class CoolantReftempDial;
 
 class CoolantLoop: public DGSubsystem {
 	friend class CoolantLoopDisplay;
@@ -240,6 +246,8 @@ private:
 // ==============================================================
 // Radiator control
 // ==============================================================
+
+class RadiatorSwitch;
 
 class RadiatorControl: public DGSubsystem {
 	friend class RadiatorSwitch;

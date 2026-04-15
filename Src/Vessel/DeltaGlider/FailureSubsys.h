@@ -18,6 +18,8 @@
 // Failure subsystem
 // ==============================================================
 
+class MwsButton;
+
 class FailureSubsystem: public DGSubsystem {
 	friend class MwsButton;
 

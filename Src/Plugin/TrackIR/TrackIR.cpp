@@ -219,7 +219,7 @@ bool GetDllLocation (LPTSTR pszPath)
 	HKEY pKey = NULL;
 	//open the registry key 
 	if (::RegOpenKeyEx(HKEY_CURRENT_USER,
-			"Software\\NaturalPoint\\NATURALPOINT\\NPClient Location",
+			"Software//NaturalPoint//NATURALPOINT//NPClient Location",
 			0, KEY_READ, &pKey) != ERROR_SUCCESS)
 		return false;
 

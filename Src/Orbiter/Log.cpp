@@ -5,10 +5,19 @@
 
 #include <string.h>
 #include <fstream>
-#include <Windows.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
+#ifdef _WIN32
 #include <Psapi.h>
+#endif
 #include "Log.h"
 #include "Orbiter.h"
+#ifndef _WIN32
+#include "resource_stub.h"
+#endif
 
 using namespace std;
 
@@ -141,13 +150,18 @@ void LogOut_WarningVA(const char* func, const char* file, int line, const char* 
 
 void LogOut_LastError (const char *func, const char *file, int line)
 {
+#ifdef _WIN32
 	DWORD err = GetLastError();
 	LPTSTR errString = NULL;
 	FormatMessage (FORMAT_MESSAGE_FROM_SYSTEM|FORMAT_MESSAGE_ALLOCATE_BUFFER|FORMAT_MESSAGE_IGNORE_INSERTS,NULL,err,MAKELANGID(LANG_NEUTRAL,SUBLANG_DEFAULT),(LPTSTR)&errString,0,NULL);
 	LogOut_Error (func, file, line, errString);
 	if (errString) LocalFree(errString);
+#else
+	LogOut_Error (func, file, line, "System error (no details on this platform)");
+#endif
 }
 
+#ifdef _WIN32
 void LogOut_DDErr (HRESULT hr, const char *func, const char *file, int line) {
 	if (hr == DD_OK) return;
 	static char errmsg[256] = ">>> ERROR: DDraw error ";
@@ -303,6 +317,10 @@ void LogOut_DIErr (HRESULT hr, const char *func, const char *file, int line) {
 	LogOut();
 	LogOut ("---------------------------------------------------------------");
 }
+#else
+void LogOut_DDErr (HRESULT, const char *, const char *, int) {}
+void LogOut_DIErr (HRESULT, const char *, const char *, int) {}
+#endif // _WIN32
 
 void LogOut_Warning(const char* func, const char* file, int line, const char* msg, ...)
 {

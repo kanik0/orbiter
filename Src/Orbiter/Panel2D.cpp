@@ -5,7 +5,9 @@
 #include "Panel2D.h"
 #include "Pane.h"
 #include "Vessel.h"
+#ifdef _WIN32
 #include <zmouse.h>
+#endif
 
 using namespace std;
 

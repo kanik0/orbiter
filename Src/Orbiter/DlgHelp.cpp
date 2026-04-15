@@ -5,8 +5,13 @@
 // Help window
 // ======================================================================
 #include "DlgHelp.h"
+#ifdef _WIN32
 #include <htmlhelp.h>
 #include <io.h>
+#else
+#include <unistd.h>
+#define _access access
+#endif
 #include "imgui.h"
 
 // This is just a placeholder to call the HtmlHelp API

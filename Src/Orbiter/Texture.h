@@ -5,8 +5,12 @@
 #define __TEXTURE_H
 
 #define STRICT 1
+#ifdef _WIN32
 #include <windows.h>
-#include <d3d.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
+#include "d3d_compat.h"
 #include <stdio.h>
 
 #define MAXFMT 6 // max number of different pixel formats

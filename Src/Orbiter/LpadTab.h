@@ -4,7 +4,11 @@
 #ifndef __LPADTAB_H
 #define __LPADTAB_H
 
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 #include "Config.h"
 #include "Launchpad.h"
 
@@ -65,8 +69,10 @@ namespace orbiter {
 		virtual void LaunchpadShowing(bool show) {}
 		inline bool IsActive() const { return bActive; }
 		inline HWND TabWnd() const { return hTab; }
+#ifdef _WIN32
 		inline HWND LaunchpadWnd() const { return pLp->hDlg; }
 		inline HINSTANCE AppInstance() const { return pLp->hInst; }
+#endif
 
 		virtual BOOL OnInitDialog(HWND hWnd, WPARAM wParam, LPARAM lParam) { return FALSE; }
 

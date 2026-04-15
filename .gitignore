@@ -29,3 +29,8 @@ Extern/irrKlang
 Doc/**/*.log
 Doc/**/*.pdf
 Doc/**/*.gz
+keymap.cfg
+Orbiter.log
+Orbiter_startup.log
+screenshot.bmp
+out/

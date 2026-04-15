@@ -12,7 +12,7 @@
 #ifndef __INSTRHSI_H
 #define __INSTRHSI_H
 
-#include "..\Common\Instrument.h"
+#include "../Common/Instrument.h"
 
 // ==============================================================
 
@@ -22,8 +22,8 @@ public:
 	~InstrHSI ();
 
 	/**
-	 * \brief Set up parameters for 2D mesh vertex access
-	 * \param hMesh mesh handle for 2D main panel
+	 * /brief Set up parameters for 2D mesh vertex access
+	 * /param hMesh mesh handle for 2D main panel
 	 */
 	void Reset2D (int panelid, MESHHANDLE hMesh);
 	void ResetVC (DEVMESHHANDLE hMesh);

@@ -5,7 +5,11 @@
 #include "Element.h"
 #include "Config.h"
 #include <fstream>
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 #include <stdio.h>
 
 using namespace std;

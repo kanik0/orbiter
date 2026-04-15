@@ -2,6 +2,7 @@
 // Licensed under the MIT License
 
 #include "ConsoleInterpreter.h"
+#include "LuaConsole.h"
 
 // ==============================================================
 // Console interpreter class implementation
@@ -36,13 +37,13 @@ void ConsoleInterpreter::LoadAPI ()
 
 void ConsoleInterpreter::term_strout (const char *str, bool iserr)
 {
-	if (strchr (str, '\n')) {
+	if (strchr (str, '/n')) {
 		char *cbuf = new char[strlen(str)+1];
 		strcpy (cbuf, str);
-		char *s = strtok (cbuf, "\n");
+		char *s = strtok (cbuf, "/n");
 		while (s) {
 			console->AddLine (s, iserr ? LineType::LUA_OUT_ERROR:LineType::LUA_OUT);
-			s = strtok (NULL, "\n");
+			s = strtok (NULL, "/n");
 		}
 		delete []cbuf;
 	} else console->AddLine (str, iserr ? LineType::LUA_OUT_ERROR:LineType::LUA_OUT);

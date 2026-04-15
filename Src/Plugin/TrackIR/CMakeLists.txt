@@ -16,7 +16,7 @@ target_include_directories(TrackIR
 target_link_libraries(TrackIR
 	${ORBITER_LIB}
 	${ORBITER_SDK_LIB}
-	UxTheme.lib
+	$<$<PLATFORM_ID:Windows>:UxTheme.lib>
 )
 
 add_dependencies(TrackIR

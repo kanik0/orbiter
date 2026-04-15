@@ -16,7 +16,7 @@ target_link_libraries(ScnEditor
 	${ORBITER_LIB}
 	${ORBITER_SDK_LIB}
 	${ORBITER_DLGCTRL_LIB}
-	comctl32.lib
+	$<$<PLATFORM_ID:Windows>:comctl32.lib>
 )
 
 set_target_properties(ScnEditor

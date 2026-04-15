@@ -5,10 +5,18 @@ include(ExternalProject)
 
 add_subdirectory(Date)
 add_subdirectory(meshc)
-add_subdirectory(Pltex)
-add_subdirectory(Shipedit)
-add_subdirectory(texpack)
-#add_subdirectory(tileedit/qt)
+
+if(WIN32)
+	add_subdirectory(Pltex)
+	add_subdirectory(Shipedit)
+	add_subdirectory(texpack)
+	#add_subdirectory(tileedit/qt)
+endif()
+
+if(NOT WIN32)
+	# Skip Windows-only external projects on POSIX
+	return()
+endif()
 
 # We do this as an external project to invoke x64 toolchain
 ExternalProject_Add(plsplit

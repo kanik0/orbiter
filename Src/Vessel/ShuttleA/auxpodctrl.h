@@ -12,9 +12,11 @@
 #ifndef __AUXPODCTRL_H
 #define __AUXPODCTRL_H
 
-#include "..\Common\Instrument.h"
+#include "../Common/Instrument.h"
 
 // ==============================================================
+
+class ShuttleA;
 
 class AuxPodCtrl: public PanelElement {
 	friend class ShuttleA;

@@ -236,7 +236,11 @@ Vessel::~Vessel ()
 bool Vessel::OpenConfigFile (ifstream &cfgfile) const
 {
 	char cbuf[256];
+#ifdef _WIN32
 	strcpy (cbuf, "Vessels\\");
+#else
+	strcpy (cbuf, "Vessels/");
+#endif
 	strcat (cbuf, classname ? classname : name.c_str());
 	// first search in $CONFIGDIR\Vessels
 	cfgfile.open (g_pOrbiter->ConfigPath (cbuf));
@@ -247,7 +251,7 @@ bool Vessel::OpenConfigFile (ifstream &cfgfile) const
 	if (cfgfile.good()) return true;
 	else {
 		cfgfile.clear();
-		LOGOUT_ERR_FILENOTFOUND_MSG(g_pOrbiter->ConfigPath(cbuf + 8), "No vessel class configuration file found for: %s", classname ? classname : name);
+		LOGOUT_ERR_FILENOTFOUND_MSG(g_pOrbiter->ConfigPath(cbuf + 8), "No vessel class configuration file found for: %s", classname ? classname : name.c_str());
 		//LogOut (">>> ERROR: No vessel class configuration file found for:");
 		//LOGOUT_ERR(classname ? classname : name);
 		return false;
@@ -2277,10 +2281,12 @@ oapi::ParticleStream *Vessel::AddExhaustStream (ThrustSpec *ts, PARTICLESTREAMSP
 	}
 	contrail = tmp;
 	contrail[ncontrail] = gc->clbkCreateExhaustStream (pss, (OBJHANDLE)this, &ts->level, &ts->ref, &ts->dir);
-	if (pos) // local position reference
-		contrail[ncontrail]->SetFixedPos (MakeVECTOR3(*pos));
-	if (dir) // local direction reference
-		contrail[ncontrail]->SetFixedDir (MakeVECTOR3(*dir));
+	if (contrail[ncontrail]) {
+		if (pos) // local position reference
+			contrail[ncontrail]->SetFixedPos (MakeVECTOR3(*pos));
+		if (dir) // local direction reference
+			contrail[ncontrail]->SetFixedDir (MakeVECTOR3(*dir));
+	}
 	return contrail[ncontrail++];
 }
 
@@ -5965,7 +5971,11 @@ bool Vessel::LoadModule (ifstream &classf)
 bool Vessel::RegisterModule (const char *dllname)
 {
 	char cbuf[256];
+#ifdef _WIN32
 	sprintf (cbuf, "Modules\\%s.dll", dllname);
+#else
+	sprintf (cbuf, "Modules/lib%s.dylib", dllname);
+#endif
 	hMod = LoadLibrary (cbuf);
 	if (!hMod)
 		return false;

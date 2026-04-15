@@ -47,14 +47,14 @@ class ImGuiNote: public ImGuiDialog {
 	// Private constructor used when loading a scenario file
 	ImGuiNote(const char *name, const char *data, float s):ImGuiDialog(name) {
 		g_notes.push_back(this);
-		buf[MAX_SIZE - 1] = '\0';
+		buf[MAX_SIZE - 1] = '/0';
 		strncpy(buf, data, MAX_SIZE - 1);
 		scale =s;
 	}
 public:
 	ImGuiNote():ImGuiDialog(GetID().c_str()) {
 		g_notes.push_back(this);
-		buf[0] = '\0';
+		buf[0] = '/0';
 	}
 
 	virtual ~ImGuiNote() {
@@ -146,7 +146,7 @@ public:
 		std::string name = "DEFAULT_NAME";
 
 		char data[MAX_SIZE];
-		data[MAX_SIZE-1] = '\0';
+		data[MAX_SIZE-1] = '/0';
 		char *data_in = data;
 		char *line;
 		double scale = 2.0;
@@ -169,7 +169,7 @@ public:
 				} while(*next);
 			}
 		}
-		*data_in++ = '\0';
+		*data_in++ = '/0';
 
 		return new ImGuiNote(name.c_str(), data, scale);
 	}

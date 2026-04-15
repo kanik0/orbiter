@@ -9,7 +9,11 @@
 #ifndef __NAV_H
 #define __NAV_H
 
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 #include <fstream>
 #include "Vessel.h"
 

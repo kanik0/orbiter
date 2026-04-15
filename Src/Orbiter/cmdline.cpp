@@ -36,8 +36,13 @@ void CommandLine::ParseCmdLine(const PSTR cmdLine)
 	while (*pc) {
 		Option option;
 		option.key = 0;
+		PSTR prevPc = pc;
 		if (ParseNextOption(pc, groupKey, option)) {
 			optionList.push_back(option);
+		} else if (pc == prevPc) {
+			// ParseNextOption failed and didn't advance: skip current character
+			// to avoid infinite loop (e.g., when value contains parentheses)
+			pc++;
 		}
 	}
 }

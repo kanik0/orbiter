@@ -1,7 +1,7 @@
 // Copyright (c) Martin Schweiger
 // Licensed under the MIT License
 
-#include <d3d.h>
+#include "d3d_compat.h"
 #include <stdio.h>
 #include <iostream>
 #include <fstream>
@@ -3249,6 +3249,7 @@ void Train2::UpdateShadow (Vector &fromsun, double az)
 
 void Train2::Render (LPDIRECT3DDEVICE7 dev, bool day)
 {
+#ifdef _WIN32
 	int i;
 	NTVERTEX *vtx = dyndata->rail;
 	DWORD ambient;
@@ -3274,12 +3275,15 @@ void Train2::Render (LPDIRECT3DDEVICE7 dev, bool day)
 
 	dev->SetRenderState (D3DRENDERSTATE_ALPHABLENDENABLE, FALSE);
 	if (!day) dev->SetRenderState (D3DRENDERSTATE_AMBIENT, ambient);
+#endif // _WIN32
 }
 
 void Train2::RenderShadow (LPDIRECT3DDEVICE7 dev)
 {
+#ifdef _WIN32
 	dev->DrawPrimitive (
 		D3DPT_TRIANGLESTRIP, D3DFVF_XYZ /*| D3DFVF_DIFFUSE*/, dyndata->rshvtx, (dyndata->ng+1)*2, NULL);
+#endif
 }
 
 // ==============================================================================
@@ -3353,6 +3357,7 @@ void SolarPlant::Render (LPDIRECT3DDEVICE7 dev, bool)
 		}
 	}
 
+#ifdef _WIN32
 	// render panels and stands
 	dev->SetTexture (0, tex);
 	dev->SetRenderState (D3DRENDERSTATE_ALPHABLENDENABLE, TRUE);
@@ -3365,13 +3370,16 @@ void SolarPlant::Render (LPDIRECT3DDEVICE7 dev, bool)
 				flash[i] = false;
 			}
 	dev->SetRenderState (D3DRENDERSTATE_ALPHABLENDENABLE, FALSE);
+#endif
 }
 
 void SolarPlant::RenderShadow (LPDIRECT3DDEVICE7 dev)
 {
+#ifdef _WIN32
 	if (have_shadows)
 		dev->DrawIndexedPrimitive (
 			D3DPT_TRIANGLELIST, D3DFVF_XYZ /*| D3DFVF_DIFFUSE*/, ShVtx, nShVtx, ShIdx, nShIdx, 0);
+#endif
 }
 
 void SolarPlant::Activate ()

@@ -22,7 +22,11 @@
 // *******************************************************************************
 //
 //#include "stdafx.h"
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 #include "string.h"
 
 #include "NPClient.h"
@@ -202,7 +206,7 @@ NPRESULT NPClient_Init( LPTSTR pszDLLPath )
 
     if (lstrlen(szFullPath) > 0)        
 	{
-	   strcat(szFullPath, "\\");
+	   strcat(szFullPath, "//");
 	}
 	
 	strcat(szFullPath, "NPClient.dll");
@@ -216,8 +220,8 @@ NPRESULT NPClient_Init( LPTSTR pszDLLPath )
 			SIGNATUREDATA pSignature;
 			SIGNATUREDATA verifySignature;
 			// init the signatures
-			strcpy(verifySignature.DllSignature, "precise head tracking\n put your head into the game\n now go look around\n\n Copyright EyeControl Technologies");
-			strcpy(verifySignature.AppSignature, "hardware camera\n software processing data\n track user movement\n\n Copyright EyeControl Technologies");
+			strcpy(verifySignature.DllSignature, "precise head tracking/n put your head into the game/n now go look around/n/n Copyright EyeControl Technologies");
+			strcpy(verifySignature.AppSignature, "hardware camera/n software processing data/n track user movement/n/n Copyright EyeControl Technologies");
 			// query the dll and compare the results
 			NPRESULT vresult = NP_GetSignature( &pSignature );
 			if( vresult == NP_OK )

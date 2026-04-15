@@ -23,21 +23,21 @@
 
 namespace oapi {
 
-	/// \brief Plugin for controlling a spacecrafts's engines via
+	/// /brief Plugin for controlling a spacecrafts's engines via
 	///   a dialog box.
 	class RControl: public Module, public ImGuiDialog {
 	public:
-		/// \brief Entry point for open dialog callback
+		/// /brief Entry point for open dialog callback
 		static void hookOpenDlg(void* context);
 
 		void clbkSimulationStart (RenderMode mode) override;
 
 		void OnDraw();
 
-		/// \param hDLL module instance handle
+		/// /param hDLL module instance handle
 		RControl(HINSTANCE hDLL);
 
-		/// \brief Protected destructor
+		/// /brief Protected destructor
 		~RControl();
 
 		void SetVessel(VESSEL*);
@@ -59,8 +59,8 @@ namespace oapi {
 // ==============================================================
 
 static oapi::RControl *g_rcontrol;
-/// \brief Module entry point 
-/// \param hDLL module handle
+/// /brief Module entry point 
+/// /param hDLL module handle
 DLLCLBK void InitModule(HINSTANCE hDLL)
 {
 	// Create and register the module
@@ -68,8 +68,8 @@ DLLCLBK void InitModule(HINSTANCE hDLL)
 	oapiRegisterModule(g_rcontrol);
 }
 
-/// \brief Module exit point 
-/// \param hDLL module handle
+/// /brief Module exit point 
+/// /param hDLL module handle
 DLLCLBK void ExitModule(HINSTANCE hDLL)
 {
 	// Delete the module

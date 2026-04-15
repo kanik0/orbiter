@@ -11,7 +11,11 @@
 #define __CONFIG_H
 
 //#include <d3d.h>
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 #include "Vecmat.h"
 #include <iostream>
 #include <fstream>

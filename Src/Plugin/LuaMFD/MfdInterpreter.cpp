@@ -2,7 +2,9 @@
 // Licensed under the MIT License
 
 #include "MfdInterpreter.h"
+#ifdef _WIN32
 #include <process.h>
+#endif
 
 // ==============================================================
 // MFD interpreter class implementation
@@ -57,7 +59,7 @@ void MFDInterpreter::term_out (lua_State *L, bool iserr)
 	const char *str = lua_tostringex (L, -1);
 	char *s0 = (char*)str, *s;
 	for(;;) {
-		s = strchr (s0, '\n');
+		s = strchr (s0, '/n');
 		if (!s) {
 			//AddLine (s0, 0x00FF00);
 			term_strout (s0, iserr);
@@ -65,7 +67,7 @@ void MFDInterpreter::term_out (lua_State *L, bool iserr)
 		} else {
 			char cbuf[1024], *c, *cc;
 			for (c = s0, cc = cbuf; c < s; c++) *cc++ = *c;
-			*cc++ = '\0';
+			*cc++ = '/0';
 			//AddLine (cbuf, 0x00FF00);
 			term_strout (cbuf, iserr);
 			s0 = s+1;
@@ -113,7 +115,7 @@ void MFDInterpreter::AddLine (const char *line, COLORREF col)
 {
 	LineSpec *ls = new LineSpec;
 	strncpy (ls->buf, line, NCHAR);
-	ls->buf[NCHAR-1] = '\0';
+	ls->buf[NCHAR-1] = '/0';
 	ls->col = col;
 	ls->prev = lineLast;
 	ls->next = NULL;
@@ -134,7 +136,7 @@ void MFDInterpreter::AddLine (const char *line, COLORREF col)
 
 InterpreterList::Environment::Environment (OBJHANDLE hV)
 {
-	cmd[0] = '\0';
+	cmd[0] = '/0';
 	interp = CreateInterpreter (hV);
 }
 
@@ -171,7 +173,7 @@ unsigned int WINAPI InterpreterList::Environment::InterpreterThreadProc (LPVOID 
 		if (interp->Status() == 1) break; // close thread requested
 		interp->RunChunk (env->cmd, strlen (env->cmd)); // run command from buffer
 		if (interp->Status() == 1) break;
-		env->cmd[0] = '\0'; // free buffer
+		env->cmd[0] = '/0'; // free buffer
 		interp->EndExec();  // return control
 	}
 	interp->EndExec();  // release mutex (is this necessary?)

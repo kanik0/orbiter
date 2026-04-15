@@ -111,6 +111,8 @@ class HoverAltSwitch;
 class HoverAltResetBtn;
 class HoverAltModeButtons;
 
+class HoverHoldAltIndicator;
+
 class HoverHoldComponent: public HoverSubsystemComponent {
 	friend class HoverHoldAltIndicator;
 
@@ -163,6 +165,8 @@ private:
 // ==============================================================
 // Manual hover control submode
 // ==============================================================
+
+class HoverThrottle;
 
 class HoverManualComponent: public HoverSubsystemComponent {
 	friend class HoverThrottle;

@@ -4,7 +4,11 @@
 #ifndef __cmdline_h
 #define __cmdline_h
 
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 #include <vector>
 #include <string>
 

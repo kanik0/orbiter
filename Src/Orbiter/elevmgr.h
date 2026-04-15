@@ -4,7 +4,11 @@
 #ifndef __ELEVMGR_H
 #define __ELEVMGR_H
 
+#ifdef _WIN32
 #include "windows.h"
+#else
+#include "OrbiterPlatform.h"
+#endif
 #include "vecmat.h"
 #include "ZTreeMgr.h"
 #include <vector>

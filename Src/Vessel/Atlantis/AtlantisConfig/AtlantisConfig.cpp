@@ -4,19 +4,24 @@
 #define STRICT 1
 #define ORBITER_MODULE
 #include "orbitersdk.h"
+#ifndef _WIN32
+#include "resource_stub.h"
+#endif
 #include "AC_resource.h"
 #include <stdio.h>
+#ifdef _WIN32
 #include <io.h>
+#endif
 
 class VesselConfig;
 class AtlantisConfig;
 
-static const char *tex_hires_enabled = "Textures2\\Atlantis";
-static const char *tex_hires_disabled = "Textures2\\~Atlantis";
+static const char *tex_hires_enabled = "Textures2//Atlantis";
+static const char *tex_hires_disabled = "Textures2//~Atlantis";
 
-static const char *vcmsh_fname = "Meshes\\Atlantis\\AtlantisVC.msh";
-static const char *msh_hires_bkup = "Meshes\\Atlantis\\~AtlantisVC_hi.msh";
-static const char *msh_lores_bkup = "Meshes\\Atlantis\\~AtlantisVC_lo.msh";
+static const char *vcmsh_fname = "Meshes//Atlantis//AtlantisVC.msh";
+static const char *msh_hires_bkup = "Meshes//Atlantis//~AtlantisVC_hi.msh";
+static const char *msh_lores_bkup = "Meshes//Atlantis//~AtlantisVC_lo.msh";
 
 struct {
 	HINSTANCE hInst;

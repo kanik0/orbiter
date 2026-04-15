@@ -26,7 +26,7 @@ int main (void)
     for (mjd = 53371; mjd < 53431; mjd += 0.1) {
 		galsat (r, rorb, mjd+2400000.5, ksat, kflag);
 		for (j = 0; j < 3; j++) r[j] *= AU; // convert metres
-		ofs << mjd << '\t' << r[0] << '\t' << r[2] << '\t' << r[1] << endl;
+		ofs << mjd << '/t' << r[0] << '/t' << r[2] << '/t' << r[1] << endl;
     }
     return 0;
 }

@@ -2,11 +2,16 @@
 // Licensed under the MIT License
 
 #include "Util.h"
+#ifdef _WIN32
 #include <shlobj.h>
+#endif
 #include <sstream>
 #include <iomanip>
 #include <unordered_map>
 #include <algorithm>
+#ifndef _WIN32
+#include "resource_stub.h"
+#endif
 
 LONGLONG NameToId (const char *name)
 {

@@ -5,6 +5,9 @@
 #define ORBITER_MODULE
 
 #include "orbitersdk.h"
+#ifndef _WIN32
+#include "resource_stub.h"
+#endif
 #include "resource.h"
 #include <filesystem>
 namespace fs = std::filesystem;
@@ -37,11 +40,11 @@ public:
 	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
 
 protected:
-	// scan the 'Modules\Celbody' folder for directories, and
+	// scan the 'Modules/Celbody' folder for directories, and
 	// 'atmosphere' directories in these.
 	void ScanCelbodies (HWND hWnd);
 
-	// scan the 'Modules\Celbody\<Name>\Atmosphere' folder for
+	// scan the 'Modules/Celbody/<Name>/Atmosphere' folder for
 	// atmosphere plugin modules
 	void ScanModules (const char *celbody);
 
@@ -68,7 +71,7 @@ protected:
 AtmConfig::AtmConfig(): LaunchpadItem()
 {
 	module_first = module_curr = 0;
-	celbody[0] = '\0';
+	celbody[0] = '/0';
 }
 
 AtmConfig::~AtmConfig ()
@@ -94,7 +97,7 @@ char *AtmConfig::Description()
 void AtmConfig::Read (const char *celbody)
 {
 	char cfgname[256];
-	strcpy (cfgname, celbody); strcat (cfgname, "\\Atmosphere.cfg");
+	strcpy (cfgname, celbody); strcat (cfgname, "//Atmosphere.cfg");
 	FILEHANDLE hFile = oapiOpenFile (cfgname, FILE_IN, CONFIG);
 	if (hFile) {
 		char name[256];
@@ -108,7 +111,7 @@ void AtmConfig::Read (const char *celbody)
 void AtmConfig::Write (const char *celbody)
 {
 	char cfgname[256];
-	strcpy (cfgname, celbody); strcat (cfgname, "\\Atmosphere.cfg");
+	strcpy (cfgname, celbody); strcat (cfgname, "//Atmosphere.cfg");
 	FILEHANDLE hFile = oapiOpenFile (cfgname, FILE_OUT, CONFIG);
 	if (hFile) {
 		if (module_curr && module_curr->module_name[0])
@@ -244,7 +247,7 @@ void AtmConfig::ScanModules (const char *celbody)
 			module_last = ms;
 			strncpy(ms->module_name, name.c_str(), 255);
 			strncpy(ms->model_name, name.c_str(), 255);
-			ms->model_desc[0] = '\0';
+			ms->model_desc[0] = '/0';
 			ms->next = 0;
 
 			// get info from the module

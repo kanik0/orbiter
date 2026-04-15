@@ -10,8 +10,7 @@
 #ifndef D3DMATH_H
 #define D3DMATH_H
 
-#include <ddraw.h>
-#include <d3d.h>
+#include "d3d_compat.h"
 
 // ============================================================================
 // Begin stuff added by MS

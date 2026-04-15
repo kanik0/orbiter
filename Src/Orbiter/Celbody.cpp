@@ -70,7 +70,11 @@ CelestialBody::CelestialBody (char *fname)
 
 	if (GetItemString(ifs, "GravModelPath", cbuf) && GetItemInt(ifs, "GravCoeffCutoff", gravcoeff)) {
 		char gravModelFileName[512];
+#ifdef _WIN32
 		sprintf(gravModelFileName, "GravityModels\\%s",cbuf);
+#else
+		sprintf(gravModelFileName, "GravityModels/%s",cbuf);
+#endif
 		int maxGravityTerms = 0;
 		int	actualLoadedTerms = 0;
 		int readResult = 0;
@@ -716,10 +720,18 @@ void CelestialBody::RegisterModule (char *dllname)
 	char cbuf[256];
 	module = 0;                              // reset new interface
 	memset (&modIntf, 0, sizeof (modIntf));  // reset old interface
-	sprintf (cbuf, "Modules\\Celbody\\%s.dll", dllname); // try new module location
+#ifdef _WIN32
+	sprintf (cbuf, "Modules\\Celbody\\%s.dll", dllname);
+#else
+	sprintf (cbuf, "Modules/Celbody/lib%s.dylib", dllname);
+#endif
 	hMod = LoadLibrary (cbuf);
 	if (!hMod) {
-		sprintf (cbuf, "Modules\\%s.dll", dllname);  // try legacy module location
+#ifdef _WIN32
+		sprintf (cbuf, "Modules\\%s.dll", dllname);
+#else
+		sprintf (cbuf, "Modules/lib%s.dylib", dllname);
+#endif
 		hMod = LoadLibrary (cbuf);
 	}
 	if (!hMod) return;

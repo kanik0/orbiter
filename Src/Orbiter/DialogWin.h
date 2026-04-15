@@ -8,7 +8,11 @@
 #ifndef __DIALOGWIN_H
 #define __DIALOGWIN_H
 
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 #include "GraphicsAPI.h"
 
 #define WM_USERMESSAGE (WM_USER+10)
