@@ -56,6 +56,9 @@
 #include "imgui.h"
 #ifdef _WIN32
 #include "imgui_impl_win32.h"
+#else
+#include "SDLPlatform.h"
+#include <OpenGL/gl.h>
 #endif
 #include <filesystem>
 
@@ -485,6 +488,20 @@ HRESULT Orbiter::Create (HINSTANCE hInstance)
 	CustomCtrl::RegisterClass (hInstance);
 #else
 	bWINEenv = false;
+
+	// Initialize SDL2 platform layer
+	m_pSDL = new orbiter::SDLPlatform(this);
+	if (!m_pSDL->Initialize(
+		pConfig->CfgDevPrm.WinW ? pConfig->CfgDevPrm.WinW : 1280,
+		pConfig->CfgDevPrm.WinH ? pConfig->CfgDevPrm.WinH : 800))
+	{
+		LOGOUT("SDL2 initialization failed");
+		return E_FAIL;
+	}
+	viewW = m_pSDL->GetWidth();
+	viewH = m_pSDL->GetHeight();
+	hRenderWnd = m_pSDL->GetWindow();
+	LOGOUT("SDL2 window created: %dx%d", viewW, viewH);
 #endif
 
 	if (pConfig->CfgCmdlinePrm.bFastExit)
@@ -1095,31 +1112,74 @@ void Orbiter::ScreenToClient (POINT *pt) const
 //-----------------------------------------------------------------------------
 INT Orbiter::Run ()
 {
-    // Recieve and process Windows messages
+#ifndef _WIN32
+	// SDL2 main loop
+	if (!pConfig->CfgCmdlinePrm.LaunchScenario.empty())
+		Launch (pConfig->CfgCmdlinePrm.LaunchScenario.c_str());
+
+	bool running = true;
+	while (running) {
+		// Process SDL events
+		if (m_pSDL && !m_pSDL->ProcessEvents()) {
+			running = false;
+			break;
+		}
+
+		if (bSession) {
+			if (bAllowInput) bActive = true, bAllowInput = false;
+			if (BeginTimeStep (bRunning)) {
+				UpdateWorld();
+				EndTimeStep (bRunning);
+				if (bActive) UserInput();
+				bRenderOnce = TRUE;
+			}
+			if (m_pConsole)
+				m_pConsole->ParseCmd();
+		}
+
+		if (bRenderOnce) {
+			if (m_pSDL) {
+				// Clear to a dark blue background (space)
+				glClearColor(0.0f, 0.0f, 0.05f, 1.0f);
+				glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+				// TODO: call graphics client render here
+				Render3DEnvironment();
+				m_pSDL->SwapBuffers();
+			}
+			bRenderOnce = FALSE;
+		}
+
+		if (!bSession) {
+			// If no scenario loaded, auto-launch (Current state) or just idle
+			SDL_Delay(16); // ~60fps idle
+		}
+	}
+
+	if (m_pSDL) {
+		m_pSDL->Shutdown();
+		delete m_pSDL;
+		m_pSDL = nullptr;
+	}
+	return 0;
+
+#else
+	// Win32 main loop (original)
     BOOL  bGotMsg, bCanRender, bpCanRender = TRUE;
     MSG   msg;
     PeekMessage (&msg, NULL, 0U, 0U, PM_NOREMOVE);
 
 	if (!pConfig->CfgCmdlinePrm.LaunchScenario.empty())
 		Launch (pConfig->CfgCmdlinePrm.LaunchScenario.c_str());
-	// otherwise wait for the user to make a selection from the scenario
-	// list in the launchpad dialog
 
 	while (WM_QUIT != msg.message) {
 
-        // Use PeekMessage() if the app is active, so we can use idle time to
-        // render the scene. Else, use GetMessage() to avoid eating CPU time.
 		if (bSession) {
             bGotMsg = PeekMessage (&msg, NULL, 0U, 0U, PM_REMOVE);
 		} else {
             bGotMsg = GetMessage (&msg, NULL, 0U, 0U);
 		}
         if (bGotMsg) {
-#ifdef _WIN32
 			if (!m_pLaunchpad || !m_pLaunchpad->ConsumeMessage(&msg)) {
-#else
-			{
-#endif
 				TranslateMessage (&msg);
 				DispatchMessage (&msg);
 			}
@@ -1157,6 +1217,7 @@ INT Orbiter::Run ()
     }
 	hRenderWnd = NULL;
     return msg.wParam;
+#endif // _WIN32
 }
 
 void Orbiter::SingleFrame ()

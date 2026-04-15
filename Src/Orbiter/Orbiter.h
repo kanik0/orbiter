@@ -24,6 +24,7 @@ class Vessel;
 class ScreenNote;
 class ScriptInterface;
 class DialogManager;
+namespace orbiter { class SDLPlatform; }
 class OrbiterGraphics;
 class OrbiterConnect;
 class OrbiterServer;
@@ -389,6 +390,10 @@ private:
 	oapi::ScreenAnnotation *snote_playback;// onscreen annotation during playback
 	ScriptInterface *script;
 	INTERPRETERHANDLE hScnInterp;
+
+#ifndef _WIN32
+	orbiter::SDLPlatform *m_pSDL;  // SDL2 platform layer (macOS/Linux)
+#endif
 
 	// render parameters (only used if graphics client is present)
 	bool			bFullscreen;   // renderer in fullscreen mode

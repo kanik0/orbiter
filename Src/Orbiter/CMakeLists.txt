@@ -132,9 +132,10 @@ if(WIN32)
 		${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
 	)
 else()
-	# macOS/Linux platform sources - stubs for Win32-only components
+	# macOS/Linux platform sources - SDL2 integration + stubs
 	list(APPEND common_src
 		platform_stubs_posix.cpp
+		SDLPlatform.cpp
 	)
 endif()
 
