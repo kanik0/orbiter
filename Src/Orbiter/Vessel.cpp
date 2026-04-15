@@ -236,7 +236,11 @@ Vessel::~Vessel ()
 bool Vessel::OpenConfigFile (ifstream &cfgfile) const
 {
 	char cbuf[256];
+#ifdef _WIN32
 	strcpy (cbuf, "Vessels\\");
+#else
+	strcpy (cbuf, "Vessels/");
+#endif
 	strcat (cbuf, classname ? classname : name.c_str());
 	// first search in $CONFIGDIR\Vessels
 	cfgfile.open (g_pOrbiter->ConfigPath (cbuf));
@@ -5965,7 +5969,11 @@ bool Vessel::LoadModule (ifstream &classf)
 bool Vessel::RegisterModule (const char *dllname)
 {
 	char cbuf[256];
+#ifdef _WIN32
 	sprintf (cbuf, "Modules\\%s.dll", dllname);
+#else
+	sprintf (cbuf, "Modules/lib%s.dylib", dllname);
+#endif
 	hMod = LoadLibrary (cbuf);
 	if (!hMod)
 		return false;

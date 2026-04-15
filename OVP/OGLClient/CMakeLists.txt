@@ -8,6 +8,7 @@ if(NOT WIN32)
 
 	add_library(OGLClient STATIC
 		OGLClient.cpp
+		OGLTexture.cpp
 		${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
 		${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
 	)

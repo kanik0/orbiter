@@ -12,7 +12,11 @@
 #ifndef _WIN32
 #include <SDL.h>
 #include <OpenGL/gl3.h>
+#include <map>
+#include <string>
 #endif
+
+struct OGLTexture;
 
 namespace ogl {
 
@@ -81,10 +85,25 @@ private:
 	GLuint m_starShader;
 	int m_numStars;
 
-	// Planet rendering
+	// Planet rendering (flat color fallback)
 	GLuint m_planetShader;
 	GLuint m_sphereVAO, m_sphereVBO, m_sphereEBO;
 	int m_sphereIndexCount;
+
+	// Textured planet rendering
+	GLuint m_texPlanetShader;
+	GLuint m_texSphereVAO, m_texSphereVBO, m_texSphereEBO;
+	int m_texSphereIndexCount;
+
+	// Texture cache: maps OBJHANDLE (as uintptr_t) to planet texture
+	std::map<uintptr_t, OGLTexture*> m_planetTexCache;
+	bool m_planetTexLoaded; // have we attempted loading textures?
+
+	// Helper: try to find and load a planet texture
+	OGLTexture *LoadPlanetTexture(const char *planetName);
+
+	// Texture base directory
+	std::string m_texturePath;
 };
 
 } // namespace ogl

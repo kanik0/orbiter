@@ -32,12 +32,21 @@ static int g_buflen = 1024;
 const bool bEchoAll_default = false;          // only echo non-default parameters
 
 CFG_DIRPRM CfgDirPrm_default = {
+#ifdef _WIN32
 	".\\Config\\",		// ConfigDir
 	".\\Meshes\\",		// MeshDir
 	".\\Textures\\",	// TextureDir
 	".\\Textures2\\",	// HightexDir
 	".\\Textures\\",	// PlanetTexDir
 	".\\Scenarios\\"	// ScnDir
+#else
+	"./Config/",		// ConfigDir
+	"./Meshes/",		// MeshDir
+	"./Textures/",		// TextureDir
+	"./Textures2/",		// HightexDir
+	"./Textures/",		// PlanetTexDir
+	"./Scenarios/"		// ScnDir
+#endif
 };
 
 CFG_PHYSICSPRM CfgPhysicsPrm_default = {
@@ -482,43 +491,54 @@ bool Config::Load(const char *fname)
 
 	GetBool ("EchoAllParams", bEchoAll);
 
+#ifdef _WIN32
+	#define DIR_SEP '\\'
+	#define DIR_SEP_STR "\\"
+#else
+	#define DIR_SEP '/'
+	#define DIR_SEP_STR "/"
+#endif
+
 	// configuration directory
 	if (GetString (ifs, "ConfigDir", CfgDirPrm.ConfigDir))
-		if (CfgDirPrm.ConfigDir[strlen(CfgDirPrm.ConfigDir)-1] != '\\')
-			strcat (CfgDirPrm.ConfigDir, "\\");
+		if (CfgDirPrm.ConfigDir[strlen(CfgDirPrm.ConfigDir)-1] != DIR_SEP)
+			strcat (CfgDirPrm.ConfigDir, DIR_SEP_STR);
 	strcpy (cfgpath, CfgDirPrm.ConfigDir); cfglen = strlen (cfgpath);
 
 	// mesh directory
 	if (GetString (ifs, "MeshDir", CfgDirPrm.MeshDir))
-		if (CfgDirPrm.MeshDir[strlen(CfgDirPrm.MeshDir)-1] != '\\')
-			strcat (CfgDirPrm.MeshDir, "\\");
+		if (CfgDirPrm.MeshDir[strlen(CfgDirPrm.MeshDir)-1] != DIR_SEP)
+			strcat (CfgDirPrm.MeshDir, DIR_SEP_STR);
 	strcpy (mshpath, CfgDirPrm.MeshDir);   mshlen = strlen (mshpath);
 
 	// texture directory
 	if (GetString (ifs, "TextureDir", CfgDirPrm.TextureDir))
-		if (CfgDirPrm.TextureDir[strlen(CfgDirPrm.TextureDir)-1] != '\\')
-			strcat (CfgDirPrm.TextureDir, "\\");
+		if (CfgDirPrm.TextureDir[strlen(CfgDirPrm.TextureDir)-1] != DIR_SEP)
+			strcat (CfgDirPrm.TextureDir, DIR_SEP_STR);
 	strcpy (texpath, CfgDirPrm.TextureDir);  texlen = strlen (texpath);
 
 	// highres texture directory
 	if (GetString (ifs, "HightexDir", CfgDirPrm.HightexDir)) {
-		if (CfgDirPrm.HightexDir[strlen(CfgDirPrm.HightexDir)-1] != '\\')
-			strcat (CfgDirPrm.HightexDir, "\\");
+		if (CfgDirPrm.HightexDir[strlen(CfgDirPrm.HightexDir)-1] != DIR_SEP)
+			strcat (CfgDirPrm.HightexDir, DIR_SEP_STR);
 		strcpy (htxpath, CfgDirPrm.HightexDir);  htxlen = strlen (htxpath);
 	}
 
 	// planetary texture directory
 	if (GetString(ifs, "PlanetTexDir", CfgDirPrm.PlanetTexDir)) {
-		if (CfgDirPrm.PlanetTexDir[strlen(CfgDirPrm.PlanetTexDir) - 1] != '\\')
-			strcat(CfgDirPrm.PlanetTexDir, "\\");
+		if (CfgDirPrm.PlanetTexDir[strlen(CfgDirPrm.PlanetTexDir) - 1] != DIR_SEP)
+			strcat(CfgDirPrm.PlanetTexDir, DIR_SEP_STR);
 		strcpy(ptxpath, CfgDirPrm.PlanetTexDir); ptxlen = strlen(ptxpath);
 	}
 
 	// scenario directory
 	if (GetString (ifs, "ScenarioDir", CfgDirPrm.ScnDir))
-		if (CfgDirPrm.ScnDir[strlen(CfgDirPrm.ScnDir)-1] != '\\')
-			strcat (CfgDirPrm.ScnDir, "\\");
+		if (CfgDirPrm.ScnDir[strlen(CfgDirPrm.ScnDir)-1] != DIR_SEP)
+			strcat (CfgDirPrm.ScnDir, DIR_SEP_STR);
 	strcpy (scnpath, CfgDirPrm.ScnDir); scnlen = strlen (scnpath);
+
+#undef DIR_SEP
+#undef DIR_SEP_STR
 
 	// Device information
 	GetInt  (ifs, "DeviceIndex", CfgDevPrm.Device_idx);
@@ -1395,32 +1415,47 @@ BOOL Config::Write (const char *fname) const
 char *Config::ConfigPath (const char *name) const
 {
 	strcpy (cfgpath+cfglen, name);
+#ifndef _WIN32
+	// Normalize here too (called from const context so NormalizePath can't be used directly)
+	for (char *p = cfgpath; *p; p++) if (*p == '\\') *p = '/';
+#endif
 	return strcat (cfgpath, ".cfg");
 }
+
+#ifndef _WIN32
+// Normalize path separators: replace backslash with forward slash
+static char *NormalizePath(char *path) {
+	for (char *p = path; *p; p++)
+		if (*p == '\\') *p = '/';
+	return path;
+}
+#else
+#define NormalizePath(p) (p)
+#endif
 
 char *Config::ConfigPathNoext (const char *name)
 {
 	strcpy (cfgpath+cfglen, name);
-	return cfgpath;
+	return NormalizePath(cfgpath);
 }
 
 char *Config::MeshPath (const char *name)
 {
 	strcpy (mshpath+mshlen, name);
-	return strcat (mshpath, ".msh");
+	return NormalizePath(strcat (mshpath, ".msh"));
 }
 
 char *Config::TexPath (const char *name, const char *ext)
 {
 	strcpy (texpath+texlen, name);
-	return strcat (texpath, ext ? ext : ".dds");
+	return NormalizePath(strcat (texpath, ext ? ext : ".dds"));
 }
 
 char *Config::HTexPath (const char *name, const char *ext)
 {
 	if (!htxlen) return 0;
 	strcpy (htxpath+htxlen, name);
-	return strcat (htxpath, ext ? ext : ".dds");
+	return NormalizePath(strcat (htxpath, ext ? ext : ".dds"));
 }
 
 char* Config::PTexPath(const char* name, const char* ext)
@@ -1428,7 +1463,7 @@ char* Config::PTexPath(const char* name, const char* ext)
 	if (!ptxlen) return 0;
 	strcpy(ptxpath + ptxlen, name);
 	if (ext) strcat(ptxpath, ext);
-	return ptxpath;
+	return NormalizePath(ptxpath);
 }
 
 const char *Config::ScnPath (const char *name)
@@ -1437,7 +1472,7 @@ const char *Config::ScnPath (const char *name)
 		return name;
 	} else {
 		strcpy (scnpath+scnlen, name);
-		return strcat (scnpath, ".scn");
+		return NormalizePath(strcat (scnpath, ".scn"));
 	}
 }
 

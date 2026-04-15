@@ -269,9 +269,20 @@ int main (int argc, char *argv[])
 		if (i > 1) cmdline += ' ';
 		cmdline += argv[i];
 	}
+	// On POSIX, shell already handles quoting, but arguments with spaces
+	// need to be re-quoted for the Orbiter command line parser
+	std::string quotedCmdline;
+	for (int i = 1; i < argc; i++) {
+		if (i > 1) quotedCmdline += ' ';
+		std::string arg = argv[i];
+		if (arg.find(' ') != std::string::npos || arg.find('(') != std::string::npos)
+			quotedCmdline += "\"" + arg + "\"";
+		else
+			quotedCmdline += arg;
+	}
 	// Create a mutable copy - ParseCmdLine modifies the string in-place
-	char *cmdlineBuf = new char[cmdline.size() + 1];
-	strcpy(cmdlineBuf, cmdline.c_str());
+	char *cmdlineBuf = new char[quotedCmdline.size() + 1];
+	strcpy(cmdlineBuf, quotedCmdline.c_str());
 	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "Parsing: '%s'\n", cmdlineBuf); fclose(f); }
 	orbiter::CommandLine::Parse(g_pOrbiter, cmdlineBuf);
 	delete[] cmdlineBuf;

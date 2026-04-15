@@ -6,11 +6,15 @@
 #ifndef _WIN32
 
 #include "OGLClient.h"
+#include "OGLTexture.h"
 #include "OrbiterAPI.h"
 #include <cstdio>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
+#include <string>
+#include <sys/stat.h>
 
 // ImGui SDL2+OpenGL3 backends
 #include "imgui.h"
@@ -75,6 +79,41 @@ uniform vec3 uColor;
 out vec4 FragColor;
 void main() {
     FragColor = vec4(uColor * vLight, 1.0);
+}
+)";
+
+// Textured planet shaders - uses UV coordinates and texture sampling
+static const char *texPlanetVertSrc = R"(
+#version 410 core
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec2 aUV;
+uniform mat4 uViewProj;
+uniform mat4 uModel;
+uniform vec3 uSunDir;
+out float vLight;
+out vec3 vNormal;
+out vec2 vUV;
+void main() {
+    vec4 worldPos = uModel * vec4(aPos, 1.0);
+    gl_Position = uViewProj * worldPos;
+    vec3 worldNormal = normalize(mat3(uModel) * aNormal);
+    vLight = max(0.05, dot(worldNormal, uSunDir));
+    vNormal = worldNormal;
+    vUV = aUV;
+}
+)";
+
+static const char *texPlanetFragSrc = R"(
+#version 410 core
+in float vLight;
+in vec3 vNormal;
+in vec2 vUV;
+uniform sampler2D uTexture;
+out vec4 FragColor;
+void main() {
+    vec4 texColor = texture(uTexture, vUV);
+    FragColor = vec4(texColor.rgb * vLight, texColor.a);
 }
 )";
 
@@ -156,6 +195,60 @@ static void CreateSphere(int slices, int stacks, GLuint &vao, GLuint &vbo, GLuin
 	glBindVertexArray(0);
 }
 
+// Build a unit sphere mesh with UV coordinates for texturing
+static void CreateTexturedSphere(int slices, int stacks, GLuint &vao, GLuint &vbo, GLuint &ebo, int &indexCount) {
+	struct TxVtx { float x, y, z, nx, ny, nz, u, v; };
+	std::vector<TxVtx> verts;
+	std::vector<unsigned int> indices;
+
+	for (int i = 0; i <= stacks; i++) {
+		float phi = M_PI * i / stacks;
+		float v = (float)i / stacks;
+		for (int j = 0; j <= slices; j++) {
+			float theta = 2.0f * M_PI * j / slices;
+			float u = (float)j / slices;
+			float x = sinf(phi) * cosf(theta);
+			float y = cosf(phi);
+			float z = sinf(phi) * sinf(theta);
+			verts.push_back({x, y, z, x, y, z, u, v});
+		}
+	}
+	for (int i = 0; i < stacks; i++) {
+		for (int j = 0; j < slices; j++) {
+			int a = i * (slices + 1) + j;
+			int b = a + slices + 1;
+			indices.push_back(a); indices.push_back(b); indices.push_back(a + 1);
+			indices.push_back(a + 1); indices.push_back(b); indices.push_back(b + 1);
+		}
+	}
+	indexCount = (int)indices.size();
+
+	glGenVertexArrays(1, &vao);
+	glGenBuffers(1, &vbo);
+	glGenBuffers(1, &ebo);
+	glBindVertexArray(vao);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(TxVtx), verts.data(), GL_STATIC_DRAW);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+	// location 0: position
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(TxVtx), (void*)0);
+	glEnableVertexAttribArray(0);
+	// location 1: normal
+	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(TxVtx), (void*)(3 * sizeof(float)));
+	glEnableVertexAttribArray(1);
+	// location 2: UV
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(TxVtx), (void*)(6 * sizeof(float)));
+	glEnableVertexAttribArray(2);
+	glBindVertexArray(0);
+}
+
+// Helper: check if a file exists
+static bool FileExists(const char *path) {
+	struct stat st;
+	return stat(path, &st) == 0;
+}
+
 // ============================================================================
 // OGLClient
 // ============================================================================
@@ -166,7 +259,9 @@ OGLClient::OGLClient(HINSTANCE hInstance)
 	  m_viewW(1280), m_viewH(800), m_fullscreen(false),
 	  m_imguiInitialized(false),
 	  m_starVAO(0), m_starVBO(0), m_starShader(0), m_numStars(0),
-	  m_planetShader(0), m_sphereVAO(0), m_sphereVBO(0), m_sphereEBO(0), m_sphereIndexCount(0)
+	  m_planetShader(0), m_sphereVAO(0), m_sphereVBO(0), m_sphereEBO(0), m_sphereIndexCount(0),
+	  m_texPlanetShader(0), m_texSphereVAO(0), m_texSphereVBO(0), m_texSphereEBO(0), m_texSphereIndexCount(0),
+	  m_planetTexLoaded(false)
 {
 	fprintf(stderr, "[OGLClient] Created\n");
 }
@@ -301,12 +396,26 @@ void OGLClient::clbkRenderScene()
 		glBindVertexArray(0);
 	}
 
-	// 2) Render planets as simple colored spheres
-	if (m_planetShader && m_sphereVAO) {
-		glUseProgram(m_planetShader);
-		glUniformMatrix4fv(glGetUniformLocation(m_planetShader, "uViewProj"), 1, GL_FALSE, vp);
+	// 2) Lazy-load planet textures on first frame
+	if (!m_planetTexLoaded) {
+		m_planetTexLoaded = true;
+		DWORD nObj = oapiGetObjectCount();
+		for (DWORD i = 0; i < nObj; i++) {
+			OBJHANDLE hObj = oapiGetObjectByIndex(i);
+			int type = oapiGetObjectType(hObj);
+			if (type != OBJTP_PLANET && type != OBJTP_STAR) continue;
 
-		// Sun direction (from camera pos toward origin, normalized)
+			char name[64];
+			oapiGetObjectName(hObj, name, 64);
+			uintptr_t key = (uintptr_t)hObj;
+			OGLTexture *tex = LoadPlanetTexture(name);
+			m_planetTexCache[key] = tex; // may be nullptr
+		}
+	}
+
+	// 3) Render planets - textured where possible, flat-color fallback otherwise
+	if (m_planetShader && m_sphereVAO) {
+		// Sun position
 		VECTOR3 sunPos;
 		OBJHANDLE hSun = oapiGetObjectByName((char*)"Sun");
 		if (hSun) oapiGetGlobalPos(hSun, &sunPos);
@@ -338,25 +447,6 @@ void OGLClient::clbkRenderScene()
 			double sdist = sqrt(sdx*sdx + sdy*sdy + sdz*sdz);
 			if (sdist > 0) { sdx /= sdist; sdy /= sdist; sdz /= sdist; }
 			float sunDir[3] = {(float)sdx, (float)sdy, (float)sdz};
-			glUniform3fv(glGetUniformLocation(m_planetShader, "uSunDir"), 1, sunDir);
-
-			// Color based on object type
-			float color[3];
-			if (type == OBJTP_STAR) {
-				color[0] = 1.0f; color[1] = 0.95f; color[2] = 0.8f;
-			} else {
-				// Determine planet color by name
-				char name[64];
-				oapiGetObjectName(hObj, name, 64);
-				if (strcmp(name, "Earth") == 0) { color[0] = 0.2f; color[1] = 0.4f; color[2] = 0.8f; }
-				else if (strcmp(name, "Moon") == 0) { color[0] = 0.7f; color[1] = 0.7f; color[2] = 0.7f; }
-				else if (strcmp(name, "Mars") == 0) { color[0] = 0.8f; color[1] = 0.3f; color[2] = 0.1f; }
-				else if (strcmp(name, "Venus") == 0) { color[0] = 0.9f; color[1] = 0.8f; color[2] = 0.6f; }
-				else if (strcmp(name, "Jupiter") == 0) { color[0] = 0.8f; color[1] = 0.7f; color[2] = 0.5f; }
-				else if (strcmp(name, "Saturn") == 0) { color[0] = 0.9f; color[1] = 0.8f; color[2] = 0.6f; }
-				else { color[0] = 0.6f; color[1] = 0.6f; color[2] = 0.6f; }
-			}
-			glUniform3fv(glGetUniformLocation(m_planetShader, "uColor"), 1, color);
 
 			// Model matrix: translate + scale
 			float s = (float)size;
@@ -366,12 +456,54 @@ void OGLClient::clbkRenderScene()
 				0, 0, s, 0,
 				(float)rx, (float)ry, (float)rz, 1
 			};
-			glUniformMatrix4fv(glGetUniformLocation(m_planetShader, "uModel"), 1, GL_FALSE, model);
 
-			glBindVertexArray(m_sphereVAO);
-			glDrawElements(GL_TRIANGLES, m_sphereIndexCount, GL_UNSIGNED_INT, 0);
+			// Check if we have a texture for this planet
+			uintptr_t key = (uintptr_t)hObj;
+			auto it = m_planetTexCache.find(key);
+			OGLTexture *planetTex = (it != m_planetTexCache.end()) ? it->second : nullptr;
+
+			if (planetTex && planetTex->texId && m_texPlanetShader && m_texSphereVAO) {
+				// Textured rendering path
+				glUseProgram(m_texPlanetShader);
+				glUniformMatrix4fv(glGetUniformLocation(m_texPlanetShader, "uViewProj"), 1, GL_FALSE, vp);
+				glUniformMatrix4fv(glGetUniformLocation(m_texPlanetShader, "uModel"), 1, GL_FALSE, model);
+				glUniform3fv(glGetUniformLocation(m_texPlanetShader, "uSunDir"), 1, sunDir);
+
+				glActiveTexture(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, planetTex->texId);
+				glUniform1i(glGetUniformLocation(m_texPlanetShader, "uTexture"), 0);
+
+				glBindVertexArray(m_texSphereVAO);
+				glDrawElements(GL_TRIANGLES, m_texSphereIndexCount, GL_UNSIGNED_INT, 0);
+			} else {
+				// Flat-color fallback
+				glUseProgram(m_planetShader);
+				glUniformMatrix4fv(glGetUniformLocation(m_planetShader, "uViewProj"), 1, GL_FALSE, vp);
+				glUniformMatrix4fv(glGetUniformLocation(m_planetShader, "uModel"), 1, GL_FALSE, model);
+				glUniform3fv(glGetUniformLocation(m_planetShader, "uSunDir"), 1, sunDir);
+
+				float color[3];
+				if (type == OBJTP_STAR) {
+					color[0] = 1.0f; color[1] = 0.95f; color[2] = 0.8f;
+				} else {
+					char name[64];
+					oapiGetObjectName(hObj, name, 64);
+					if (strcmp(name, "Earth") == 0) { color[0] = 0.2f; color[1] = 0.4f; color[2] = 0.8f; }
+					else if (strcmp(name, "Moon") == 0) { color[0] = 0.7f; color[1] = 0.7f; color[2] = 0.7f; }
+					else if (strcmp(name, "Mars") == 0) { color[0] = 0.8f; color[1] = 0.3f; color[2] = 0.1f; }
+					else if (strcmp(name, "Venus") == 0) { color[0] = 0.9f; color[1] = 0.8f; color[2] = 0.6f; }
+					else if (strcmp(name, "Jupiter") == 0) { color[0] = 0.8f; color[1] = 0.7f; color[2] = 0.5f; }
+					else if (strcmp(name, "Saturn") == 0) { color[0] = 0.9f; color[1] = 0.8f; color[2] = 0.6f; }
+					else { color[0] = 0.6f; color[1] = 0.6f; color[2] = 0.6f; }
+				}
+				glUniform3fv(glGetUniformLocation(m_planetShader, "uColor"), 1, color);
+
+				glBindVertexArray(m_sphereVAO);
+				glDrawElements(GL_TRIANGLES, m_sphereIndexCount, GL_UNSIGNED_INT, 0);
+			}
 		}
 		glBindVertexArray(0);
+		glBindTexture(GL_TEXTURE_2D, 0);
 		glUseProgram(0);
 	}
 
@@ -429,12 +561,36 @@ HWND OGLClient::clbkCreateRenderWindow()
 	glEnableVertexAttribArray(2);
 	glBindVertexArray(0);
 
-	// Create planet shader and sphere mesh
+	// Create planet shader and sphere mesh (flat color fallback)
 	m_planetShader = CreateProgram(planetVertSrc, planetFragSrc);
 	CreateSphere(32, 16, m_sphereVAO, m_sphereVBO, m_sphereEBO, m_sphereIndexCount);
 
-	fprintf(stderr, "[OGLClient] Stars: %d, PlanetShader: %u, SphereIdx: %d\n",
-		m_numStars, m_planetShader, m_sphereIndexCount);
+	// Create textured planet shader and UV-mapped sphere
+	m_texPlanetShader = CreateProgram(texPlanetVertSrc, texPlanetFragSrc);
+	CreateTexturedSphere(64, 32, m_texSphereVAO, m_texSphereVBO, m_texSphereEBO, m_texSphereIndexCount);
+
+	// Determine texture search path from the executable location
+	// Try to find "Textures/" relative to current working dir or the binary location
+	{
+		char cwd[1024];
+		if (getcwd(cwd, sizeof(cwd))) {
+			m_texturePath = std::string(cwd) + "/Textures/";
+			struct stat st;
+			if (stat(m_texturePath.c_str(), &st) != 0) {
+				// Fallback: try parent directory
+				m_texturePath = std::string(cwd) + "/../Textures/";
+				if (stat(m_texturePath.c_str(), &st) != 0) {
+					m_texturePath = "Textures/"; // last resort
+				}
+			}
+		} else {
+			m_texturePath = "Textures/";
+		}
+		fprintf(stderr, "[OGLClient] Texture path: %s\n", m_texturePath.c_str());
+	}
+
+	fprintf(stderr, "[OGLClient] Stars: %d, PlanetShader: %u, TexPlanetShader: %u, SphereIdx: %d, TexSphereIdx: %d\n",
+		m_numStars, m_planetShader, m_texPlanetShader, m_sphereIndexCount, m_texSphereIndexCount);
 
 	return (HWND)m_sdlWindow;
 }
@@ -442,6 +598,14 @@ HWND OGLClient::clbkCreateRenderWindow()
 void OGLClient::clbkDestroyRenderWindow(bool fastclose)
 {
 	fprintf(stderr, "[OGLClient] clbkDestroyRenderWindow\n");
+
+	// Clean up planet texture cache
+	for (auto &kv : m_planetTexCache) {
+		delete kv.second; // OGLTexture destructor calls glDeleteTextures
+	}
+	m_planetTexCache.clear();
+	m_planetTexLoaded = false;
+
 	if (m_starVAO) { glDeleteVertexArrays(1, &m_starVAO); m_starVAO = 0; }
 	if (m_starVBO) { glDeleteBuffers(1, &m_starVBO); m_starVBO = 0; }
 	if (m_starShader) { glDeleteProgram(m_starShader); m_starShader = 0; }
@@ -449,6 +613,10 @@ void OGLClient::clbkDestroyRenderWindow(bool fastclose)
 	if (m_sphereVBO) { glDeleteBuffers(1, &m_sphereVBO); m_sphereVBO = 0; }
 	if (m_sphereEBO) { glDeleteBuffers(1, &m_sphereEBO); m_sphereEBO = 0; }
 	if (m_planetShader) { glDeleteProgram(m_planetShader); m_planetShader = 0; }
+	if (m_texSphereVAO) { glDeleteVertexArrays(1, &m_texSphereVAO); m_texSphereVAO = 0; }
+	if (m_texSphereVBO) { glDeleteBuffers(1, &m_texSphereVBO); m_texSphereVBO = 0; }
+	if (m_texSphereEBO) { glDeleteBuffers(1, &m_texSphereEBO); m_texSphereEBO = 0; }
+	if (m_texPlanetShader) { glDeleteProgram(m_texPlanetShader); m_texPlanetShader = 0; }
 }
 
 bool OGLClient::clbkDisplayFrame()
@@ -465,11 +633,117 @@ void OGLClient::clbkCloseSession(bool) { fprintf(stderr, "[OGLClient] Session cl
 // Stubs (to be expanded)
 // ============================================================================
 
-SURFHANDLE OGLClient::clbkLoadTexture(const char*, DWORD) { return nullptr; }
-void OGLClient::clbkReleaseTexture(SURFHANDLE) {}
-bool OGLClient::clbkReleaseSurface(SURFHANDLE) { return true; }
-SURFHANDLE OGLClient::clbkCreateSurfaceEx(DWORD, DWORD, DWORD) { return nullptr; }
-bool OGLClient::clbkGetSurfaceSize(SURFHANDLE, DWORD *w, DWORD *h) { *w = *h = 0; return false; }
+SURFHANDLE OGLClient::clbkLoadTexture(const char *fname, DWORD flags)
+{
+	if (!fname || !fname[0]) return nullptr;
+
+	// Normalize backslash paths from config files
+	std::string normalizedName = fname;
+	for (auto &c : normalizedName) if (c == '\\') c = '/';
+
+	// Try "Textures/<fname>" first
+	std::string tryPath = m_texturePath + normalizedName;
+	if (FileExists(tryPath.c_str())) {
+		OGLTexture *tex = OGLTexture::LoadTexture(tryPath.c_str());
+		if (tex) return (SURFHANDLE)tex;
+	}
+
+	// Try raw path
+	if (FileExists(normalizedName.c_str())) {
+		OGLTexture *tex = OGLTexture::LoadTexture(normalizedName.c_str());
+		if (tex) return (SURFHANDLE)tex;
+	}
+
+	// Try common extensions if no extension given
+	const char *ext = strrchr(normalizedName.c_str(), '.');
+	if (!ext) {
+		std::string ddsPath = m_texturePath + normalizedName + ".dds";
+		if (FileExists(ddsPath.c_str())) {
+			OGLTexture *tex = OGLTexture::LoadTexture(ddsPath.c_str());
+			if (tex) return (SURFHANDLE)tex;
+		}
+		std::string bmpPath = m_texturePath + normalizedName + ".bmp";
+		if (FileExists(bmpPath.c_str())) {
+			OGLTexture *tex = OGLTexture::LoadTexture(bmpPath.c_str());
+			if (tex) return (SURFHANDLE)tex;
+		}
+	}
+
+	fprintf(stderr, "[OGLClient] clbkLoadTexture: not found '%s'\n", fname);
+	return nullptr;
+}
+
+void OGLClient::clbkReleaseTexture(SURFHANDLE hTex)
+{
+	if (!hTex) return;
+	OGLTexture *tex = (OGLTexture*)hTex;
+	delete tex;
+}
+
+bool OGLClient::clbkReleaseSurface(SURFHANDLE surf)
+{
+	if (!surf) return false;
+	OGLTexture *tex = (OGLTexture*)surf;
+	delete tex;
+	return true;
+}
+
+SURFHANDLE OGLClient::clbkCreateSurfaceEx(DWORD w, DWORD h, DWORD attrib)
+{
+	// Create an empty RGBA texture
+	GLuint texId = 0;
+	glGenTextures(1, &texId);
+	glBindTexture(GL_TEXTURE_2D, texId);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	OGLTexture *tex = new OGLTexture();
+	tex->texId = texId;
+	tex->width = w;
+	tex->height = h;
+	return (SURFHANDLE)tex;
+}
+
+bool OGLClient::clbkGetSurfaceSize(SURFHANDLE surf, DWORD *w, DWORD *h)
+{
+	if (!surf) { *w = *h = 0; return false; }
+	OGLTexture *tex = (OGLTexture*)surf;
+	*w = tex->width;
+	*h = tex->height;
+	return true;
+}
+
+// ============================================================================
+// LoadPlanetTexture - search for a texture file for the named planet
+// ============================================================================
+
+OGLTexture *OGLClient::LoadPlanetTexture(const char *planetName)
+{
+	if (!planetName || !planetName[0]) return nullptr;
+
+	// Try various naming conventions used by Orbiter:
+	// 1. <Name>M.bmp  (low-res planet maps like EarthM.bmp, MoonM.bmp)
+	// 2. <Name>.dds
+	// 3. <Name>.bmp
+	const char *extensions[] = { "M.bmp", ".dds", ".bmp", nullptr };
+
+	for (int i = 0; extensions[i]; i++) {
+		std::string tryPath = m_texturePath + planetName + extensions[i];
+		if (FileExists(tryPath.c_str())) {
+			OGLTexture *tex = OGLTexture::LoadTexture(tryPath.c_str());
+			if (tex) {
+				fprintf(stderr, "[OGLClient] Loaded planet texture '%s' for %s\n",
+					tryPath.c_str(), planetName);
+				return tex;
+			}
+		}
+	}
+
+	fprintf(stderr, "[OGLClient] No texture found for planet '%s'\n", planetName);
+	return nullptr;
+}
 oapi::Font *OGLClient::clbkCreateFont(int, bool, const char*, FontStyle, int) const { return nullptr; }
 void OGLClient::clbkReleaseFont(oapi::Font*) const {}
 oapi::Sketchpad *OGLClient::clbkGetSketchpad(SURFHANDLE) { return nullptr; }
