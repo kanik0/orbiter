@@ -396,15 +396,6 @@ void OGLClient::clbkRenderScene()
 			vp[col * 4 + row] = sum;
 		}
 
-	// Debug: log camera state once when valid
-	static bool debugCamera = true;
-	if (debugCamera && validCamera) {
-		fprintf(stderr, "[OGLClient] Camera: pos=(%.3e, %.3e, %.3e) fov=%.2f deg aspect=%.3f near=%.1f far=%.1e\n",
-			camPos.x, camPos.y, camPos.z, fov * 180.0/3.14159, aspect, nearPlane, farPlane);
-		fprintf(stderr, "[OGLClient] Camera rot: [%.3f %.3f %.3f; %.3f %.3f %.3f; %.3f %.3f %.3f]\n",
-			camRot.m11, camRot.m12, camRot.m13, camRot.m21, camRot.m22, camRot.m23, camRot.m31, camRot.m32, camRot.m33);
-		debugCamera = false;
-	}
 
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_PROGRAM_POINT_SIZE);
@@ -461,15 +452,6 @@ void OGLClient::clbkRenderScene()
 			double dist = sqrt(rx*rx + ry*ry + rz*rz);
 
 			double size = oapiGetSize(hObj);
-
-			// Debug: log planet positions once when valid
-			static bool debugPlanets = true;
-			if (debugPlanets && !std::isnan(dist)) {
-				char pname[64];
-				oapiGetObjectName(hObj, pname, 64);
-				fprintf(stderr, "[OGLClient] Planet '%s': relPos=(%.3e, %.3e, %.3e) dist=%.3e size=%.3e apparent=%.4f deg\n",
-					pname, rx, ry, rz, dist, size, (size/dist) * 180.0/3.14159 * 2.0);
-			}
 
 			if (dist < size * 0.5) continue; // inside planet
 
@@ -814,10 +796,9 @@ OGLTexture *OGLClient::LoadPlanetTexture(const char *planetName)
 	if (!planetName || !planetName[0]) return nullptr;
 
 	// Try various naming conventions used by Orbiter:
-	// 1. <Name>M.bmp  (low-res planet maps like EarthM.bmp, MoonM.bmp)
-	// 2. <Name>.dds
-	// 3. <Name>.bmp
-	const char *extensions[] = { "M.bmp", ".dds", ".bmp", nullptr };
+	// Note: <Name>M.bmp are mask/elevation maps, NOT color textures - skip those
+	// Real color textures are in .tex container files (not yet supported)
+	const char *extensions[] = { ".dds", ".bmp", nullptr };
 
 	for (int i = 0; extensions[i]; i++) {
 		std::string tryPath = m_texturePath + planetName + extensions[i];

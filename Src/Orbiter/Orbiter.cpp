@@ -252,17 +252,13 @@ int main (int argc, char *argv[])
 {
 	// Verify working directory
 	// Debug: trace startup
-	{ FILE *f = fopen("Orbiter_startup.log", "w");
-	  if (f) { fprintf(f, "Orbiter starting...\n"); fclose(f); } }
 
 	char dir[1024];
 	GetCurrentDirectory(1024, dir);
 
 	SetEnvironmentVars();
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "Creating Orbiter instance...\n"); fclose(f); }
 	g_pOrbiter = new Orbiter; // application instance
 
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "Building cmdline...\n"); fclose(f); }
 	// Build a command line string from argv for the parser
 	std::string cmdline;
 	for (int i = 1; i < argc; i++) {
@@ -283,15 +279,9 @@ int main (int argc, char *argv[])
 	// Create a mutable copy - ParseCmdLine modifies the string in-place
 	char *cmdlineBuf = new char[quotedCmdline.size() + 1];
 	strcpy(cmdlineBuf, quotedCmdline.c_str());
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "Parsing: '%s'\n", cmdlineBuf); fclose(f); }
 	orbiter::CommandLine::Parse(g_pOrbiter, cmdlineBuf);
 	delete[] cmdlineBuf;
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "Parse done\n"); fclose(f); }
 
-	{ FILE *f = fopen("Orbiter_startup.log", "a");
-	  fprintf(f, "Initializing log... Cfg=%p\n", (void*)g_pOrbiter->Cfg());
-	  if (g_pOrbiter->Cfg()) fprintf(f, "  bAppendLog=%d\n", g_pOrbiter->Cfg()->CfgCmdlinePrm.bAppendLog);
-	  fclose(f); }
 	// Initialise the log
 	INITLOG("Orbiter.log", false);  // Force non-append for debugging
 #ifdef ISBETA
@@ -305,15 +295,12 @@ int main (int argc, char *argv[])
 
 	oapiRegisterCustomControls(nullptr);
 
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "Calling Create()...\n"); fclose(f); }
 	HRESULT hr;
 	if (FAILED (hr = g_pOrbiter->Create (nullptr))) {
-		{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "Create() FAILED hr=%ld\n", (long)hr); fclose(f); }
-		LOGOUT("Application creation failed");
+			LOGOUT("Application creation failed");
 		fprintf(stderr, "Application creation failed! Terminating.\n");
 		return 1;
 	}
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "Create() OK, calling Run()...\n"); fclose(f); }
 
 	setlocale (LC_CTYPE, "");
 
@@ -840,27 +827,20 @@ OPC_Proc Orbiter::FindModuleProc (HINSTANCE hDLL, const char *procname)
 //-----------------------------------------------------------------------------
 VOID Orbiter::Launch (const char *scenario)
 {
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "Launch('%s') entered\n", scenario); fclose(f); }
 	PrintModules();
 
 	HCURSOR hCursor = SetCursor (LoadCursor (NULL, IDC_WAIT));
 	bool have_state = false;
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  Config->Write()...\n"); fclose(f); }
 	pConfig->Write (); // save current settings
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  WriteExtraParams()...\n"); fclose(f); }
 	m_pLaunchpad->WriteExtraParams ();
 
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  Reading scenario: %s\n", ScnPath(scenario)); fclose(f); }
 	if (!have_state && !pState->Read (ScnPath (scenario))) {
 		LOGOUT_ERR ("Scenario not found: %s", scenario);
 		TerminateOnError();
 	}
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  Scenario loaded OK\n"); fclose(f); }
 
 	long m0 = memstat->HeapUsage();
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CreateRenderWindow()...\n"); fclose(f); }
 	CreateRenderWindow (pConfig, scenario);
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CreateRenderWindow() OK\n"); fclose(f); }
 	simheapsize = memstat->HeapUsage()-m0;
 	SetCursor (hCursor);
 }
@@ -877,21 +857,17 @@ HWND Orbiter::CreateRenderWindow (Config *pCfg, const char *scenario)
 	LOGOUT("");
 	LOGOUT("**** Creating simulation session");
 
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: m_pLaunchpad->Hide()\n"); fclose(f); }
 	m_pLaunchpad->Hide();
 
 	if (gclient) {
-		{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: gclient exists, calling clbkCreateRenderWindow\n"); fclose(f); }
-		if(pState->SplashScreen())
+			if(pState->SplashScreen())
 			gclient->clbkSetSplashScreen(pState->SplashScreen(), pState->SplashColor());
 		hRenderWnd = gclient->InitRenderWnd (gclient->clbkCreateRenderWindow());
-		{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: hRenderWnd=%p\n", (void*)hRenderWnd); fclose(f); }
-		GetRenderParameters ();
+			GetRenderParameters ();
 	} else {
 		hRenderWnd = NULL;
 		m_pConsole = new orbiter::ConsoleNG(this);
 	}
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: SetRenderWindow\n"); fclose(f); }
 
 	pDI->SetRenderWindow(hRenderWnd);
 
@@ -909,25 +885,21 @@ HWND Orbiter::CreateRenderWindow (Config *pCfg, const char *scenario)
 			plZ4 = 1; // invalidate
 	}
 
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: creating DialogManager\n"); fclose(f); }
 	if (gclient) {
 		pDlgMgr = new DialogManager (this, hRenderWnd);
-		{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: DialogManager created, creating Select/InputBox\n"); fclose(f); }
-
+	
 		// global dialog resources
 		g_select = new Select(); TRACENEW
 		pDlgMgr->AddEntry(g_select);
 		g_input = new InputBox(); TRACENEW
 		pDlgMgr->AddEntry(g_input);
-		{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: dialogs created\n"); fclose(f); }
-
+	
 		// playback screen annotation manager
 		snote_playback = gclient->clbkCreateAnnotation ();
 	}
 	else {
 		pDlgMgr = new DialogManager(this, m_pConsole->WindowHandle());
 	}
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: reading scenario state\n"); fclose(f); }
 
 	// read simulation environment state
 	strcpy (ScenarioName, scenario);
@@ -935,13 +907,10 @@ HWND Orbiter::CreateRenderWindow (Config *pCfg, const char *scenario)
 	launch_tick = 3;
 	if (pCfg->CfgDebugPrm.TimerMode == 2) use_fine_counter = FALSE;
 
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: CreateStaticDeviceObjects\n"); fclose(f); }
 	if (gclient) {
 		Base::CreateStaticDeviceObjects();
 	}
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: BroadcastGlobalInit\n"); fclose(f); }
 	BroadcastGlobalInit ();
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: GlobalSetup\n"); fclose(f); }
 	RigidBody::GlobalSetup();
 
 	td.Reset (pState->Mjd());
@@ -950,36 +919,26 @@ HWND Orbiter::CreateRenderWindow (Config *pCfg, const char *scenario)
 	else if (Cfg()->CfgDebugPrm.FixedStep > 0.0)
 		td.SetFixedStep(Cfg()->CfgDebugPrm.FixedStep);
 
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: InitializeWorld '%s'\n", pState->Solsys()); fclose(f); }
 	if (!InitializeWorld (pState->Solsys())) {
 		LOGOUT_ERR_FILENOTFOUND_MSG(g_pOrbiter->ConfigPath (pState->Solsys()), "while initialising solar system %s", pState->Solsys());
 		TerminateOnError();
 		return 0;
 	}
 	LOGOUT("Finished initialising world");
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: InitializeWorld done\n"); fclose(f); }
 	time_prev = std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
 
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: InitState...\n"); fclose(f); }
 	g_psys->InitState (ScnPath (scenario));
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: InitState done\n"); fclose(f); }
 
 	g_focusobj = 0;
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: about to call pState->Focus()\n"); fclose(f); }
 	const char *focusName = pState->Focus();
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: Focus()='%s' g_psys=%p\n", focusName ? focusName : "(null)", (void*)g_psys); fclose(f); }
 	Vessel *vfocus = nullptr;
 	if (focusName && focusName[0] && g_psys) {
-		{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: calling GetVessel\n"); fclose(f); }
-		vfocus = g_psys->GetVessel(focusName);
-		{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: GetVessel returned %p\n", (void*)vfocus); fclose(f); }
-	}
+			vfocus = g_psys->GetVessel(focusName);
+		}
 	if (!vfocus && g_psys && g_psys->nVessel() > 0)
 		vfocus = g_psys->GetVessel ((DWORD)0); // in case no focus vessel was defined
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: vfocus=%p\n", (void*)vfocus); fclose(f); }
 	if (vfocus)
 		SetFocusObject (vfocus, false);
-	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: SetFocus done, camera init\n"); fclose(f); }
 
 	if (g_camera) {
 		if (g_focusobj)
@@ -1195,10 +1154,6 @@ void Orbiter::BroadcastGlobalInit ()
 HRESULT Orbiter::Render3DEnvironment (bool hidedialogs)
 {
 	if (gclient) {
-		static int renderFrame = 0;
-		if (renderFrame < 3) { FILE *f = fopen("Orbiter_startup.log", "a");
-			fprintf(f, "Render3D frame %d: gclient=%p pDlgMgr=%p hidedialogs=%d\n",
-				renderFrame, (void*)gclient, (void*)pDlgMgr, hidedialogs); fclose(f); }
 		if(!hidedialogs && pDlgMgr)
 			pDlgMgr->ImGuiNewFrame();
 		gclient->clbkRenderScene ();
@@ -1208,7 +1163,6 @@ HRESULT Orbiter::Render3DEnvironment (bool hidedialogs)
 		else if (ImGui::GetCurrentContext())
 			ImGui::EndFrame(); // Ensure frame is always ended
 		gclient->clbkDisplayFrame ();
-		renderFrame++;
 	}
 	// Mark frame boundary for when using the profiler
 	FrameMark;
@@ -1233,22 +1187,12 @@ INT Orbiter::Run ()
 {
 #ifndef _WIN32
 	// SDL2 main loop
-	{ FILE *f = fopen("Orbiter_startup.log", "a");
-	  fprintf(f, "Run() entered. LaunchScenario='%s'\n", pConfig->CfgCmdlinePrm.LaunchScenario.c_str());
-	  fclose(f); }
 	if (!pConfig->CfgCmdlinePrm.LaunchScenario.empty()) {
-		{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "Calling Launch()...\n"); fclose(f); }
-		Launch (pConfig->CfgCmdlinePrm.LaunchScenario.c_str());
-		{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "Launch() returned. bSession=%d\n", bSession); fclose(f); }
-	}
+			Launch (pConfig->CfgCmdlinePrm.LaunchScenario.c_str());
+		}
 
 	bool running = true;
-	static int loopCount = 0;
 	while (running) {
-		if (loopCount < 3) { FILE *f = fopen("Orbiter_startup.log", "a");
-			fprintf(f, "Loop %d: bSession=%d bRunning=%d bRenderOnce=%d gclient=%p pDlgMgr=%p\n",
-				loopCount, bSession, bRunning, bRenderOnce, (void*)gclient, (void*)pDlgMgr);
-			fclose(f); }
 
 		// Process SDL events
 		if (m_pSDL && !m_pSDL->ProcessEvents()) {
@@ -1269,8 +1213,6 @@ INT Orbiter::Run ()
 		}
 
 		if (bRenderOnce) {
-			if (loopCount < 3) { FILE *f = fopen("Orbiter_startup.log", "a");
-				fprintf(f, "Rendering frame %d\n", loopCount); fclose(f); }
 			Render3DEnvironment();
 			bRenderOnce = FALSE;
 		}
@@ -1279,7 +1221,6 @@ INT Orbiter::Run ()
 			// If no scenario loaded, auto-launch (Current state) or just idle
 			SDL_Delay(16); // ~60fps idle
 		}
-		loopCount++;
 	}
 
 	if (m_pSDL) {
