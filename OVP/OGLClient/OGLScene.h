@@ -1,0 +1,62 @@
+// Copyright (c) Martin Schweiger
+// Licensed under the MIT License
+
+// OGLScene - Scene manager that orchestrates all rendering
+
+#ifndef __OGLSCENE_H
+#define __OGLSCENE_H
+
+#ifndef _WIN32
+#include "OrbiterAPI.h"
+#include <OpenGL/gl3.h>
+#include <string>
+#include <vector>
+
+namespace ogl {
+
+class ShaderMgr;
+class OGLCelSphere;
+class OGLvPlanet;
+class OGLvVessel;
+
+class OGLScene {
+public:
+	OGLScene(ShaderMgr *shaderMgr);
+	~OGLScene();
+
+	// Initialize the scene: create shared resources, build object lists.
+	// texturePath = base directory for textures.
+	void Init(const std::string &texturePath);
+
+	// Main render callback — called from OGLClient::clbkRenderScene
+	void RenderScene(DWORD viewW, DWORD viewH);
+
+	// Release all resources
+	void Release();
+
+private:
+	ShaderMgr *m_shaderMgr;
+	std::string m_texturePath;
+
+	// Celestial sphere (starfield)
+	OGLCelSphere *m_celSphere;
+
+	// Visual objects
+	std::vector<OGLvPlanet*> m_planets;
+	std::vector<OGLvVessel*> m_vessels;
+
+	bool m_initialized;
+
+	// Build the view-projection matrix from Orbiter camera state
+	void BuildViewProjection(DWORD viewW, DWORD viewH,
+	                         float *vp, VECTOR3 &camPos, MATRIX3 &camRot);
+
+	// Populate planet/vessel lists from the simulation on first frame
+	void PopulateObjects();
+	bool m_objectsPopulated;
+};
+
+} // namespace ogl
+
+#endif // !_WIN32
+#endif // __OGLSCENE_H

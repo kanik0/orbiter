@@ -9,8 +9,24 @@ if(NOT WIN32)
 	add_library(OGLClient STATIC
 		OGLClient.cpp
 		OGLTexture.cpp
+		OGLShaderMgr.cpp
+		OGLScene.cpp
+		OGLvObject.cpp
+		OGLvPlanet.cpp
+		OGLvVessel.cpp
+		OGLCelSphere.cpp
+		OGLSurface.cpp
 		${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
 		${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+	)
+
+	# Copy shader files to build directory
+	add_custom_command(TARGET OGLClient POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+		COMMAND ${CMAKE_COMMAND} -E copy_directory
+			"${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+			"${CMAKE_BINARY_DIR}/shaders"
+		COMMENT "Copying OGLClient shaders to build directory"
 	)
 
 	target_include_directories(OGLClient
