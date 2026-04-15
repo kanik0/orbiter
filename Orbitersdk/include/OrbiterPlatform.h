@@ -39,7 +39,7 @@
 // Basic Windows types
 // -----------------------------------------------------------
 typedef uint32_t       DWORD;
-typedef int32_t        LONG;
+typedef long           LONG;
 typedef int64_t        LONGLONG;
 typedef uint16_t       WORD;
 typedef unsigned char  BYTE;
@@ -480,7 +480,8 @@ inline BOOL IsDialogMessage(HWND, MSG*) { return FALSE; }
 #define IDC_STATIC7 1007
 
 // Threading stubs
-inline HANDLE CreateThread(void*, size_t, void*, void*, DWORD, DWORD*) { return nullptr; }
+typedef DWORD (*LPTHREAD_START_ROUTINE)(void*);
+inline HANDLE CreateThread(void*, size_t, LPTHREAD_START_ROUTINE, void*, DWORD, DWORD*) { return nullptr; }
 inline HANDLE CreateEvent(void*, BOOL, BOOL, const char*) { return nullptr; }
 inline BOOL CloseHandle(HANDLE) { return FALSE; }
 inline DWORD WaitForSingleObject(HANDLE, DWORD) { return 0; }
@@ -565,8 +566,8 @@ typedef void* HGDIOBJ;
 typedef struct { LONG bmWidth; LONG bmHeight; } BITMAP;
 typedef struct { DWORD dwSize; DWORD dwFlags; DWORD dwFourCC; DWORD dwRGBBitCount;
 	DWORD dwRBitMask; DWORD dwGBitMask; DWORD dwBBitMask; DWORD dwRGBAlphaBitMask; } DDPIXELFORMAT;
-typedef struct { DWORD dwSize; DWORD dwFlags; } DDBLTFX;
-typedef struct { LONG x; LONG y; } MINMAXINFO;
+typedef struct { DWORD dwSize; DWORD dwFlags; DWORD dwFillColor; } DDBLTFX;
+typedef struct { POINT ptReserved; POINT ptMaxSize; POINT ptMaxPosition; POINT ptMinTrackSize; POINT ptMaxTrackSize; } MINMAXINFO;
 typedef struct { UINT lbStyle; COLORREF lbColor; ULONG_PTR lbHatch; } LOGBRUSH;
 typedef struct { DWORD cbSize; UINT fMask; int nMin; int nMax; UINT nPage; int nPos; int nTrackPos; } SCROLLINFO;
 typedef struct { HDC hdc; BOOL fErase; RECT rcPaint; } PAINTSTRUCT;
@@ -589,7 +590,7 @@ typedef struct { HDC hdc; BOOL fErase; RECT rcPaint; } PAINTSTRUCT;
 #define _chdir chdir
 
 // TreeView stubs
-typedef struct { UINT mask; HTREEITEM hItem; char* pszText; int cchTextMax; int cChildren; } TVITEM;
+typedef struct { UINT mask; HTREEITEM hItem; UINT state; UINT stateMask; char* pszText; int cchTextMax; int iImage; int iSelectedImage; int cChildren; LPARAM lParam; } TVITEM;
 #define TVIF_HANDLE 0x0010
 #define TVIF_TEXT 0x0001
 #define TVIF_CHILDREN 0x0040
@@ -600,6 +601,43 @@ inline BOOL TreeView_Expand(HWND, HTREEITEM, UINT) { return FALSE; }
 inline BOOL TreeView_GetItem(HWND, TVITEM*) { return FALSE; }
 inline HTREEITEM TreeView_GetChild(HWND, HTREEITEM) { return nullptr; }
 inline HTREEITEM TreeView_GetNextSibling(HWND, HTREEITEM) { return nullptr; }
+inline BOOL TreeView_SelectItem(HWND, HTREEITEM) { return FALSE; }
+inline HTREEITEM TreeView_InsertItem(HWND, void*) { return nullptr; }
+
+// TreeView notification / insert types
+typedef struct { NMHDR hdr; TVITEM itemOld; TVITEM itemNew; POINT ptDrag; } NM_TREEVIEW;
+typedef struct { HTREEITEM hParent; HTREEITEM hInsertAfter; TVITEM item; } TV_INSERTSTRUCT;
+#define TVIF_PARAM   0x0004
+#define TVI_LAST     ((HTREEITEM)(uintptr_t)-0x0FFFF)
+#define TVN_SELCHANGED (-402)
+#define SB_THUMBPOSITION 4
+#define ETDT_ENABLE  0x0002
+
+// Additional Win32 stubs
+inline BOOL GetScrollInfo(HWND, int, SCROLLINFO*) { return FALSE; }
+inline HWND CreateDialogParam(HINSTANCE, const char*, HWND, DLGPROC, LPARAM) { return nullptr; }
+#define SPI_SETFONTSMOOTHING 0x004B
+#define SPIF_SENDCHANGE 0x0002
+#define IDC_IMG 0
+
+// Button/checkbox message constants
+#define BM_SETCHECK 0x00F1
+#define BST_CHECKED 1
+#define BST_UNCHECKED 0
+
+// Resource IDs (non-Windows: unused, just need to compile)
+#define IDD_OPTIONS_VISUAL 0
+#define IDC_OPT_VIS_CLOUD 0
+#define IDC_OPT_VIS_CSHADOW 0
+#define IDC_OPT_VIS_HAZE 0
+#define IDC_OPT_VIS_FOG 0
+
+inline void EnableThemeDialogTexture(HWND, DWORD) {}
+
+// D3DPT_TRIANGLELIST for Baseobj.cpp render functions
+#ifndef D3DPT_TRIANGLELIST
+#define D3DPT_TRIANGLELIST 4
+#endif
 
 inline BOOL GetObject(HBITMAP, int, void*) { return FALSE; }
 inline DWORD GetWindowThreadProcessId(HWND, DWORD*) { return 0; }
@@ -610,11 +648,7 @@ namespace ConsoleManager {
 	inline void ShowConsole(bool) {}
 }
 
-// iequal stub
-inline bool iequal(const std::string& a, const std::string& b) {
-	return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(),
-		[](char ca, char cb) { return tolower(ca) == tolower(cb); });
-}
+// iequal is defined in Util.cpp, declared in Util.h
 
 // Process stubs
 #define _execl execl

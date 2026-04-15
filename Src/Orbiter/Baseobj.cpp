@@ -3357,6 +3357,7 @@ void SolarPlant::Render (LPDIRECT3DDEVICE7 dev, bool)
 		}
 	}
 
+#ifdef _WIN32
 	// render panels and stands
 	dev->SetTexture (0, tex);
 	dev->SetRenderState (D3DRENDERSTATE_ALPHABLENDENABLE, TRUE);
@@ -3369,13 +3370,16 @@ void SolarPlant::Render (LPDIRECT3DDEVICE7 dev, bool)
 				flash[i] = false;
 			}
 	dev->SetRenderState (D3DRENDERSTATE_ALPHABLENDENABLE, FALSE);
+#endif
 }
 
 void SolarPlant::RenderShadow (LPDIRECT3DDEVICE7 dev)
 {
+#ifdef _WIN32
 	if (have_shadows)
 		dev->DrawIndexedPrimitive (
 			D3DPT_TRIANGLELIST, D3DFVF_XYZ /*| D3DFVF_DIFFUSE*/, ShVtx, nShVtx, ShIdx, nShIdx, 0);
+#endif
 }
 
 void SolarPlant::Activate ()

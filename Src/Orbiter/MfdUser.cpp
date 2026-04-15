@@ -17,7 +17,11 @@
 #include <iomanip>
 #include "Log.h"
 #include "Util.h"
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include "resource_stub.h"
+#endif
 
 using namespace std;
 

@@ -8,6 +8,9 @@
 #include "Log.h"
 #include "Select.h"
 #include <iomanip>
+#ifndef _WIN32
+#include "resource_stub.h"
+#endif
 
 using namespace std;
 
@@ -22,7 +25,7 @@ static const Body *last_target = 0;
 // =======================================================================
 // class Instrument_OPlaneAlign
 
-struct Instrument_OPlaneAlign::SavePrm Instrument_OPlaneAlign::saveprm = {0,0,0,0.0,0.0,false};
+struct Instrument_OPlaneAlign::SavePrm Instrument_OPlaneAlign::saveprm = {0,0,0,0.0,0.0,0};
 
 Instrument_OPlaneAlign::Instrument_OPlaneAlign (Pane *_pane, INT_PTR _id, const Spec &spec, Vessel *_vessel, bool restore)
 : Instrument (_pane, _id, spec, _vessel)

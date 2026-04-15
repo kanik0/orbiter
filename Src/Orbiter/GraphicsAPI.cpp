@@ -5,6 +5,9 @@
 #define OAPI_IMPLEMENTATION
 
 #include "Orbiter.h"
+#ifndef _WIN32
+#include "resource_stub.h"
+#endif
 #include "Launchpad.h"
 #include "LpadTab.h"
 #include "TabVideo.h"
@@ -15,8 +18,12 @@
 #include "DlgMgr.h"
 #include "Log.h"
 #include "Util.h"
+#ifdef _WIN32
 #include "resource.h"
 #include <wincodec.h>
+#else
+#include "resource_stub.h"
+#endif
 #include <filesystem>
 namespace fs = std::filesystem;
 
@@ -80,6 +87,7 @@ GraphicsClient::~GraphicsClient ()
 
 bool GraphicsClient::clbkInitialise ()
 {
+#ifdef _WIN32
     // Register a window class for the render window
     WNDCLASS wndClass = {0, ::WndProc, 0, 0, hModule,
 		LoadIcon (g_pOrbiter->GetInstance(), MAKEINTRESOURCE(IDI_MAIN_ICON)),
@@ -92,6 +100,9 @@ bool GraphicsClient::clbkInitialise ()
 		hVid = g_pOrbiter->Launchpad()->GetTab(PG_VID)->TabWnd();
 		SetWindowLongPtr (hVid, GWLP_USERDATA, (LONG_PTR)this);
 	} else hVid = NULL;
+#else
+	hVid = NULL;
+#endif
 
 	// set default parameters from config data
 	Config *cfg = g_pOrbiter->Cfg();
@@ -107,9 +118,11 @@ bool GraphicsClient::clbkInitialise ()
 	VideoData.winw       = (int)cfg->CfgDevPrm.WinW;
 	VideoData.winh       = (int)cfg->CfgDevPrm.WinH;
 
+#ifdef _WIN32
 	char fname[256];
 	GetModuleFileName(hModule, fname, 256);
 	((orbiter::DefVideoTab*)g_pOrbiter->Launchpad()->GetTab(PG_VID))->OnGraphicsClientLoaded(this, fname);
+#endif
 
 	return true;
 }
@@ -325,6 +338,15 @@ bool GraphicsClient::ElevationGrid(ELEVHANDLE hElev, int ilat, int ilng, int lvl
 
 // ======================================================================
 
+#ifndef _WIN32
+// Stubs for image loading functions not available on non-Windows
+void GraphicsClient::ShowDefaultSplash () {}
+HBITMAP GraphicsClient::ReadImageFromMemory (BYTE*, DWORD, UINT, UINT) { return nullptr; }
+HBITMAP GraphicsClient::ReadImageFromFile (const char*, UINT, UINT) { return nullptr; }
+bool GraphicsClient::WriteImageDataToFile (const ImageData&, const char*, ImageFileFormat, float) { return false; }
+bool GraphicsClient::clbkCopyBitmap (SURFHANDLE, HBITMAP, int, int, int, int) { return false; }
+HWND GraphicsClient::InitRenderWnd (HWND hWnd) { return hWnd; }
+#else
 void GraphicsClient::ShowDefaultSplash ()
 {
 	const DWORD texcol = 0xA06060;
@@ -687,6 +709,8 @@ INT_PTR GraphicsClient::LaunchpadVideoWndProc (HWND hWnd, UINT uMsg, WPARAM wPar
 {
 	return FALSE;
 }
+
+#endif // _WIN32 - end of platform-specific image/window functions
 
 // ==================================================================
 // Functions for the celestial sphere

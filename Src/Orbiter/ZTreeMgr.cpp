@@ -4,6 +4,9 @@
 #include "ZTreeMgr.h"
 #include "zlib.h"
 #include "util.h"
+#ifndef _WIN32
+#include "resource_stub.h"
+#endif
 
 // =======================================================================
 // File header for compressed tree files
@@ -203,10 +206,10 @@ DWORD ZTreeMgr::ReadData(DWORD idx, BYTE **outp)
 
 DWORD ZTreeMgr::Inflate(const BYTE *inp, DWORD ninp, BYTE *outp, DWORD noutp)
 {
-	DWORD ndata = noutp;
+	uLongf ndata = noutp;
 	if (uncompress (outp, &ndata, inp, ninp) != Z_OK)
 		return 0;
-	return ndata;
+	return (DWORD)ndata;
 }
 
 // -----------------------------------------------------------------------

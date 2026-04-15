@@ -1626,12 +1626,16 @@ typedef struct {
 	MFDMODESPECEX *spec;
 } MFDMODEOPENSPEC;
 
+#ifdef _WIN32
 #pragma pack(push,1)
+#endif
 typedef struct {
 	const char *line1, *line2;
 	char selchar;
 } MFDBUTTONMENU;
+#ifdef _WIN32
 #pragma pack(pop)
+#endif
 
 
 // ===========================================================================

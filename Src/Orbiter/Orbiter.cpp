@@ -44,11 +44,12 @@
 #include "CustomControls.h"
 #ifdef _WIN32
 #include "Help.h"
-#include "DlgHelp.h" // temporary
 #include "htmlctrl.h"
 #endif
+#include "DlgHelp.h"
 #include "DlgCtrl.h"
 #include "GraphicsAPI.h"
+#include "Util.h"
 #ifdef _WIN32
 #include "ConsoleManager.h"
 #endif
@@ -2838,7 +2839,12 @@ void Orbiter::OpenHelp (const HELPCONTEXT *hcontext)
 
 void Orbiter::OpenLaunchpadHelp (HELPCONTEXT *hcontext)
 {
+#ifdef _WIN32
 	::OpenHelp (0, hcontext->helpfile, hcontext->topic);
+#else
+	// TODO: implement help viewer for non-Windows
+	LOGOUT("Help requested: %s", hcontext->topic ? hcontext->topic : "(null)");
+#endif
 }
 
 HELPCONTEXT Orbiter::DefaultHelpPage(const char* topic)

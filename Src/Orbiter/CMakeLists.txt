@@ -132,8 +132,10 @@ if(WIN32)
 		${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
 	)
 else()
-	# TODO: macOS/Linux platform sources will be added as they are implemented
-	# For now, stub files are included to allow compilation
+	# macOS/Linux platform sources - stubs for Win32-only components
+	list(APPEND common_src
+		platform_stubs_posix.cpp
+	)
 endif()
 
 set(Orbiter_includes
@@ -165,8 +167,9 @@ if(WIN32)
 		dinput8.lib
 	)
 elseif(APPLE)
+	find_package(ZLIB REQUIRED)
 	set(Orbiter_common_libs
-		zlib
+		ZLIB::ZLIB
 		${SDL2_LIBRARIES}
 		${OPENGL_LIBRARIES}
 		$<TARGET_FILE:Orbitersdk>

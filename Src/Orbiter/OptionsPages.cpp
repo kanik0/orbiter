@@ -3,6 +3,8 @@
 
 // ======================================================================
 // Template for simulation options pages
+// This file contains Win32 dialog procedures - stubbed on non-Windows
+#ifdef _WIN32
 // ======================================================================
 
 #ifdef _WIN32
@@ -19,6 +21,8 @@
 #ifdef _WIN32
 #include "resource.h"
 #include "Uxtheme.h"
+#else
+#include "resource_stub.h"
 #endif
 
 using std::min;
@@ -2426,3 +2430,4 @@ BOOL OptionsPage_Axes::OnHScroll(HWND hTab, WPARAM wParam, LPARAM lParam)
 	}
 	return FALSE;
 }
+#endif // _WIN32
