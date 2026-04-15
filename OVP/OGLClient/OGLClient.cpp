@@ -409,7 +409,12 @@ void OGLClient::clbkRenderScene()
 	double nearPlane = 1.0;
 	double farPlane = 1e10;
 
-	// Projection matrix (OpenGL column-major)
+	// Projection matrix (standard OpenGL, camera looks along -Z in view space)
+	// NOTE: Orbiter camera looks along +Z. The view matrix produces +Z for
+	// objects in front. The -1 in proj[11] combined with the planet distance
+	// normalization scheme works for planet rendering but NOT for vessel
+	// rendering (vessels end up at +Z in view space). This is a known issue
+	// that needs to be resolved with a proper coordinate convention fix.
 	float f = 1.0f / tanf((float)fov * 0.5f);
 	float A = (float)((farPlane + nearPlane) / (nearPlane - farPlane));
 	float B = (float)(2.0 * farPlane * nearPlane / (nearPlane - farPlane));
@@ -422,7 +427,8 @@ void OGLClient::clbkRenderScene()
 
 	// View matrix: inverse of camera rotation = transpose (orthonormal)
 	// Orbiter's grot: rows are camera-local X,Y,Z axes in global frame.
-	// The transpose converts from global-to-camera space.
+	// This works with positive-Z-forward convention used by both Orbiter
+	// and the D3D-style projection we're emulating.
 	float view[16] = {
 		(float)camRot.m11, (float)camRot.m21, (float)camRot.m31, 0,
 		(float)camRot.m12, (float)camRot.m22, (float)camRot.m32, 0,
