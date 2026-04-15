@@ -94,32 +94,32 @@ public:
 	virtual ~Interpreter ();
 
 	/**
-	 * \brief Set up the interpreter (load libraries etc.)
+	 * /brief Set up the interpreter (load libraries etc.)
 	 */
 	virtual void Initialise ();
 
 	/**
-	 * \brief Return the Lua object
+	 * /brief Return the Lua object
 	 */
 	lua_State *GetState() { return L; }
 
 	/**
-	 * \brief Returns interpreter status.
-	 * \return 0=normal, 1=kill pending
+	 * /brief Returns interpreter status.
+	 * /return 0=normal, 1=kill pending
 	 */
 	int Status () const;
 
 	/**
-	 * \brief Returns interpreter execution status.
-	 * \return \e true if interpreter is busy (in the process of running a
-	 *   command or script), \e false if it is waiting for intput.
+	 * /brief Returns interpreter execution status.
+	 * /return /e true if interpreter is busy (in the process of running a
+	 *   command or script), /e false if it is waiting for intput.
 	 */
 	bool IsBusy () const;
 
 	/**
-	 * \brief Returns the number of background jobs active during idle phase.
-	 * \return number of background jobs
-	 * \note A command may create background jobs that are still active after
+	 * /brief Returns the number of background jobs active during idle phase.
+	 * /return number of background jobs
+	 * /note A command may create background jobs that are still active after
 	 *   the command returns. The interpreter idle loop continues processing
 	 *   the remaining jobs until all are finished, or until a new command
 	 *   is entered which takes over control of the background jobs.
@@ -127,8 +127,8 @@ public:
 	inline int nJobs () const { return jobs; }
 
 	/**
-	 * \brief Request interpreter termination.
-	 * \note This sets the interpreter Status() to 1 (kill pending). It is
+	 * /brief Request interpreter termination.
+	 * /note This sets the interpreter Status() to 1 (kill pending). It is
 	 *   up to the client to delete the interpreter instance and clean up
 	 *   (terminate interpreter thread etc.)
 	 */
@@ -137,24 +137,24 @@ public:
 	void PostStep (double simt, double simdt, double mjd);
 
 	/**
-	 * \brief Wait for thread execution.
-	 * \note This is called by either the orbiter thread or the interpreter
+	 * /brief Wait for thread execution.
+	 * /note This is called by either the orbiter thread or the interpreter
 	 *   thread when they are waiting to regain execution control.
 	 */
 	virtual void WaitExec (DWORD timeout = INFINITE);
 
 	/**
-	 * \brief Release thread execution.
-	 * \param timeout time [ms] to wait for the mutex. Default is infinite
+	 * /brief Release thread execution.
+	 * /param timeout time [ms] to wait for the mutex. Default is infinite
 	 *   (wait does not time out).
-	 * \note This is called by either the orbiter thread or the interpreter
+	 * /note This is called by either the orbiter thread or the interpreter
 	 *   thread after finishing a cycle to hand control over to the other
 	 *   thread.
 	 */
 	virtual void EndExec ();
 
 	/**
-	 * \brief Define functions for interfacing with Orbiter API
+	 * /brief Define functions for interfacing with Orbiter API
 	 */
 	virtual void LoadAPI ();
 
@@ -174,58 +174,58 @@ public:
 
 	virtual void LoadBitAPI();
 	/**
-	 * \brief Run the interpreter initialisation script
+	 * /brief Run the interpreter initialisation script
 	 */
 	virtual void LoadStartupScript ();
 
 	virtual int ProcessChunk (const char *chunk, int n);
 
 	/**
-	 * \brief Executes a command or script.
-	 * \param chunk command line string
-	 * \param n string length
-	 * \return Execution status as returned by lua_pcall (0=no error)
+	 * /brief Executes a command or script.
+	 * /param chunk command line string
+	 * /param n string length
+	 * /return Execution status as returned by lua_pcall (0=no error)
 	 */
 	virtual int RunChunk (const char *chunk, int n);
 
 	/**
-	 * \brief Copies a string to the terminal.
-	 * \param str string to be displayed.
-	 * \note Terminal-type derived classes should implement this method.
-	 * \note Default action: none.
+	 * /brief Copies a string to the terminal.
+	 * /param str string to be displayed.
+	 * /note Terminal-type derived classes should implement this method.
+	 * /note Default action: none.
 	 */
 	virtual void term_strout (const char *str, bool iserr=false) {}
 
 	/**
-	 * \brief Copies the string on top of the stack to the terminal.
-	 * \param L Lua interpreter instance
-	 * \note Default action: Passes the string on top of the stack to term_echo().
+	 * /brief Copies the string on top of the stack to the terminal.
+	 * /param L Lua interpreter instance
+	 * /note Default action: Passes the string on top of the stack to term_echo().
 	 */
 	virtual void term_out (lua_State *L, bool iserr=false);
 
 	/**
-	* \brief Clears the terminal.
+	* /brief Clears the terminal.
 	*/
 	virtual void term_clear () {}
 
 	/**
-	 * \brief Push an MFD object onto the stack
-	 * \param L Lua interpreter instance
-	 * \param mfd pointer to MFD object
+	 * /brief Push an MFD object onto the stack
+	 * /param L Lua interpreter instance
+	 * /param mfd pointer to MFD object
 	 */
 	static void lua_pushmfd (lua_State *L, MFD2 *mfd);
 
 	/**
-	 * \brief Push a light source object onto the stack
-	 * \param L Lua interpreter instance
-	 * \param le pointer to LightEmitter object
+	 * /brief Push a light source object onto the stack
+	 * /param L Lua interpreter instance
+	 * /param le pointer to LightEmitter object
 	 */
 	static void lua_pushlightemitter (lua_State *L, const LightEmitter *le);
 
 	/**
-	 * \brief Push a Sketchpad object onto the stack
-	 * \param L Lua interpreter instance
-	 * \param skp pointer to Sketchpad object
+	 * /brief Push a Sketchpad object onto the stack
+	 * /param L Lua interpreter instance
+	 * /param skp pointer to Sketchpad object
 	 */
 	static void lua_pushsketchpad (lua_State *L, oapi::Sketchpad *skp);
 
@@ -240,7 +240,7 @@ protected:
 	lua_State *L;         // Lua main context
 
 	/**
-	 * \brief Load screen annotation methods.
+	 * /brief Load screen annotation methods.
 	 */
 	void LoadAnnotationAPI ();
 	void LoadVesselStatusAPI ();

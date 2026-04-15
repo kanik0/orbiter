@@ -1205,7 +1205,7 @@ void HoverHoldAltIndicator::UpdateReadout (const char *tgtstr, char *curstr)
 		}
 		tgtx += w;
 	}
-	if (i < 10) curstr[i] = '\0';
+	if (i < 10) curstr[i] = '/0';
 }
 
 // ==============================================================

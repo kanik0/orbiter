@@ -16,7 +16,9 @@
 
 #include "ScnEditorAPI.h"
 #include "Convert.h"
+#ifdef _WIN32
 #include <commctrl.h>
+#endif
 #include <filesystem>
 namespace fs = std::filesystem;
 

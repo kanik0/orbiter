@@ -219,40 +219,40 @@ namespace oapi {
 				return;
 			}
 			if (m_bResetLog) { // write out header
-				fprintf(m_LogFile, "Orbiter Flight Data Log Record\n");
-				fprintf(m_LogFile, "==============================\n");
-				fprintf(m_LogFile, "Columns:\n");
-				fprintf(m_LogFile, "\tTIME:     simulation time (seconds)\n");
-				fprintf(m_LogFile, "\tALT:      altitude (km)\n");
-				fprintf(m_LogFile, "\tAIRSPEED: airspeed (km/s)\n");
-				fprintf(m_LogFile, "\tVSPEED:   vertical speed (km/s)\n");
-				fprintf(m_LogFile, "\tMACH:     Mach number\n");
-				fprintf(m_LogFile, "\tTEMP:     freestream temperature (K)\n");
-				fprintf(m_LogFile, "\tSTP:      static pressure (kPa)\n");
-				fprintf(m_LogFile, "\tDNP:      dynamic pressure (kPa)\n");
-				fprintf(m_LogFile, "\tAOA:      angle of attack (deg)\n");
-				fprintf(m_LogFile, "\tSLIP:     horizontal slip angle (deg)\n");
-				fprintf(m_LogFile, "\tLIFT:     total lift force (kN)\n");
-				fprintf(m_LogFile, "\tDRAG:     total drag force (kN)\n");
-				fprintf(m_LogFile, "\tL/D:      lift/drag ratio\n");
-				fprintf(m_LogFile, "\tTOTMASS:  total vessel mass (ton)\n");
-				fprintf(m_LogFile, "\tPRPMASS:  propellant mass (ton)\n\n");
+				fprintf(m_LogFile, "Orbiter Flight Data Log Record/n");
+				fprintf(m_LogFile, "==============================/n");
+				fprintf(m_LogFile, "Columns:/n");
+				fprintf(m_LogFile, "/tTIME:     simulation time (seconds)/n");
+				fprintf(m_LogFile, "/tALT:      altitude (km)/n");
+				fprintf(m_LogFile, "/tAIRSPEED: airspeed (km/s)/n");
+				fprintf(m_LogFile, "/tVSPEED:   vertical speed (km/s)/n");
+				fprintf(m_LogFile, "/tMACH:     Mach number/n");
+				fprintf(m_LogFile, "/tTEMP:     freestream temperature (K)/n");
+				fprintf(m_LogFile, "/tSTP:      static pressure (kPa)/n");
+				fprintf(m_LogFile, "/tDNP:      dynamic pressure (kPa)/n");
+				fprintf(m_LogFile, "/tAOA:      angle of attack (deg)/n");
+				fprintf(m_LogFile, "/tSLIP:     horizontal slip angle (deg)/n");
+				fprintf(m_LogFile, "/tLIFT:     total lift force (kN)/n");
+				fprintf(m_LogFile, "/tDRAG:     total drag force (kN)/n");
+				fprintf(m_LogFile, "/tL/D:      lift/drag ratio/n");
+				fprintf(m_LogFile, "/tTOTMASS:  total vessel mass (ton)/n");
+				fprintf(m_LogFile, "/tPRPMASS:  propellant mass (ton)/n/n");
 				m_bResetLog = false;
 			}
-			fprintf(m_LogFile, "# Log started for %s\n", m_vesselName.c_str());
+			fprintf(m_LogFile, "# Log started for %s/n", m_vesselName.c_str());
 			fprintf(m_LogFile, "# ____TIME");
 			for(auto &graph: m_graphs) {
 				for(auto &ds: graph.m_datastreams) {
 					fprintf(m_LogFile, ds.m_header.c_str());
 				}
 			}
-			fprintf(m_LogFile, "\n");
+			fprintf(m_LogFile, "/n");
 			oapiAddNotification(OAPINOTIF_INFO, "Flight data recording enabled", m_vesselName.c_str());
 		}
 
 		void StopRecording() {
 			if(m_LogFile) {
-				fprintf(m_LogFile, "# Log stopped for %s\n", m_vesselName.c_str());
+				fprintf(m_LogFile, "# Log stopped for %s/n", m_vesselName.c_str());
 				fclose(m_LogFile);
 				m_LogFile = NULL;
 				oapiAddNotification(OAPINOTIF_INFO, "Flight data recording disabled", m_vesselName.c_str());
@@ -350,7 +350,7 @@ namespace oapi {
 					graph.AddDataPoint(m_pVessel, m_LogFile);
 				}
 				if (m_LogFile) {
-					fprintf(m_LogFile, "\n");
+					fprintf(m_LogFile, "/n");
 				}
 				m_sysT = syst;
 			}
@@ -384,8 +384,8 @@ namespace oapi {
 
 
 static oapi::FlightData *g_fData;
-/// \brief Module entry point 
-/// \param hDLL module handle
+/// /brief Module entry point 
+/// /param hDLL module handle
 DLLCLBK void InitModule(HINSTANCE hDLL)
 {
 	// Create and register the module
@@ -393,8 +393,8 @@ DLLCLBK void InitModule(HINSTANCE hDLL)
 	oapiRegisterModule(g_fData);
 }
 
-/// \brief Module exit point 
-/// \param hDLL module handle
+/// /brief Module exit point 
+/// /param hDLL module handle
 DLLCLBK void ExitModule(HINSTANCE hDLL)
 {
 	// Delete the module

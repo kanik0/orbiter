@@ -6,13 +6,15 @@
 #include "orbitersdk.h"
 #include "DGC_resource.h"
 #include <stdio.h>
+#ifdef _WIN32
 #include <io.h>
+#endif
 
 class VesselConfig;
 class DGConfig;
 
-static const char *hires_enabled = "Textures2\\DG";
-static const char *hires_disabled = "Textures2\\~DG";
+static const char *hires_enabled = "Textures2//DG";
+static const char *hires_disabled = "Textures2//~DG";
 
 struct {
 	HINSTANCE hInst;

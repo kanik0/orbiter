@@ -1228,10 +1228,10 @@ void ShuttleA::clbkSetClassCaps (FILEHANDLE cfg)
 
 	// ************************ Meshes ****************************
 
-	SetMeshVisibilityMode (AddMesh (exmesh_tpl = oapiLoadMeshGlobal ("ShuttleA\\ShuttleA")), MESHVIS_EXTERNAL);
-	SetMeshVisibilityMode (AddMesh (vcmesh_tpl = oapiLoadMeshGlobal ("ShuttleA\\ShuttleA_vc")), MESHVIS_VC);
+	SetMeshVisibilityMode (AddMesh (exmesh_tpl = oapiLoadMeshGlobal ("ShuttleA//ShuttleA")), MESHVIS_EXTERNAL);
+	SetMeshVisibilityMode (AddMesh (vcmesh_tpl = oapiLoadMeshGlobal ("ShuttleA//ShuttleA_vc")), MESHVIS_VC);
 	hPanelMesh0 = 0;
-	hPanelMesh1 = oapiLoadMeshGlobal ("ShuttleA\\ShuttleA_2dpanel1");
+	hPanelMesh1 = oapiLoadMeshGlobal ("ShuttleA//ShuttleA_2dpanel1");
 
 
 	// ************************ Blit Ship Name ****************************
@@ -2446,9 +2446,9 @@ DLLCLBK void InitModule (HINSTANCE hModule)
 	g_Param.pBrush[1] = oapiCreateBrush(RGB(0, 0, 0));
 
 	// load 2D panel texture
-	ShuttleA::panel2dtex = oapiLoadTexture ("ShuttleA\\panel2d.dds");
-	ShuttleA::paneleltex = oapiLoadSurfaceEx("ShuttleA\\panel_el.dds", OAPISURFACE_TEXTURE | OAPISURFACE_RENDERTARGET);
-	ShuttleA::aditex = oapiLoadTexture ("Common\\adiball_grey.dds");
+	ShuttleA::panel2dtex = oapiLoadTexture ("ShuttleA//panel2d.dds");
+	ShuttleA::paneleltex = oapiLoadSurfaceEx("ShuttleA//panel_el.dds", OAPISURFACE_TEXTURE | OAPISURFACE_RENDERTARGET);
+	ShuttleA::aditex = oapiLoadTexture ("Common//adiball_grey.dds");
 }
 
 // --------------------------------------------------------------

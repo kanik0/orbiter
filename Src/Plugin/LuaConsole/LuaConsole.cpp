@@ -10,7 +10,9 @@
 #include "imgui_extras.h"
 #include "IconsFontAwesome6.h"
 #include <sstream>
+#ifdef _WIN32
 #include <process.h>
+#endif
 
 using std::min;
 using std::max;
@@ -37,7 +39,7 @@ class LuaConsoleDlg: public ImGuiDialog {
 public:
 	LuaConsoleDlg(char *cmdbuf):ImGuiDialog(ICON_FA_TERMINAL " Lua Console"){
 		cConsoleCmd = cmdbuf;
-		cmd[0] = '\0';
+		cmd[0] = '/0';
 		flags = ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CtrlEnterForNewLine;
 		idx_history = -1;
 	}
@@ -47,7 +49,7 @@ public:
 		std::stringstream ss(str);
 		std::string line;
 
-		if(str[0]=='\0')
+		if(str[0]=='/0')
 			lines.emplace_back("", type);
 		else while(std::getline(ss,line)) {
 			lines.emplace_back(std::move(line), type);
@@ -62,7 +64,7 @@ public:
 		history.push_back(cmd);
 		AddLine(cmd, LineType::LUA_IN);
 		strcpy(cConsoleCmd, cmd);
-		cmd[0] = '\0';
+		cmd[0] = '/0';
 
 		if(history.size() > MAX_HISTORY) {
 			history.pop_front();
@@ -159,8 +161,8 @@ public:
 				ImGui::SameLine();
 				ImGui::CheckboxFlags("Single line", &flags, ImGuiInputTextFlags_CtrlEnterForNewLine);
 				
-				ImGui::SetItemTooltip("When checked, the command buffer is sent when pressing Enter\n"
-									  "Otherwise, you can enter multiple lines at once and execute\n"
+				ImGui::SetItemTooltip("When checked, the command buffer is sent when pressing Enter/n"
+									  "Otherwise, you can enter multiple lines at once and execute/n"
 									  "them with Ctrl-Enter or the " ICON_FA_PLAY " button");
 
 				ImGui::SeparatorText("History");
@@ -356,7 +358,7 @@ unsigned int WINAPI LuaConsole::InterpreterThreadProc (LPVOID context)
 		if (console->termInterp) break; // close thread requested
 		res = interp->RunChunk (console->cConsoleCmd, strlen (console->cConsoleCmd)); // run command from buffer
 		if (interp->Status() == 1) break; // close thread requested
-		console->cConsoleCmd[0] = '\0';    // free buffer
+		console->cConsoleCmd[0] = '/0';    // free buffer
 		interp->EndExec();        // return control
 	}
 	interp->EndExec();  // release mutex (is this necessary?)

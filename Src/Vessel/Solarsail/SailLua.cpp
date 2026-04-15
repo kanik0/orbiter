@@ -26,7 +26,7 @@ int SolarSail::Lua_InitInterpreter (void *context)
 	lua_State *L = (lua_State*)context;
 
 	// load vessel-specific scripts here
-	//luaL_dofile (L, "Script\\ssail\\... .lua");
+	//luaL_dofile (L, "Script//ssail//... .lua");
 
 	return 0;
 }

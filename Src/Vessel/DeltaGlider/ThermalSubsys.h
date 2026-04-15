@@ -37,7 +37,7 @@ private:
 	/**
 	 * Density of solar irradiance [W/m^2] at the current vessel location.
 	 * Drops to 0 in planet shadow.
-	 * \param [out] sdir If provided, is set to direction of sun in vessel
+	 * /param [out] sdir If provided, is set to direction of sun in vessel
      *   frame on exit.
 	 */
 	double SolarRadiation(VECTOR3 *sdir=0);

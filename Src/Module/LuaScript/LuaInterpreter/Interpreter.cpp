@@ -348,7 +348,7 @@ const char *Interpreter::lua_tostringex (lua_State *L, int idx, char *cbuf)
 		lmax[1] = max(len[1], max(len[4], len[7]));
 		lmax[2] = max(len[2], max(len[5], len[8]));
 
-		sprintf (cbuf, "[%*g %*g %*g]\n[%*g %*g %*g]\n[%*g %*g %*g]",
+		sprintf (cbuf, "[%*g %*g %*g]/n[%*g %*g %*g]/n[%*g %*g %*g]",
 			lmax[0], m.m11, lmax[1], m.m12, lmax[2], m.m13,
 			lmax[0], m.m21, lmax[1], m.m22, lmax[2], m.m23,
 			lmax[0], m.m31, lmax[1], m.m32, lmax[2], m.m33);
@@ -378,16 +378,16 @@ const char *Interpreter::lua_tostringex (lua_State *L, int idx, char *cbuf)
 	} else if (lua_istable (L, idx)) {
 		if (idx < 0) idx--;
 		lua_pushnil(L);  /* first key */
-		static char tbuf[1024]; tbuf[0] = '\0';
+		static char tbuf[1024]; tbuf[0] = '/0';
 		while (lua_next(L, idx) != 0) {
 			/* uses 'key' (at index -2) and 'value' (at index -1) */
-			char fieldstr[256] = "\0";
+			char fieldstr[256] = "/0";
 			if (lua_isstring(L,-2)) sprintf (fieldstr, "%s=", lua_tostring(L,-2));
 			if(lua_istable(L, -1)) // cut the tree to prevent stack overflow with recursive table
 				strcat (fieldstr, "[table]");
 			else
 				strcat (fieldstr, lua_tostringex (L,-1));
-			strcat (tbuf, fieldstr); strcat (tbuf, "\n");
+			strcat (tbuf, fieldstr); strcat (tbuf, "/n");
 			lua_pop(L, 1);
 		}
 		return tbuf;
@@ -395,7 +395,7 @@ const char *Interpreter::lua_tostringex (lua_State *L, int idx, char *cbuf)
 		strcpy (cbuf, "[function]");
 		return cbuf;
 	} else {
-		cbuf[0] = '\0';
+		cbuf[0] = '/0';
 		return cbuf;
 	}
 }
@@ -1699,7 +1699,7 @@ void Interpreter::term_echo (lua_State *L, int level)
 void Interpreter::term_strout (lua_State *L, const char *str, bool iserr)
 {
 	Interpreter *interp = GetInterpreter(L);
-	fprintf(stderr, "%s\n", str);
+	fprintf(stderr, "%s/n", str);
 	interp->term_strout (str, iserr);
 }
 
@@ -1831,7 +1831,7 @@ int Interpreter::AssertPrmType(lua_State *L, int idx, int prmno, int tp, const c
 
 	cbuf[strlen(cbuf)-3] = ')';
 	cbuf[strlen(cbuf)-2] = ' ';
-	cbuf[strlen(cbuf)-1] = '\0';
+	cbuf[strlen(cbuf)-1] = '/0';
 
 	strcat(cbuf, lua_typename(L, lua_type(L, idx)));
 	strcat(cbuf, " given");
@@ -1917,7 +1917,7 @@ int Interpreter::help (lua_State *L)
 		strcpy (file, lua_tostring(L,-2));
 		if (!lua_isnil(L,-1))
 			strcpy (topic, lua_tostring(L,-1));
-		else topic[0] = '\0';
+		else topic[0] = '/0';
 		lua_settop (L, 0);
 		lua_pushstring (L, file);
 		if (topic[0])
@@ -3275,7 +3275,7 @@ Set custom properties for a mesh.
 Note : Currently only a single mesh property is recognised, but this may be extended in future versions:
 
 - MESHPROPERTY.MODULATEMATALPHA:
-	if value==0 (default) disable material alpha information in textured mesh groups (only use texture alpha channel).\n
+	if value==0 (default) disable material alpha information in textured mesh groups (only use texture alpha channel)./n
 	if value<>0 modulate (mix) material alpha values with texture alpha maps.
 
 
@@ -3867,7 +3867,7 @@ bool inputClbk (void *id, char *str, void *usrdata)
 
 bool inputCancel (void *id, char *str, void *usrdata)
 {
-	cInput[0] = '\0';
+	cInput[0] = '/0';
 	bInputClosed = true;
 	return true;
 }
@@ -4742,7 +4742,7 @@ returned vector refers. The following values are supported:
 
 - 0: surface-relative (relative to local horizon)
 - 1: planet-local (relative to local planet frame)
-- 2: planet-local non-rotating (as 1, but adds the surface velocity, see \ref oapiGetGroundVector)
+- 2: planet-local non-rotating (as 1, but adds the surface velocity, see /ref oapiGetGroundVector)
 - 3: global (maps to global frame and adds planet velocity)
 
 Warning: Local wind velocities are not currently implemented. The surface-relative
@@ -5340,7 +5340,7 @@ This function is deprecated, use oapi.get_airspeedvector instead
 */
 int Interpreter::oapi_get_shipairspeedvector (lua_State *L)
 {
-	GetInterpreter(L)->term_strout (L, "Obsolete function used: oapi.get_shipairspeedvector.\nUse oapi.get_airspeedvector instead", true);
+	GetInterpreter(L)->term_strout (L, "Obsolete function used: oapi.get_shipairspeedvector./nUse oapi.get_airspeedvector instead", true);
 	OBJHANDLE hObj;
 	VECTOR3 speedv;
 	if (lua_gettop(L) < 1) {
@@ -5987,7 +5987,7 @@ Additional fields by mode :
 	- lng: number
 	- lat: number
 	- alt: number
-	- alt\_above\_ground: number
+	- alt/_above/_ground: number
 	- phi: number
 	- tht: number
 - track:
@@ -6104,7 +6104,7 @@ int Interpreter::oapi_set_cameramode (lua_State *L)
 			lua_pop(L,1);
 
 		} else
-			initstr[0] = '\0';
+			initstr[0] = '/0';
 		lua_pop(L,1);
 		cm = new CameraMode_Cockpit();
 
@@ -6363,7 +6363,7 @@ int Interpreter::oapi_customcamera_overlay(lua_State *L)
 /***
 Tile cache.
 
-Allocates an elevation data cache to speed up calls to \ref oapi.surface_elevation
+Allocates an elevation data cache to speed up calls to /ref oapi.surface_elevation
 
 Note: When passing a tile cache to oapi.surface_elevation, any cache hits avoid having to re-load an elevation tile from file.
 
@@ -6676,8 +6676,8 @@ int Interpreter::oapi_disable_mfdmode(lua_State* L)
 /***
 Register an MFD position for a custom panel or virtual cockpit.
 
-Should be called in the body of clbk\_loadpanel2D() or
-clbk\_loadVC to define MFD instruments for 2-D instrument panels
+Should be called in the body of clbk/_loadpanel2D() or
+clbk/_loadVC to define MFD instruments for 2-D instrument panels
 or 3-D virtual cockpits.
 
 The _spec_ parameter is a table with the following fields :
@@ -6696,7 +6696,7 @@ flag is a bitmask which can be set to a combination of the following options :
 - MFDFLAG.SHOWMODELABELS: Show 3-letter abbreviations for MFD modes when displaying the
 mode selection page (default: only show carets ">"). This is useful
 if the buttons are not located next to the list display.
-- MFDFLAG.TRANSPARENT\_WHEN\_OFF
+- MFDFLAG.TRANSPARENT/_WHEN/_OFF
 
 If this function is used during initialisation of a 2-D instrument panel, pos
 defines the rectangle of the MFD display in the panel bitmap (in pixels), while
@@ -6740,13 +6740,13 @@ Request a default action as a result of a MFD button event.
 
 Orbiter assigns default button actions for the various MFD modes. For
 example, in Orbit mode the action assigned to button 0 is Select reference.
-Calling oapi.process\_mfdbutton (for example as a reaction to a mouse button
+Calling oapi.process/_mfdbutton (for example as a reaction to a mouse button
 event) will execute this action.
 
 @function process_mfdbutton
 @tparam number mfd MFD identifier (e.g. MFDID.LEFT, MFDID.RIGHT)
 @tparam number bt button number (>=0)
-@tparam number event mouse event (a combination of panel\_mouse "PANEL\_MOUSE.xxx" flags)
+@tparam number event mouse event (a combination of panel/_mouse "PANEL/_MOUSE.xxx" flags)
 @treturn boolean true if the button was processed, false if no action was assigned to the button.
 */
 int Interpreter::oapi_process_mfdbutton(lua_State* L)
@@ -6835,7 +6835,7 @@ int Interpreter::oapi_toggle_mfdon(lua_State* L)
 /***
 Return the mode identifier and spec for an MFD mode defined by its name.
 
-This function returns the same value as vessel:register\_mfdmode() for the given mode.
+This function returns the same value as vessel:register/_mfdmode() for the given mode.
 
 If no matching mode is found, the return value is MFDMODE.NONE.
 
@@ -6856,7 +6856,7 @@ This function can also be used for built-in MFD modes, with the following names 
 - 'COM/NAV' : MFDMODE.COMMS
 
 @function get_mfdmodespec
-@tparam string name MFD name (as defined in name during register\_mfdmode())
+@tparam string name MFD name (as defined in name during register/_mfdmode())
 @treturn number mode identifier
 @treturn table mode specification with the following fields :
 
@@ -6964,7 +6964,7 @@ Keyboard.
 /***
 Test if a key is pressed.
 
-This function can be used with the clbk\_consumedirectkey/clbk\_consumebufferedkey callbacks
+This function can be used with the clbk/_consumedirectkey/clbk/_consumebufferedkey callbacks
 to test the state of a key.
 
 @function keydown
@@ -7117,7 +7117,7 @@ int Interpreter::oapi_acceptdelayedkey (lua_State *L)
 /***
 Get the keyboard state
 
-Note: you should use the clbk\_consumedirectkey/clbk\_consumebufferedkey callbacks whenever possible, this function is mainly made
+Note: you should use the clbk/_consumedirectkey/clbk/_consumebufferedkey callbacks whenever possible, this function is mainly made
 for scenario scripts that don't use these callbacks.
 
 @function get_keystate
@@ -7400,7 +7400,7 @@ int Interpreter::oapi_readscenario_nextline (lua_State* L)
 /***
 Read the value of a tag from a configuration file.
 
-Note: The tag-value entries of a configuration file have the format \<tag\> = \<value\>
+Note: The tag-value entries of a configuration file have the format /<tag/> = /<value/>
    The functions search the complete file independent of the current position of the file pointer.
    Whitespace around tag and value are discarded, as well as comments
    beginning with a semicolon (;) to the end of the line.
@@ -7778,10 +7778,10 @@ Colour values are required for some surface functions like @{clear_surface}.
    closest colour match which can be displayed in the current screen mode.
 
 In 24 and 32 bit modes the requested colour can always be matched. The
-   colour value in that case is (red \<\< 16) + (green \<\< 8) + blue.
+   colour value in that case is (red /</< 16) + (green /</< 8) + blue.
 
 For 16 bit displays the colour value is calculated as
-   ((red*31)/255) \<\< 11 + ((green*63)/255 \<\< 5 + (blue*31)/255
+   ((red*31)/255) /</< 11 + ((green*63)/255 /</< 5 + (blue*31)/255
    assuming a "565" colour mode (5 bits for red, 6, for green, 5 for blue). This
    means that a requested colour may not be perfectly matched.
 
@@ -8662,7 +8662,7 @@ allocate IdxPerm and fill it with the requested triangle indices.
 
 The MtrlIdx and TexIdx entries are always returned.
 
-oapi.get\_meshgroup can be an expensive operation. It involves data copying, and
+oapi.get/_meshgroup can be an expensive operation. It involves data copying, and
 Graphics clients may have to retrieve data from video memory. Avoid continuous
 oapi.get_meshgroup cycles and instead keep the data stored in your own
 buffers once retrieved.
@@ -9486,7 +9486,7 @@ Draw a text string.
 @tparam number y reference y position [pixel]
 @tparam string str text string
 @tparam[opt] number size string length for output
-@treturn \e true on success, \e false on failure.
+@treturn /e true on success, /e false on failure.
 */
 int Interpreter::skp_text (lua_State *L)
 {

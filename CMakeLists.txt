@@ -327,6 +327,14 @@ INSTALL(FILES LICENSE
 )
 #COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/Doc/TransX\ readme.txt ${ORBITER_BINARY_DOC_DIR}/TransX/TransX\ readme.txt
 
+# On non-Windows, .rc resource files should be excluded from compilation
+if(NOT WIN32)
+	# CMake won't try to compile .rc files on non-Windows, but some targets
+	# list them as sources. This is harmless as CMake ignores unknown file
+	# types, but we set the RC language to empty to be explicit.
+	set(CMAKE_RC_COMPILER "")
+endif()
+
 # Sub-projects
 add_subdirectory(Extern)
 add_subdirectory(Src)

@@ -24,8 +24,12 @@
 #define ORBITER_MODULE
 #include "orbitersdk.h"
 #include "LuaInline.h"
+#ifdef _WIN32
 #include <direct.h>
+#endif
+#ifdef _WIN32
 #include <process.h>
+#endif
 
 // ==============================================================
 // class InterpreterList::Environment: implementation

@@ -20,13 +20,13 @@
 
 namespace oapi {
 
-	/// \brief Plugin for graphically displaying frame rate and time step length.
+	/// /brief Plugin for graphically displaying frame rate and time step length.
 	class Framerate : public Module, ImGuiDialog {
 	public:
-		/// \brief Entry point for open dialog callback
+		/// /brief Entry point for open dialog callback
 		static void hookOpenDlg(void* context);
 
-		/// \brief Time step notification callback
+		/// /brief Time step notification callback
 		void clbkPreStep(double simt, double simdt, double mjd);
 
 		void clbkSimulationStart (RenderMode mode);
@@ -60,8 +60,8 @@ namespace oapi {
 
 static oapi::Framerate *fr;
 
-/// \brief Module entry point 
-/// \param hDLL module handle
+/// /brief Module entry point 
+/// /param hDLL module handle
 DLLCLBK void InitModule (HINSTANCE hDLL)
 {
 	// Create and register the module
@@ -69,8 +69,8 @@ DLLCLBK void InitModule (HINSTANCE hDLL)
 	oapiRegisterModule(fr);
 }
 
-/// \brief Module exit point 
-/// \param hDLL module handle
+/// /brief Module exit point 
+/// /param hDLL module handle
 DLLCLBK void ExitModule (HINSTANCE hDLL)
 {
 	// Delete the module

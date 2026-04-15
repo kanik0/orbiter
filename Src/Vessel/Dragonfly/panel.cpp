@@ -3,7 +3,7 @@
 
 #include "panel.h"
 #include <windows.h>
-#include < GL\gl.h >
+#include < GL/gl.h >
 #include <math.h>
 #include <stdio.h>
 #include "orbitersdk.h"

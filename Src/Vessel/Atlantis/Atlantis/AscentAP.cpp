@@ -827,7 +827,7 @@ int AscentApMfd::ButtonMenu (const MFDBUTTONMENU **menu) const
 		{"Prev page"      , 0, ','},
 		{"Next page"      , 0, '.'},
 		{"Decrease Launch", "azimuth", ';'},
-		{"Increase Launch", "azimuth", '\''},
+		{"Increase Launch", "azimuth", '/''},
 		{"Decrease Target", "altitude", '-'},
 		{"Increase Target", "altitude", '='},
 		{"Schedule OMS2", "", 'O'}

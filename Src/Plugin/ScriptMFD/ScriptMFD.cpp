@@ -12,7 +12,11 @@
 
 #define STRICT
 #define ORBITER_MODULE
-#include "windows.h"
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include "OrbiterPlatform.h"
+#endif
 #include "orbitersdk.h"
 #include "ScriptMFD.h"
 
@@ -38,7 +42,7 @@ struct VINTERP { // list of vessel-based interpreters
 } **vinterp;
 int nvinterp = 0;
 
-static const char *cfgfile = "Config\\MFD\\ScriptMFD.cfg";
+static const char *cfgfile = "Config//MFD//ScriptMFD.cfg";
 
 // clears the global list of vessel-based interpreters
 static void ClearVinterpList()

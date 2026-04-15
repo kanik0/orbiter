@@ -81,7 +81,7 @@ Throttle_NeedlePair::Throttle_NeedlePair (VESSEL3 *v, float basex, float basey, 
 	th = hthrust;
 	mxflow = maxflow;
 	for (int i = 0; i < 2; i++)
-		readout[i][0] = '\0';
+		readout[i][0] = '/0';
 }
 
 // ==============================================================
@@ -129,7 +129,7 @@ Propellant_NeedlePair::Propellant_NeedlePair (VESSEL3 *v, float basex, float bas
 	mxmass = maxmass;
 	mxflow = maxflow;
 	for (int i = 0; i < 2; i++)
-		readout[i][0] = '\0';
+		readout[i][0] = '/0';
 }
 
 // ==============================================================

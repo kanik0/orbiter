@@ -311,7 +311,7 @@ DeltaGlider::DeltaGlider (OBJHANDLE hObj, int fmodel)
 	panelcol          = 0;
 	campos            = CAM_GENERIC;
 	th_main_level     = 0.0;
-	skinpath[0] = '\0';
+	skinpath[0] = '/0';
 	for (i = 0; i < 3; i++)
 		skin[i] = 0;
 	for (i = 0; i < 4; i++)
@@ -425,7 +425,7 @@ void DeltaGlider::ApplySkin ()
 
 	time_t lt; time(&lt); struct tm *st = localtime(&lt);
 	if (vcmesh && st->tm_mon==3 && st->tm_mday==1) {
-		SURFHANDLE t = oapiLoadTexture ("generic\\noisep.dds");
+		SURFHANDLE t = oapiLoadTexture ("generic//noisep.dds");
 		if (t) oapiSetTexture (vcmesh, 17, t);
 	}
 }
@@ -1216,12 +1216,12 @@ void DeltaGlider::clbkSetClassCaps (FILEHANDLE cfg)
 	}
 	if (ssys_scram) beacon[4].pos = &beaconpos_scram;
 
-	SetMeshVisibilityMode (AddMesh (exmesh_tpl = oapiLoadMeshGlobal (ScramVersion() ? "DG\\deltaglider" : "DG\\deltaglider_ns")), MESHVIS_EXTERNAL);
-	//SetMeshVisibilityMode (AddMesh (vcmesh_tpl = oapiLoadMeshGlobal ("DG\\deltaglider_vc")), MESHVIS_VC);
-	panelmesh0 = oapiLoadMeshGlobal ("DG\\dg_2dpanel0");
-	panelmesh1 = oapiLoadMeshGlobal ("DG\\dg_2dpanel1");
+	SetMeshVisibilityMode (AddMesh (exmesh_tpl = oapiLoadMeshGlobal (ScramVersion() ? "DG//deltaglider" : "DG//deltaglider_ns")), MESHVIS_EXTERNAL);
+	//SetMeshVisibilityMode (AddMesh (vcmesh_tpl = oapiLoadMeshGlobal ("DG//deltaglider_vc")), MESHVIS_VC);
+	panelmesh0 = oapiLoadMeshGlobal ("DG//dg_2dpanel0");
+	panelmesh1 = oapiLoadMeshGlobal ("DG//dg_2dpanel1");
 
-	vcmesh_tpl = oapiLoadMeshGlobal ("DG\\deltaglider_vc");
+	vcmesh_tpl = oapiLoadMeshGlobal ("DG//deltaglider_vc");
 	SetMeshVisibilityMode (AddMesh (vcmesh_tpl), MESHVIS_VC);
 
 	// **************** vessel-specific insignia ****************
@@ -1249,9 +1249,9 @@ void DeltaGlider::clbkLoadStateEx (FILEHANDLE scn, void *vs)
 		} else if (!_strnicmp (line, "SKIN", 4)) {
 			sscanf (line+4, "%s", skinpath);
 			char fname[256];
-			strcpy (fname, "DG\\Skins\\");
+			strcpy (fname, "DG//Skins//");
 			strcat (fname, skinpath);
-			int n = strlen(fname); fname[n++] = '\\';
+			int n = strlen(fname); fname[n++] = '//';
 			strcpy (fname+n, "dgmk4_1.dds");  skin[0] = oapiLoadTexture (fname);
 			strcpy (fname+n, ssys_scram ? "dgmk4_2.dds" : "dgmk4_2_ns.dds");  skin[1] = oapiLoadTexture (fname);
 			strcpy (fname+n, "idpanel1.dds"); skin[2] = oapiLoadTexture (fname);
@@ -1731,7 +1731,7 @@ DLLCLBK void InitModule (HINSTANCE hModule)
 	// allocate SketchPad resources
 	g_Param.pen[0] = oapiCreatePen (PS_SOLID, 1, RGB(224,224,224));
 	g_Param.pen[1] = oapiCreatePen (PS_SOLID, 3, RGB(164,164,164));
-	g_Param.surf = oapiLoadTexture ("DG\\blitsrc1.dds", true);
+	g_Param.surf = oapiLoadTexture ("DG//blitsrc1.dds", true);
 }
 
 // --------------------------------------------------------------
