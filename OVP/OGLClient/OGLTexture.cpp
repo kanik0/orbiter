@@ -78,6 +78,10 @@ OGLTexture *OGLTexture::LoadTexture(const char *path) {
 		return LoadDDS(path);
 	} else if (strcasecmp(ext, ".bmp") == 0) {
 		return LoadBMP(path);
+	} else if (strcasecmp(ext, ".tex") == 0) {
+		return LoadTEX(path);
+	} else if (strcasecmp(ext, ".png") == 0) {
+		return LoadPNG(path);
 	} else {
 		fprintf(stderr, "[OGLTexture] Unsupported format '%s'\n", ext);
 		return nullptr;
@@ -489,6 +493,155 @@ OGLTexture *OGLTexture::LoadDDS(const char *path) {
 
 	fprintf(stderr, "[OGLTexture] Loaded DDS %ux%u fourcc='%.4s' mips=%u '%s'\n",
 		width, height, fourCC, mipCount, path);
+	return result;
+}
+
+// ============================================================================
+// LoadDDSFromMemory - load a DDS texture from a memory buffer
+// ============================================================================
+
+OGLTexture *OGLTexture::LoadDDSFromMemory(const unsigned char *data, size_t size, const char *label) {
+	if (!data || size < 128) return nullptr;
+	if (memcmp(data, "DDS ", 4) != 0) return nullptr;
+
+	const unsigned char *hdr = data + 4; // skip magic
+	uint32_t flags     = ReadLE32(hdr + 4);
+	uint32_t height    = ReadLE32(hdr + 8);
+	uint32_t width     = ReadLE32(hdr + 12);
+	uint32_t mipCount  = ReadLE32(hdr + 24);
+
+	if (!(flags & DDSD_MIPMAPCOUNT) || mipCount == 0) mipCount = 1;
+	if (width == 0 || height == 0 || width > 16384 || height > 16384) return nullptr;
+
+	uint32_t pfFlags = ReadLE32(hdr + 76);
+	char fourCC[5] = {};
+	memcpy(fourCC, hdr + 80, 4);
+
+	const unsigned char *pixelData = data + 4 + 124; // after magic + header
+	size_t remaining = size - 128;
+
+	GLuint tex = 0;
+	glGenTextures(1, &tex);
+	glBindTexture(GL_TEXTURE_2D, tex);
+
+	if (pfFlags & DDPF_FOURCC) {
+		GLenum format = 0;
+		uint32_t blockSize = 16;
+		if (memcmp(fourCC, "DXT1", 4) == 0) { format = GL_COMPRESSED_RGBA_S3TC_DXT1_EXT; blockSize = 8; }
+		else if (memcmp(fourCC, "DXT3", 4) == 0) { format = GL_COMPRESSED_RGBA_S3TC_DXT3_EXT; blockSize = 16; }
+		else if (memcmp(fourCC, "DXT5", 4) == 0) { format = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT; blockSize = 16; }
+		else { glDeleteTextures(1, &tex); return nullptr; }
+
+		uint32_t mw = width, mh = height;
+		size_t offset = 0;
+		for (uint32_t level = 0; level < mipCount; level++) {
+			uint32_t dataSize = ((mw + 3) / 4) * ((mh + 3) / 4) * blockSize;
+			if (offset + dataSize > remaining) break;
+			glCompressedTexImage2D(GL_TEXTURE_2D, level, format, mw, mh, 0, dataSize, pixelData + offset);
+			offset += dataSize;
+			mw = (mw > 1) ? mw / 2 : 1;
+			mh = (mh > 1) ? mh / 2 : 1;
+		}
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+			mipCount > 1 ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
+		if (mipCount > 1) glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, mipCount - 1);
+	} else {
+		glDeleteTextures(1, &tex);
+		return nullptr; // only compressed formats for now
+	}
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	OGLTexture *result = new OGLTexture();
+	result->texId = tex;
+	result->width = width;
+	result->height = height;
+	if (label)
+		fprintf(stderr, "[OGLTexture] Loaded DDS-mem %ux%u fourcc='%.4s' from '%s'\n",
+			width, height, fourCC, label);
+	return result;
+}
+
+// ============================================================================
+// LoadTEX - Orbiter .tex container (concatenated DDS files)
+// Loads the FIRST DDS texture found in the container.
+// ============================================================================
+
+OGLTexture *OGLTexture::LoadTEX(const char *path) {
+	FILE *fp = fopen(path, "rb");
+	if (!fp) return nullptr;
+
+	fseek(fp, 0, SEEK_END);
+	long fileSize = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+	if (fileSize < 128) { fclose(fp); return nullptr; }
+
+	std::vector<unsigned char> buf(fileSize);
+	if ((long)fread(buf.data(), 1, fileSize, fp) != fileSize) {
+		fclose(fp);
+		return nullptr;
+	}
+	fclose(fp);
+
+	// Scan for first 'DDS ' marker
+	for (size_t i = 0; i + 128 <= (size_t)fileSize; i++) {
+		if (memcmp(buf.data() + i, "DDS ", 4) == 0) {
+			OGLTexture *tex = LoadDDSFromMemory(buf.data() + i, fileSize - i, path);
+			if (tex) return tex;
+		}
+	}
+
+	fprintf(stderr, "[OGLTexture] No DDS found in .tex '%s'\n", path);
+	return nullptr;
+}
+
+// ============================================================================
+// LoadPNG - using stb_image (single-header, included inline)
+// ============================================================================
+
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#define STBI_NO_STDIO  // we do our own file I/O
+#include "stb_image.h"
+
+OGLTexture *OGLTexture::LoadPNG(const char *path) {
+	FILE *fp = fopen(path, "rb");
+	if (!fp) return nullptr;
+	fseek(fp, 0, SEEK_END);
+	long fileSize = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+	std::vector<unsigned char> buf(fileSize);
+	fread(buf.data(), 1, fileSize, fp);
+	fclose(fp);
+
+	int w, h, channels;
+	unsigned char *pixels = stbi_load_from_memory(buf.data(), (int)fileSize, &w, &h, &channels, 4);
+	if (!pixels) {
+		fprintf(stderr, "[OGLTexture] PNG decode failed '%s'\n", path);
+		return nullptr;
+	}
+
+	GLuint tex = 0;
+	glGenTextures(1, &tex);
+	glBindTexture(GL_TEXTURE_2D, tex);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+	glGenerateMipmap(GL_TEXTURE_2D);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	stbi_image_free(pixels);
+
+	OGLTexture *result = new OGLTexture();
+	result->texId = tex;
+	result->width = w;
+	result->height = h;
+	fprintf(stderr, "[OGLTexture] Loaded PNG %dx%d '%s'\n", w, h, path);
 	return result;
 }
 

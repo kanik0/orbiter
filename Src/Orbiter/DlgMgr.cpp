@@ -540,11 +540,23 @@ void DialogManager::InitImGui()
 	
 	const CFG_FONTPRM &prm = g_pOrbiter->Cfg()->CfgFontPrm;
 
-	defaultFont = io.Fonts->AddFontFromFileTTF(prm.ImGui_DefaultFontFile, prm.ImGui_FontSize);
-	io.Fonts->AddFontFromFileTTF("Fonts/fa-solid-900.ttf", prm.ImGui_FontSize, &icons_config);
-	consoleFont = io.Fonts->AddFontFromFileTTF(prm.ImGui_ConsoleFontFile, prm.ImGui_FontSize);
-	monoFont = io.Fonts->AddFontFromFileTTF(prm.ImGui_MonospacedFontFile, prm.ImGui_FontSize);
-	manuscriptFont = io.Fonts->AddFontFromFileTTF(prm.ImGui_ManuscriptFontFile, prm.ImGui_FontSize);
+	// Load fonts with fallback to default if file is missing (macOS port:
+	// not all font files may be available yet)
+	auto safeLoadFont = [&](const char *path, float size, ImFontConfig *cfg = nullptr) -> ImFont* {
+		FILE *f = fopen(path, "rb");
+		if (f) { fclose(f); return io.Fonts->AddFontFromFileTTF(path, size, cfg); }
+		LOGOUT_WARN("Font not found: %s", path);
+		return nullptr;
+	};
+	defaultFont = safeLoadFont(prm.ImGui_DefaultFontFile, prm.ImGui_FontSize);
+	if (!defaultFont) defaultFont = io.Fonts->AddFontDefault();
+	safeLoadFont("Fonts/fa-solid-900.ttf", prm.ImGui_FontSize, &icons_config);
+	consoleFont = safeLoadFont(prm.ImGui_ConsoleFontFile, prm.ImGui_FontSize);
+	if (!consoleFont) consoleFont = defaultFont;
+	monoFont = safeLoadFont(prm.ImGui_MonospacedFontFile, prm.ImGui_FontSize);
+	if (!monoFont) monoFont = defaultFont;
+	manuscriptFont = safeLoadFont(prm.ImGui_ManuscriptFontFile, prm.ImGui_FontSize);
+	if (!manuscriptFont) manuscriptFont = defaultFont;
 
 #ifdef _WIN32
 	ImGui_ImplWin32_Init(hWnd);

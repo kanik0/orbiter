@@ -7,6 +7,7 @@
 #ifndef __OGLTEXTURE_H
 #define __OGLTEXTURE_H
 
+#include <cstddef>
 #ifndef _WIN32
 #include <OpenGL/gl3.h>
 #endif
@@ -25,6 +26,11 @@ struct OGLTexture {
 	// Format-specific loaders
 	static OGLTexture *LoadBMP(const char *path);
 	static OGLTexture *LoadDDS(const char *path);
+	static OGLTexture *LoadDDSFromMemory(const unsigned char *data, size_t size, const char *label = nullptr);
+	static OGLTexture *LoadPNG(const char *path);
+
+	// .tex container: loads first DDS texture from Orbiter's concatenated-DDS format
+	static OGLTexture *LoadTEX(const char *path);
 
 	// Release the GL texture resource
 	void Release();

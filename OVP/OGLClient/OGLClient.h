@@ -82,6 +82,10 @@ public:
 	oapi::Font *clbkCreateFont(int height, bool prop, const char *face,
 		FontStyle style = FONT_NORMAL, int orientation = 0) const override;
 	void clbkReleaseFont(oapi::Font *font) const override;
+	oapi::Pen *clbkCreatePen(int style, int width, DWORD col) const override;
+	void clbkReleasePen(oapi::Pen *pen) const override;
+	oapi::Brush *clbkCreateBrush(DWORD col) const override;
+	void clbkReleaseBrush(oapi::Brush *brush) const override;
 	oapi::Sketchpad *clbkGetSketchpad(SURFHANDLE surf) override;
 	void clbkReleaseSketchpad(oapi::Sketchpad *sp) override;
 
@@ -132,6 +136,26 @@ private:
 
 	// Helper: get or create cached OpenGL buffers for a mesh
 	CachedMesh *GetOrCreateMeshCache(MESHHANDLE hMesh);
+
+	// Exhaust rendering
+	GLuint m_exhaustShader;
+	GLuint m_exhaustVAO, m_exhaustVBO, m_exhaustEBO;
+	OGLTexture *m_exhaustTexture;
+	bool m_exhaustInitialized;
+	void InitExhaust();
+	void RenderExhausts(VESSEL *vessel, const MATRIX3 &vrot,
+	                    float tx, float ty, float tz, float scale,
+	                    const float *vp, const VECTOR3 &camPos);
+
+	// Planetary ring rendering
+	GLuint m_ringShader;
+	GLuint m_ringVAO, m_ringVBO, m_ringEBO;
+	int m_ringIndexCount;
+	OGLTexture *m_ringTexture;
+	bool m_ringsInitialized;
+	void InitRings();
+	void RenderRings(OBJHANDLE hPlanet, const VECTOR3 &camPos,
+	                 const float *vp, const VECTOR3 &sunPos);
 };
 
 } // namespace ogl

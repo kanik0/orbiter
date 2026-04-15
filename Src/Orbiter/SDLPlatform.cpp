@@ -219,10 +219,13 @@ unsigned char SDLPlatform::SDLScancodeToDirectInput(SDL_Scancode sc)
 SDLPlatform::SDLPlatform(Orbiter *orbiter)
 	: m_orbiter(orbiter), m_window(nullptr), m_glContext(nullptr),
 	  m_width(1280), m_height(800), m_initialized(false),
-	  m_mouseX(0), m_mouseY(0), m_wheelAccum(0)
+	  m_mouseX(0), m_mouseY(0), m_wheelAccum(0),
+	  m_gameController(nullptr)
 {
 	memset(m_kstate, 0, sizeof(m_kstate));
 	memset(m_mouseButtons, 0, sizeof(m_mouseButtons));
+	memset(&m_joy, 0, sizeof(m_joy));
+	m_joy.hatAngle = 0xFFFF; // centered
 	InitSDLToDInputMapping();
 }
 
@@ -236,7 +239,7 @@ bool SDLPlatform::Initialize(int width, int height)
 	m_width = width;
 	m_height = height;
 
-	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0) {
+	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER) < 0) {
 		fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
 		return false;
 	}
@@ -284,12 +287,31 @@ bool SDLPlatform::Initialize(int width, int height)
 	fprintf(stderr, "[SDLPlatform] OpenGL renderer: %s\n", glGetString(GL_RENDERER));
 	fprintf(stderr, "[SDLPlatform] OpenGL version: %s\n", glGetString(GL_VERSION));
 
+	// Open the first available game controller
+	int numJoy = SDL_NumJoysticks();
+	for (int i = 0; i < numJoy; i++) {
+		if (SDL_IsGameController(i)) {
+			m_gameController = SDL_GameControllerOpen(i);
+			if (m_gameController) {
+				m_joy.connected = true;
+				fprintf(stderr, "[SDLPlatform] GameController: %s\n",
+					SDL_GameControllerName(m_gameController));
+				break;
+			}
+		}
+	}
+
 	m_initialized = true;
 	return true;
 }
 
 void SDLPlatform::Shutdown()
 {
+	if (m_gameController) {
+		SDL_GameControllerClose(m_gameController);
+		m_gameController = nullptr;
+		m_joy.connected = false;
+	}
 	if (m_glContext) {
 		SDL_GL_DeleteContext(m_glContext);
 		m_glContext = nullptr;
@@ -338,6 +360,7 @@ bool SDLPlatform::ProcessEvents()
 	// Update key state from SDL's continuous keyboard state each frame.
 	// This catches keys held across frames even if no event fires.
 	UpdateKeyStateFromSDL();
+	UpdateJoystick();
 
 	return true;
 }
@@ -367,6 +390,46 @@ void SDLPlatform::UpdateKeyStateFromSDL()
 			}
 		}
 	}
+}
+
+void SDLPlatform::UpdateJoystick()
+{
+	if (!m_gameController || !m_joy.connected) return;
+
+	// Apply deadzone (SDL axis range is -32768..32767, Orbiter uses -1000..1000)
+	auto mapAxis = [](int raw) -> int {
+		const int deadzone = 4000;
+		if (abs(raw) < deadzone) return 0;
+		int sign = (raw > 0) ? 1 : -1;
+		return sign * (abs(raw) - deadzone) * 1000 / (32767 - deadzone);
+	};
+
+	m_joy.lX  = mapAxis(SDL_GameControllerGetAxis(m_gameController, SDL_CONTROLLER_AXIS_LEFTX));
+	m_joy.lY  = mapAxis(SDL_GameControllerGetAxis(m_gameController, SDL_CONTROLLER_AXIS_LEFTY));
+	m_joy.lRx = mapAxis(SDL_GameControllerGetAxis(m_gameController, SDL_CONTROLLER_AXIS_RIGHTX));
+	m_joy.lRy = mapAxis(SDL_GameControllerGetAxis(m_gameController, SDL_CONTROLLER_AXIS_RIGHTY));
+	// Triggers: 0..32767 → map to 0..1000
+	m_joy.lZ  = SDL_GameControllerGetAxis(m_gameController, SDL_CONTROLLER_AXIS_TRIGGERLEFT)  * 1000 / 32767;
+	m_joy.lRz = SDL_GameControllerGetAxis(m_gameController, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) * 1000 / 32767;
+
+	// D-pad to POV hat angle (0=up, 9000=right, 18000=down, 27000=left, 0xFFFF=centered)
+	bool up    = SDL_GameControllerGetButton(m_gameController, SDL_CONTROLLER_BUTTON_DPAD_UP);
+	bool down  = SDL_GameControllerGetButton(m_gameController, SDL_CONTROLLER_BUTTON_DPAD_DOWN);
+	bool left  = SDL_GameControllerGetButton(m_gameController, SDL_CONTROLLER_BUTTON_DPAD_LEFT);
+	bool right = SDL_GameControllerGetButton(m_gameController, SDL_CONTROLLER_BUTTON_DPAD_RIGHT);
+	if      (up && right)    m_joy.hatAngle = 4500;
+	else if (right && down)  m_joy.hatAngle = 13500;
+	else if (down && left)   m_joy.hatAngle = 22500;
+	else if (left && up)     m_joy.hatAngle = 31500;
+	else if (up)             m_joy.hatAngle = 0;
+	else if (right)          m_joy.hatAngle = 9000;
+	else if (down)           m_joy.hatAngle = 18000;
+	else if (left)           m_joy.hatAngle = 27000;
+	else                     m_joy.hatAngle = 0xFFFF;
+
+	// Buttons
+	for (int i = 0; i < 16 && i < SDL_CONTROLLER_BUTTON_MAX; i++)
+		m_joy.buttons[i] = SDL_GameControllerGetButton(m_gameController, (SDL_GameControllerButton)i);
 }
 
 void SDLPlatform::HandleKeyEvent(const SDL_KeyboardEvent &key)

@@ -12,6 +12,9 @@
 #include <process.h>
 #else
 #include "OrbiterPlatform.h"
+#ifdef __APPLE__
+#include <mach-o/dyld.h> // _NSGetExecutablePath
+#endif
 #endif
 
 #include <stdio.h>
@@ -250,8 +253,35 @@ INT WINAPI WinMain (HINSTANCE hInstance, HINSTANCE, LPSTR strCmdLine, INT nCmdSh
 
 int main (int argc, char *argv[])
 {
-	// Verify working directory
-	// Debug: trace startup
+	// On macOS, when launched as .app bundle or from Finder, CWD may not
+	// be the data directory. Resolve the executable's location and chdir
+	// to it so relative paths (./Config/, ./Textures/, etc.) work.
+#ifdef __APPLE__
+	{
+		char exePath[1024];
+		uint32_t exePathSize = sizeof(exePath);
+		if (_NSGetExecutablePath(exePath, &exePathSize) == 0) {
+			char realPath[1024];
+			if (realpath(exePath, realPath)) {
+				char *lastSlash = strrchr(realPath, '/');
+				if (lastSlash) {
+					*lastSlash = '\0';
+					// Inside .app bundle: exe is at .app/Contents/MacOS/Orbiter
+					// Data is at .app/Contents/Resources/
+					std::string exeDir(realPath);
+					std::string resDir = exeDir + "/../Resources";
+					struct stat st;
+					if (stat((resDir + "/Config").c_str(), &st) == 0) {
+						chdir(resDir.c_str());
+					} else {
+						// Not in .app bundle — use executable directory directly
+						chdir(realPath);
+					}
+				}
+			}
+		}
+	}
+#endif
 
 	char dir[1024];
 	GetCurrentDirectory(1024, dir);
@@ -2216,11 +2246,39 @@ HRESULT Orbiter::UserInput ()
 				simkstate[i] |= sdlKeys[i];
 		}
 
+		// --- Immediate (continuous) key processing ---
 		bool consume = BroadcastImmediateKeyboardEvent(simkstate);
 		if (!skipkbd && !consume) {
 			KbdInputImmediate_System(simkstate);
 			if (bRunning) KbdInputImmediate_OnRunning(simkstate);
 		}
+
+		// --- Buffered (edge-triggered) key processing ---
+		// Detect key transitions by comparing with previous frame's state.
+		// This generates synthetic DIDEVICEOBJECTDATA entries for keys that
+		// transitioned, enabling single-press actions (time warp, MFD, etc.)
+		static char prevKstate[256] = {};
+		if (!io.WantCaptureKeyboard && !skipkbd) {
+			DIDEVICEOBJECTDATA dod[32];
+			DWORD nEvents = 0;
+			for (int i = 0; i < 256 && nEvents < 32; i++) {
+				char cur = simkstate[i] & 0x80;
+				char prev = prevKstate[i] & 0x80;
+				if (cur != prev) {
+					dod[nEvents].dwOfs = (DWORD)i;
+					dod[nEvents].dwData = cur ? 0x80 : 0x00;
+					dod[nEvents].dwTimeStamp = 0;
+					dod[nEvents].dwSequence = 0;
+					nEvents++;
+				}
+			}
+			if (nEvents > 0) {
+				BroadcastBufferedKeyboardEvent(simkstate, dod, nEvents);
+				KbdInputBuffered_System(simkstate, dod, nEvents);
+				if (bRunning) KbdInputBuffered_OnRunning(simkstate, dod, nEvents);
+			}
+		}
+		memcpy(prevKstate, simkstate, 256);
 
 		// Process queued mouse events
 		for (auto &me : m_pSDL->GetMouseEvents()) {
@@ -2241,6 +2299,33 @@ HRESULT Orbiter::UserInput ()
 	}
 
 	for (DWORD i = 0; i < 15; i++) ctrlTotal[i] = ctrlKeyboard[i];
+
+	// Joystick/GameController input
+	if (m_pSDL) {
+		const auto &joy = m_pSDL->GetJoyState();
+		if (joy.connected && bRunning) {
+			// Left stick: attitude control (pitch/yaw)
+			if (joy.lY > 0)  ctrlJoystick[THGROUP_ATT_PITCHDOWN] = ctrlJoystick[THGROUP_ATT_DOWN]  =  joy.lY;
+			if (joy.lY < 0)  ctrlJoystick[THGROUP_ATT_PITCHUP]   = ctrlJoystick[THGROUP_ATT_UP]    = -joy.lY;
+			if (joy.lX > 0)  ctrlJoystick[THGROUP_ATT_YAWRIGHT]   = ctrlJoystick[THGROUP_ATT_RIGHT] =  joy.lX;
+			if (joy.lX < 0)  ctrlJoystick[THGROUP_ATT_YAWLEFT]    = ctrlJoystick[THGROUP_ATT_LEFT]  = -joy.lX;
+			// Right stick X: bank
+			if (joy.lRx > 0) ctrlJoystick[THGROUP_ATT_BANKRIGHT]  =  joy.lRx;
+			if (joy.lRx < 0) ctrlJoystick[THGROUP_ATT_BANKLEFT]   = -joy.lRx;
+
+			// D-pad: camera rotation (external view)
+			if (g_camera && g_camera->IsExternal() && joy.hatAngle != 0xFFFF) {
+				DWORD dir = joy.hatAngle;
+				if      (dir <  5000 || dir > 31000) g_camera->AddTheta(-td.SysDT);
+				else if (dir > 13000 && dir < 23000) g_camera->AddTheta( td.SysDT);
+				if      (dir >  4000 && dir < 14000) g_camera->AddPhi  ( td.SysDT);
+				else if (dir > 22000 && dir < 32000) g_camera->AddPhi  (-td.SysDT);
+			}
+
+			for (DWORD i = 0; i < 15; i++)
+				ctrlTotal[i] = std::max(ctrlKeyboard[i], ctrlJoystick[i]);
+		}
+	}
 
 	if (g_camera) g_camera->UpdateMouse();
 	if (g_focusobj) g_focusobj->ApplyUserAttitudeControls(ctrlTotal);
@@ -2526,9 +2611,9 @@ void Orbiter::KbdInputImmediate_OnRunning (char *kstate)
 	}
 }
 
-// The following buffered/joystick input methods use DirectInput types
-// and are only compiled on Windows.
-#ifdef _WIN32
+// Buffered keyboard input: processes individual key press/release events.
+// On Windows these come from DirectInput's GetDeviceData; on macOS/SDL they
+// are synthesized from key-state transitions in UserInput().
 //-----------------------------------------------------------------------------
 // Name: KbdInputBuffered_System ()
 // Desc: General user keyboard buffered key interpretation. Processes keys
@@ -2623,7 +2708,7 @@ void Orbiter::KbdInputBuffered_OnRunning (char *kstate, DIDEVICEOBJECTDATA *dod,
 
 		} else if (KEYMOD_SHIFT (kstate)) {  // Shift-key combinations (reserved for MFD control)
 
-			int id = (KEYDOWN (kstate, DIK_LSHIFT) ? 0 : 1);
+			int id = (KEYDOWN (kstate, OAPI_KEY_LSHIFT) ? 0 : 1);
 			g_pane->MFDConsumeKeyBuffered (id, key);
 
 		} else if (KEYMOD_ALT (kstate)) {    // ALT-Key combinations
@@ -2639,6 +2724,7 @@ void Orbiter::KbdInputBuffered_OnRunning (char *kstate, DIDEVICEOBJECTDATA *dod,
 	}
 }
 
+#ifdef _WIN32
 //-----------------------------------------------------------------------------
 // Name: UserJoyInput_System ()
 // Desc: General user joystick input (also functional when paused)
@@ -2715,6 +2801,7 @@ void Orbiter::UserJoyInput_OnRunning (DIJOYSTATE2 *js)
 		}
 	}
 }
+#endif // _WIN32 - joystick input
 
 bool Orbiter::MouseEvent (UINT event, DWORD state, DWORD x, DWORD y)
 {
@@ -2771,7 +2858,6 @@ void Orbiter::BroadcastBufferedKeyboardEvent (char *kstate, DIDEVICEOBJECTDATA *
 		if (consume) dod[i].dwData = 0; // remove key from process queue
 	}
 }
-#endif // _WIN32 - end of DirectInput-specific input methods
 
 //-----------------------------------------------------------------------------
 // Name: MsgProc()

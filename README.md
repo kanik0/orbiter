@@ -69,6 +69,58 @@ If you want to build the documentation, you need a few additional tools:
 
 See [COMPILE.md](./COMPILE.md) for details on building Orbiter.
 
+## macOS (Apple Silicon) Build
+
+The macOS port uses SDL2 and OpenGL 4.1 (via Metal) instead of DirectX.
+
+### Prerequisites
+
+```bash
+brew install sdl2 ninja cmake
+```
+
+### Build
+
+```bash
+cmake --preset macos-arm64-debug
+cmake --build out/build/macos-arm64-debug --parallel 8
+```
+
+The post-build step automatically creates `Modules/Celbody` symlinks and copies fonts.
+
+### Run
+
+```bash
+cd out/build/macos-arm64-debug
+./Orbiter -s "Delta-glider in LEO" -x
+```
+
+### Create .app Bundle
+
+```bash
+cmake --build out/build/macos-arm64-debug --target macos-bundle
+open out/build/macos-arm64-debug/Orbiter.app
+```
+
+### What Works
+
+- Full orbital simulation with gravity models
+- 3D rendering: stars, textured planets (.tex/.dds/.bmp/.png), vessel meshes, planetary rings, exhaust plumes
+- HUD overlay (speed, altitude, heading indicators)
+- Keyboard input (camera rotation, time warp, RCS controls) + SDL GameController/joystick
+- Mouse wheel zoom, click events
+- ImGui dialogs (SDL2 + OpenGL3 backends)
+- 66 compiled .dylib modules (vessels, planets, plugins)
+
+### Known Limitations
+
+- Earth texture not included in base distribution (shows as flat blue sphere)
+- No cloud layers, atmospheric scattering, night city lights
+- No audio (sound effects not implemented)
+- Some font files missing (falls back to ImGui default)
+
+See [MACOS_PORT_STATUS.md](./MACOS_PORT_STATUS.md) for detailed technical status.
+
 ## Planet textures
 
 The Orbiter git repository does not include most of the planetary texture files
