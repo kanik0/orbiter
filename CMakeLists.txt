@@ -147,6 +147,9 @@ elseif(APPLE)
   set(CMAKE_INSTALL_RPATH "@executable_path")
   # Allow dylibs to link against symbols from the Orbiter executable
   set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -undefined dynamic_lookup")
+  # Set rpath for dylibs so they find each other and the Orbiter executable
+  set(CMAKE_INSTALL_RPATH "@loader_path;@executable_path;@loader_path/..")
+  set(CMAKE_BUILD_RPATH "${CMAKE_BINARY_DIR}/Modules;${CMAKE_BINARY_DIR}")
   # Put all shared libraries (vessel/plugin modules) in the Modules directory
   set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${ORBITER_BINARY_MODULE_DIR})
   add_compile_definitions(NOMINMAX)

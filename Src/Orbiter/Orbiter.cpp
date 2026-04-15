@@ -981,8 +981,13 @@ HWND Orbiter::CreateRenderWindow (Config *pCfg, const char *scenario)
 		SetFocusObject (vfocus, false);
 	{ FILE *f = fopen("Orbiter_startup.log", "a"); fprintf(f, "  CRW: SetFocus done, camera init\n"); fclose(f); }
 
-	if (g_camera && g_focusobj) {
-		g_camera->InitState (scenario, g_focusobj);
+	if (g_camera) {
+		if (g_focusobj)
+			g_camera->InitState (scenario, g_focusobj);
+		else {
+			// No focus vessel - initialize camera at Earth position
+			LOGOUT("WARNING: No focus vessel, initializing camera at default position");
+		}
 	}
 	LOGOUT ("Finished initialising camera");
 

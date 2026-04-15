@@ -354,24 +354,31 @@ void OGLClient::clbkRenderScene()
 	MATRIX3 camRot;
 	oapiCameraGlobalPos(&camPos);
 	oapiCameraRotationMatrix(&camRot);
+
+	// Skip planet rendering if camera state is not yet initialized (NaN)
+	bool validCamera = !std::isnan(camPos.x) && !std::isnan(camPos.y) && !std::isnan(camPos.z);
+
 	double fov = oapiCameraAperture() * 2.0; // full vertical FOV
+	if (fov <= 0 || std::isnan(fov)) fov = 50.0 * 3.14159 / 180.0;
 	double aspect = (double)m_viewW / (double)m_viewH;
 	double nearPlane = 1.0;
 	double farPlane = 1e10;
 
-	// Projection matrix (OpenGL style, column-major for glUniformMatrix4fv)
+	// Projection matrix (OpenGL column-major)
 	float f = 1.0f / tanf((float)fov * 0.5f);
-	float nf = (float)(nearPlane - farPlane);
+	float A = (float)((farPlane + nearPlane) / (nearPlane - farPlane));
+	float B = (float)(2.0 * farPlane * nearPlane / (nearPlane - farPlane));
 	float proj[16] = {
-		(float)(f / aspect), 0,    0,                                            0,
-		0,                   f,    0,                                            0,
-		0,                   0,    (float)((farPlane + nearPlane) / nf),        -1.0f,
-		0,                   0,    (float)(2.0 * farPlane * nearPlane / nf),     0
+		f/(float)aspect, 0, 0,  0,
+		0,               f, 0,  0,
+		0,               0, A, -1,
+		0,               0, B,  0
 	};
 
-	// View matrix: transpose of camera rotation (camera looks along -Z in view space)
-	// Orbiter's grot transforms from camera-local to global
-	// For OpenGL view matrix we need the inverse = transpose (it's orthonormal)
+	// View matrix: inverse of camera rotation = transpose (orthonormal)
+	// Orbiter's grot: rows are camera-local X,Y,Z axes in global frame
+	// Column-major storage: [col0, col1, col2, col3]
+	// View = transpose(grot) as column-major
 	float view[16] = {
 		(float)camRot.m11, (float)camRot.m21, (float)camRot.m31, 0,
 		(float)camRot.m12, (float)camRot.m22, (float)camRot.m32, 0,
@@ -379,14 +386,25 @@ void OGLClient::clbkRenderScene()
 		0,                 0,                  0,                  1
 	};
 
-	// View-Projection (column-major multiply)
+	// View-Projection: P * V (column-major multiply: result[col][row] = sum(P[k][row] * V[col][k]))
 	float vp[16];
-	for (int i = 0; i < 4; i++)
-		for (int j = 0; j < 4; j++) {
-			vp[i * 4 + j] = 0;
+	for (int col = 0; col < 4; col++)
+		for (int row = 0; row < 4; row++) {
+			float sum = 0;
 			for (int k = 0; k < 4; k++)
-				vp[i * 4 + j] += proj[i * 4 + k] * view[k * 4 + j];
+				sum += proj[k * 4 + row] * view[col * 4 + k];
+			vp[col * 4 + row] = sum;
 		}
+
+	// Debug: log camera state once when valid
+	static bool debugCamera = true;
+	if (debugCamera && validCamera) {
+		fprintf(stderr, "[OGLClient] Camera: pos=(%.3e, %.3e, %.3e) fov=%.2f deg aspect=%.3f near=%.1f far=%.1e\n",
+			camPos.x, camPos.y, camPos.z, fov * 180.0/3.14159, aspect, nearPlane, farPlane);
+		fprintf(stderr, "[OGLClient] Camera rot: [%.3f %.3f %.3f; %.3f %.3f %.3f; %.3f %.3f %.3f]\n",
+			camRot.m11, camRot.m12, camRot.m13, camRot.m21, camRot.m22, camRot.m23, camRot.m31, camRot.m32, camRot.m33);
+		debugCamera = false;
+	}
 
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_PROGRAM_POINT_SIZE);
@@ -417,8 +435,9 @@ void OGLClient::clbkRenderScene()
 		}
 	}
 
-	// 3) Render planets - textured where possible, flat-color fallback otherwise
-	if (m_planetShader && m_sphereVAO) {
+	// 3) Render planets (depth test off - we use distance-normalized rendering)
+	glDisable(GL_DEPTH_TEST);
+	if (m_planetShader && m_sphereVAO && validCamera) {
 		// Sun position
 		VECTOR3 sunPos;
 		OBJHANDLE hSun = oapiGetObjectByName((char*)"Sun");
@@ -442,6 +461,16 @@ void OGLClient::clbkRenderScene()
 			double dist = sqrt(rx*rx + ry*ry + rz*rz);
 
 			double size = oapiGetSize(hObj);
+
+			// Debug: log planet positions once when valid
+			static bool debugPlanets = true;
+			if (debugPlanets && !std::isnan(dist)) {
+				char pname[64];
+				oapiGetObjectName(hObj, pname, 64);
+				fprintf(stderr, "[OGLClient] Planet '%s': relPos=(%.3e, %.3e, %.3e) dist=%.3e size=%.3e apparent=%.4f deg\n",
+					pname, rx, ry, rz, dist, size, (size/dist) * 180.0/3.14159 * 2.0);
+			}
+
 			if (dist < size * 0.5) continue; // inside planet
 
 			// Sun direction at this object's position
@@ -452,13 +481,20 @@ void OGLClient::clbkRenderScene()
 			if (sdist > 0) { sdx /= sdist; sdy /= sdist; sdz /= sdist; }
 			float sunDir[3] = {(float)sdx, (float)sdy, (float)sdz};
 
-			// Model matrix: translate + scale
-			float s = (float)size;
+			// Normalize to prevent float precision issues at astronomical distances.
+			// Render each planet at a normalized distance, scaling proportionally.
+			double normDist = 10.0; // render at 10 units from camera
+			double scale = normDist / dist; // scale factor to normalize distance
+			double nrx = rx * scale;
+			double nry = ry * scale;
+			double nrz = rz * scale;
+			float ns = (float)(size * scale);
+
 			float model[16] = {
-				s, 0, 0, 0,
-				0, s, 0, 0,
-				0, 0, s, 0,
-				(float)rx, (float)ry, (float)rz, 1
+				ns, 0,  0,  0,
+				0,  ns, 0,  0,
+				0,  0,  ns, 0,
+				(float)nrx, (float)nry, (float)nrz, 1
 			};
 
 			// Check if we have a texture for this planet
@@ -511,14 +547,18 @@ void OGLClient::clbkRenderScene()
 		glUseProgram(0);
 	}
 
-	// 3) Render 2D overlay (HUD, panels, ImGui dialogs)
+	glEnable(GL_DEPTH_TEST);
+
+	// 4) Render 2D overlay (HUD, panels, ImGui dialogs)
 	Render2DOverlay();
 
 	// Debug: save first few frames as BMP for visual inspection
 	static int frameCount = 0;
-	if (frameCount < 5) {
+	if (frameCount < 20) {
 		frameCount++;
-		if (frameCount == 3) { // save 3rd frame (let scene stabilize)
+		if (frameCount == 15) { // save 15th frame (let physics stabilize)
+			fprintf(stderr, "[OGLClient] Frame %d: cam=(%.3e,%.3e,%.3e) valid=%d\n",
+				frameCount, camPos.x, camPos.y, camPos.z, validCamera);
 			int w = m_viewW, h = m_viewH;
 			std::vector<unsigned char> pixels(w * h * 4);
 			glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());

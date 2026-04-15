@@ -178,7 +178,11 @@ typedef DWORD COLORREF;
 // Dynamic library loading
 // -----------------------------------------------------------
 inline HMODULE OrbiterLoadLibrary(const char* path) {
-	return dlopen(path, RTLD_NOW | RTLD_LOCAL);
+	HMODULE h = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+	if (!h) {
+		fprintf(stderr, "[dlopen] FAILED: %s\n  error: %s\n", path, dlerror());
+	}
+	return h;
 }
 
 inline void* OrbiterGetProcAddress(HMODULE mod, const char* name) {
