@@ -20,6 +20,7 @@ namespace ogl {
 class ShaderMgr;
 class OGLScene;
 class OGLSurface;
+class OGLPostProcess;
 
 class OGLClient : public oapi::GraphicsClient {
 public:
@@ -135,6 +136,7 @@ private:
 	// Shader manager and scene renderer
 	ShaderMgr *m_shaderMgr;
 	OGLScene *m_scene;
+	OGLPostProcess *m_postProcess;
 
 	// Blit system (Phase 1)
 	GLuint m_blitShader;

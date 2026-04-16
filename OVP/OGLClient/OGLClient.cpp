@@ -11,6 +11,7 @@
 #include "OGLSurface.h"
 #include "OGLShaderMgr.h"
 #include "OGLScene.h"
+#include "OGLPostProcess.h"
 #include "OGLParticle.h"
 #include "OGLAnnotation.h"
 #include "OGLBeaconArray.h"
@@ -55,7 +56,7 @@ OGLClient::OGLClient(HINSTANCE hInstance)
 	  m_sdlWindow(nullptr), m_sdlContext(nullptr),
 	  m_viewW(1280), m_viewH(800), m_fullscreen(false),
 	  m_imguiInitialized(false),
-	  m_shaderMgr(nullptr), m_scene(nullptr),
+	  m_shaderMgr(nullptr), m_scene(nullptr), m_postProcess(nullptr),
 	  m_blitShader(0), m_blitVAO(0), m_blitVBO(0),
 	  m_panel2dShader(0), m_bltGroupTgt(nullptr)
 {
@@ -141,8 +142,20 @@ void OGLClient::clbkRenderScene()
 		m_viewH = h;
 	}
 
-	if (m_scene)
-		m_scene->RenderScene(m_viewW, m_viewH);
+	// Post-processing: render scene to HDR FBO, then apply bloom + tone map
+	if (m_postProcess && m_postProcess->IsEnabled()) {
+		m_postProcess->Resize(m_viewW, m_viewH);
+		m_postProcess->BeginScene();
+
+		if (m_scene)
+			m_scene->RenderScene(m_viewW, m_viewH);
+
+		// TODO: compute sun screen position for lens flare
+		m_postProcess->EndScene(0, 0, false);
+	} else {
+		if (m_scene)
+			m_scene->RenderScene(m_viewW, m_viewH);
+	}
 
 	Render2DOverlay();
 }
@@ -205,6 +218,10 @@ HWND OGLClient::clbkCreateRenderWindow()
 	OGLParticleStream::InitShared(m_shaderMgr, m_texturePath);
 	OGLBeaconArray::InitShared(m_shaderMgr);
 
+	// Initialize post-processing pipeline
+	m_postProcess = new OGLPostProcess(m_shaderMgr);
+	m_postProcess->Init(m_viewW, m_viewH);
+
 	fprintf(stderr, "[OGLClient] Scene initialized\n");
 	return (HWND)m_sdlWindow;
 }
@@ -213,6 +230,7 @@ void OGLClient::clbkDestroyRenderWindow(bool fastclose)
 {
 	fprintf(stderr, "[OGLClient] clbkDestroyRenderWindow\n");
 
+	delete m_postProcess; m_postProcess = nullptr;
 	OGLParticleStream::ReleaseShared();
 	OGLBeaconArray::ReleaseShared();
 	ReleaseBlitResources();
