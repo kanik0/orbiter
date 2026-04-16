@@ -349,11 +349,14 @@ void OGLvPlanet::RenderRings(const float *vp, const VECTOR3 &camPos, const VECTO
 {
 	if (!s_ringShader || !s_ringVAO || !s_ringTexture) return;
 
-	bool hasRings = *(bool*)oapiGetObjectParam(m_hObj, OBJPRM_PLANET_HASRINGS);
-	if (!hasRings) return;
+	const void *pHasRings = oapiGetObjectParam(m_hObj, OBJPRM_PLANET_HASRINGS);
+	if (!pHasRings || !*(const bool*)pHasRings) return;
 
-	double minRad = *(double*)oapiGetObjectParam(m_hObj, OBJPRM_PLANET_RINGMINRAD);
-	double maxRad = *(double*)oapiGetObjectParam(m_hObj, OBJPRM_PLANET_RINGMAXRAD);
+	const void *pMinRad = oapiGetObjectParam(m_hObj, OBJPRM_PLANET_RINGMINRAD);
+	const void *pMaxRad = oapiGetObjectParam(m_hObj, OBJPRM_PLANET_RINGMAXRAD);
+	if (!pMinRad || !pMaxRad) return;
+	double minRad = *(const double*)pMinRad;
+	double maxRad = *(const double*)pMaxRad;
 	double planetSize = oapiGetSize(m_hObj);
 
 	VECTOR3 pos;
