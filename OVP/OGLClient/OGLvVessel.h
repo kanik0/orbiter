@@ -51,8 +51,12 @@ private:
 	                    float tx, float ty, float tz, float scale,
 	                    const float *vp, const VECTOR3 &camPos);
 
+	// Set PBR material uniforms for a mesh group
+	static void SetMaterialUniforms(GLuint shader, MESHHANDLE hMesh, DWORD grpIdx);
+
 	// --- Shared resources ---
-	static GLuint s_vesselShader;
+	static GLuint s_vesselShader;     // legacy shader (fallback)
+	static GLuint s_pbrShader;        // PBR Cook-Torrance shader
 	static GLuint s_exhaustShader;
 	static GLuint s_exhaustVAO, s_exhaustVBO, s_exhaustEBO;
 	static OGLTexture *s_exhaustTexture;

@@ -16,6 +16,7 @@ namespace ogl {
 
 // Static members
 GLuint OGLvVessel::s_vesselShader = 0;
+GLuint OGLvVessel::s_pbrShader = 0;
 GLuint OGLvVessel::s_exhaustShader = 0;
 GLuint OGLvVessel::s_exhaustVAO = 0, OGLvVessel::s_exhaustVBO = 0, OGLvVessel::s_exhaustEBO = 0;
 OGLTexture *OGLvVessel::s_exhaustTexture = nullptr;
@@ -28,6 +29,9 @@ static bool FileExists(const char *path) {
 	struct stat st;
 	return stat(path, &st) == 0;
 }
+
+template<typename T>
+static T clamp(T v, T lo, T hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
 CachedMesh::~CachedMesh() {
 	for (auto &g : groups) {
@@ -44,6 +48,7 @@ void OGLvVessel::InitShared(ShaderMgr *shaderMgr, const std::string &texturePath
 	s_shaderMgr = shaderMgr;
 
 	s_vesselShader = shaderMgr->LoadProgram("vessel", "vessel.vert", "vessel.frag");
+	s_pbrShader = shaderMgr->LoadProgram("vessel_pbr", "vessel_pbr.vert", "vessel_pbr.frag");
 	s_exhaustShader = shaderMgr->LoadProgram("exhaust", "exhaust.vert", "exhaust.frag");
 
 	// Load exhaust texture
@@ -161,9 +166,11 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 	if (vdist > 1000.0) { normDist = 1000.0; scale = normDist / vdist; }
 	double nvx = vx * scale, nvy = vy * scale, nvz = vz * scale;
 
-	glUseProgram(s_vesselShader);
-	glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(s_vesselShader, "uViewProj"), 1, GL_FALSE, vp);
-	glUniform3fv(s_shaderMgr->GetUniformLoc(s_vesselShader, "uSunDir"), 1, sunDir);
+	// Use PBR shader if available, fall back to legacy
+	GLuint activeShader = s_pbrShader ? s_pbrShader : s_vesselShader;
+	glUseProgram(activeShader);
+	glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(activeShader, "uViewProj"), 1, GL_FALSE, vp);
+	glUniform3fv(s_shaderMgr->GetUniformLoc(activeShader, "uSunDir"), 1, sunDir);
 
 	DWORD nMesh = vessel->GetMeshCount();
 	for (DWORD m = 0; m < nMesh; m++) {
@@ -201,7 +208,7 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 			(float)(vrot.m13 * s), (float)(vrot.m23 * s), (float)(vrot.m33 * s), 0.0f,
 			tx, ty, tz, 1.0f
 		};
-		glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(s_vesselShader, "uModel"), 1, GL_FALSE, model);
+		glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(activeShader, "uModel"), 1, GL_FALSE, model);
 
 		DWORD nMat = oapiMeshMaterialCount(hMesh);
 		DWORD nTex = oapiMeshTextureCount(hMesh);
@@ -211,8 +218,15 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 			if (!cmg.vao || cmg.indexCount == 0) continue;
 
 			MESHGROUPEX *grp = oapiMeshGroupEx(hMesh, g);
+
+			// Set material uniforms
 			float diffuse[4] = {0.8f, 0.8f, 0.8f, 1.0f};
 			float emissive[3] = {0.0f, 0.0f, 0.0f};
+			float specular[4] = {0.3f, 0.3f, 0.3f, 20.0f};
+			float reflect[3] = {0.04f, 0.04f, 0.04f};
+			float roughness = 0.5f;
+			float metalness = 0.0f;
+
 			if (grp && grp->MtrlIdx > 0 && grp->MtrlIdx <= nMat) {
 				MATERIAL *mat = oapiMeshMaterial(hMesh, grp->MtrlIdx - 1);
 				if (mat) {
@@ -220,10 +234,30 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 					diffuse[2] = mat->diffuse.b; diffuse[3] = mat->diffuse.a;
 					emissive[0] = mat->emissive.r; emissive[1] = mat->emissive.g;
 					emissive[2] = mat->emissive.b;
+					specular[0] = mat->specular.r; specular[1] = mat->specular.g;
+					specular[2] = mat->specular.b; specular[3] = mat->power;
+					// Convert specular power to roughness (approximate)
+					if (mat->power > 1.0f)
+						roughness = 1.0f - clamp((float)(log2(mat->power) / 12.0f), 0.0f, 1.0f);
 				}
 			}
-			glUniform4fv(s_shaderMgr->GetUniformLoc(s_vesselShader, "uDiffuse"), 1, diffuse);
-			glUniform3fv(s_shaderMgr->GetUniformLoc(s_vesselShader, "uEmissive"), 1, emissive);
+			glUniform4fv(s_shaderMgr->GetUniformLoc(activeShader, "uDiffuse"), 1, diffuse);
+			glUniform3fv(s_shaderMgr->GetUniformLoc(activeShader, "uEmissive"), 1, emissive);
+
+			if (activeShader == s_pbrShader) {
+				// PBR-specific uniforms
+				glUniform4fv(s_shaderMgr->GetUniformLoc(activeShader, "uSpecular"), 1, specular);
+				glUniform3fv(s_shaderMgr->GetUniformLoc(activeShader, "uReflect"), 1, reflect);
+				glUniform1f(s_shaderMgr->GetUniformLoc(activeShader, "uRoughness"), roughness);
+				glUniform1f(s_shaderMgr->GetUniformLoc(activeShader, "uMetalness"), metalness);
+				// No additional texture maps yet — set all to false
+				glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uHasNormalMap"), 0);
+				glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uHasSpecularMap"), 0);
+				glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uHasEmissiveMap"), 0);
+				glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uHasRoughnessMap"), 0);
+				glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uHasMetalnessMap"), 0);
+				glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uHasEnvMap"), 0);
+			}
 
 			bool hasTexture = false;
 			if (grp && grp->TexIdx > 0 && grp->TexIdx <= nTex) {
@@ -234,12 +268,16 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 					if (texId) {
 						glActiveTexture(GL_TEXTURE0);
 						glBindTexture(GL_TEXTURE_2D, texId);
-						glUniform1i(s_shaderMgr->GetUniformLoc(s_vesselShader, "uTexture"), 0);
+						GLint texLoc = s_shaderMgr->GetUniformLoc(activeShader,
+							activeShader == s_pbrShader ? "uDiffuseTex" : "uTexture");
+						glUniform1i(texLoc, 0);
 						hasTexture = true;
 					}
 				}
 			}
-			glUniform1i(s_shaderMgr->GetUniformLoc(s_vesselShader, "uHasTexture"), hasTexture ? 1 : 0);
+			GLint htLoc = s_shaderMgr->GetUniformLoc(activeShader,
+				activeShader == s_pbrShader ? "uHasDiffuseTex" : "uHasTexture");
+			glUniform1i(htLoc, hasTexture ? 1 : 0);
 
 			glBindVertexArray(cmg.vao);
 			glDrawElements(GL_TRIANGLES, cmg.indexCount, GL_UNSIGNED_INT, 0);
