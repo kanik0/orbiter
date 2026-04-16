@@ -259,9 +259,12 @@ else()
 		file(WRITE ${_symlink_script}
 			"#!/bin/sh\n"
 			"mkdir -p \"${CMAKE_BINARY_DIR}/Modules/Celbody\" \"${CMAKE_BINARY_DIR}/Fonts\"\n"
-			"for f in \"${CMAKE_BINARY_DIR}\"/Modules/lib*.dylib; do\n"
-			"  [ -f \"$f\" ] && ln -sf \"../$(basename \"$f\")\" \"${CMAKE_BINARY_DIR}/Modules/Celbody/\"\n"
+			"for f in \"${CMAKE_BINARY_DIR}\"/Modules/Celbody/*.dll; do\n"
+			"  [ -f \"$f\" ] || continue\n"
+			"  base=$(basename \"$f\" .dll)\n"
+			"  ln -sf \"$f\" \"${CMAKE_BINARY_DIR}/Modules/Celbody/lib$base.dylib\" 2>/dev/null\n"
 			"done\n"
+			"exit 0\n"
 		)
 		add_custom_command(TARGET ${OrbiterTgt} POST_BUILD
 			COMMENT "Creating Modules/Celbody symlinks and copying fonts..."
