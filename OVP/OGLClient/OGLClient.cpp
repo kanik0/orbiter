@@ -758,6 +758,133 @@ oapi::ScreenAnnotation *OGLClient::clbkCreateAnnotation()
 }
 
 // ============================================================================
+// Additional surface methods (Phase 9A)
+// ============================================================================
+
+SURFHANDLE OGLClient::clbkLoadSurface(const char *fname, DWORD attrib, bool bPath)
+{
+	// Load texture and wrap in surface with specified attributes
+	SURFHANDLE h = clbkLoadTexture(fname, 0);
+	if (h && attrib) {
+		OGLSurface *s = (OGLSurface*)h;
+		// If render target requested, ensure FBO is created
+		if (attrib & (OAPISURFACE_RENDERTARGET | OAPISURFACE_SKETCHPAD))
+			s->EnsureFBO();
+	}
+	return h;
+}
+
+SURFHANDLE OGLClient::clbkCreateTexture(DWORD w, DWORD h)
+{
+	return clbkCreateSurfaceEx(w, h, OAPISURFACE_TEXTURE);
+}
+
+bool OGLClient::clbkSaveSurfaceToImage(SURFHANDLE surf, const char *fname,
+	oapi::ImageFileFormat fmt, float quality)
+{
+	if (!surf || !fname) return false;
+	OGLSurface *s = (OGLSurface*)surf;
+
+	// Read pixels from texture via FBO
+	DWORD w = s->GetWidth(), h = s->GetHeight();
+	std::vector<unsigned char> pixels(w * h * 4);
+
+	s->BindFBO();
+	glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+	s->UnbindFBO();
+
+	// Write as BMP (simple, always works)
+	FILE *f = fopen(fname, "wb");
+	if (!f) return false;
+
+	int rowSize = w * 3;
+	int pad = (4 - rowSize % 4) % 4;
+	int imgSize = (rowSize + pad) * h;
+	unsigned char bmpFileHeader[14] = {'B','M', 0,0,0,0, 0,0,0,0, 54,0,0,0};
+	int fileSize = 54 + imgSize;
+	bmpFileHeader[2] = fileSize; bmpFileHeader[3] = fileSize >> 8;
+	bmpFileHeader[4] = fileSize >> 16; bmpFileHeader[5] = fileSize >> 24;
+	fwrite(bmpFileHeader, 1, 14, f);
+
+	unsigned char bmpInfoHeader[40] = {};
+	bmpInfoHeader[0] = 40;
+	bmpInfoHeader[4] = w; bmpInfoHeader[5] = w >> 8;
+	bmpInfoHeader[6] = w >> 16; bmpInfoHeader[7] = w >> 24;
+	bmpInfoHeader[8] = h; bmpInfoHeader[9] = h >> 8;
+	bmpInfoHeader[10] = h >> 16; bmpInfoHeader[11] = h >> 24;
+	bmpInfoHeader[12] = 1; bmpInfoHeader[14] = 24;
+	fwrite(bmpInfoHeader, 1, 40, f);
+
+	unsigned char padBytes[3] = {0,0,0};
+	for (DWORD y = 0; y < h; y++) {
+		for (DWORD x = 0; x < w; x++) {
+			int idx = (y * w + x) * 4;
+			unsigned char bgr[3] = {pixels[idx+2], pixels[idx+1], pixels[idx]};
+			fwrite(bgr, 1, 3, f);
+		}
+		if (pad) fwrite(padBytes, 1, pad, f);
+	}
+	fclose(f);
+	return true;
+}
+
+// ============================================================================
+// Splash screen (Phase 9A)
+// ============================================================================
+
+bool OGLClient::clbkSplashLoadMsg(const char *msg, int line)
+{
+	if (msg)
+		fprintf(stderr, "[Orbiter] %s\n", msg);
+	return true;
+}
+
+void OGLClient::clbkSetSplashScreen(const char *fname, DWORD textCol)
+{
+	// Splash screen not yet implemented — sim starts directly
+}
+
+// ============================================================================
+// Mesh persistence and extended materials (Phase 9A)
+// ============================================================================
+
+void OGLClient::clbkStoreMeshPersistent(MESHHANDLE hMesh, const char *fname)
+{
+	// Store mesh association for later retrieval — currently a no-op
+}
+
+int OGLClient::clbkSetMeshMaterialEx(DEVMESHHANDLE hMesh, DWORD matidx, MatProp prp, const oapi::FVECTOR4 *in)
+{
+	// Extended material property setting — stub for now
+	return 2;
+}
+
+int OGLClient::clbkMeshMaterialEx(DEVMESHHANDLE hMesh, DWORD matidx, MatProp prp, oapi::FVECTOR4 *out)
+{
+	// Extended material property query — stub for now
+	return 2;
+}
+
+// ============================================================================
+// Notification hooks (Phase 9A)
+// ============================================================================
+
+void OGLClient::clbkOptionChanged(DWORD cat, DWORD item)
+{
+	// Respond to runtime config changes — can update post-processing, etc.
+}
+
+void OGLClient::clbkPreOpenPopup()
+{
+	// Called before popup dialogs — can pause rendering if needed
+}
+
+bool OGLClient::clbkUseLaunchpadVideoTab() const
+{
+	return false; // macOS uses ImGui launchpad, not Win32 video tab
+}
+
+// ============================================================================
 // OGL Font / Pen / Brush / Sketchpad — ImGui-backed 2D drawing
 // ============================================================================
 
@@ -957,6 +1084,13 @@ oapi::Font *OGLClient::clbkCreateFont(int height, bool prop, const char *face,
 }
 
 void OGLClient::clbkReleaseFont(oapi::Font *font) const { delete font; }
+
+oapi::Font *OGLClient::clbkCreateFontEx(int height, char *face, int width, int weight,
+	FontStyle style, float spacing) const
+{
+	bool prop = (width == 0); // proportional if width not specified
+	return new OGLFont(height, prop, face, style, 0);
+}
 
 oapi::Pen *OGLClient::clbkCreatePen(int style, int width, DWORD col) const {
 	return new OGLPen(style, width, col);

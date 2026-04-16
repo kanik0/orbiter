@@ -111,8 +111,34 @@ public:
 	void clbkReleasePen(oapi::Pen *pen) const override;
 	oapi::Brush *clbkCreateBrush(DWORD col) const override;
 	void clbkReleaseBrush(oapi::Brush *brush) const override;
+	oapi::Font *clbkCreateFontEx(int height, char *face, int width = 0, int weight = 400,
+		FontStyle style = FONT_NORMAL, float spacing = 0.0f) const override;
 	oapi::Sketchpad *clbkGetSketchpad(SURFHANDLE surf) override;
 	void clbkReleaseSketchpad(oapi::Sketchpad *sp) override;
+
+	// === Additional surface methods ===
+
+	SURFHANDLE clbkLoadSurface(const char *fname, DWORD attrib, bool bPath = false) override;
+	SURFHANDLE clbkCreateTexture(DWORD w, DWORD h) override;
+	bool clbkSaveSurfaceToImage(SURFHANDLE surf, const char *fname,
+		oapi::ImageFileFormat fmt, float quality = 0.7f) override;
+
+	// === Splash screen ===
+
+	bool clbkSplashLoadMsg(const char *msg, int line) override;
+	void clbkSetSplashScreen(const char *fname, DWORD textCol) override;
+
+	// === Mesh persistence ===
+
+	void clbkStoreMeshPersistent(MESHHANDLE hMesh, const char *fname) override;
+	int clbkSetMeshMaterialEx(DEVMESHHANDLE hMesh, DWORD matidx, MatProp prp, const oapi::FVECTOR4 *in) override;
+	int clbkMeshMaterialEx(DEVMESHHANDLE hMesh, DWORD matidx, MatProp prp, oapi::FVECTOR4 *out) override;
+
+	// === Notification hooks ===
+
+	void clbkOptionChanged(DWORD cat, DWORD item) override;
+	void clbkPreOpenPopup() override;
+	bool clbkUseLaunchpadVideoTab() const override;
 
 	// === SDL2 integration ===
 
