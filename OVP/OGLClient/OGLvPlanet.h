@@ -16,6 +16,7 @@ struct OGLTexture;
 namespace ogl {
 
 class OGLTileMgr;
+class OGLAtmosphere;
 
 class OGLvPlanet : public OGLvObject {
 public:
@@ -38,6 +39,7 @@ public:
 private:
 	OGLTexture *m_texture; // planet surface texture (may be null for flat-color fallback)
 	OGLTileMgr *m_tileMgr; // LOD tile manager (nullptr if no .tree archives)
+	OGLAtmosphere *m_atmo; // atmospheric haze renderer (nullptr if no atmosphere)
 
 	// Render the planetary rings if this body has them
 	void RenderRings(const float *vp, const VECTOR3 &camPos, const VECTOR3 &sunPos);

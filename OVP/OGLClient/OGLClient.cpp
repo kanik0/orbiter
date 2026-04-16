@@ -11,6 +11,9 @@
 #include "OGLSurface.h"
 #include "OGLShaderMgr.h"
 #include "OGLScene.h"
+#include "OGLParticle.h"
+#include "OGLAnnotation.h"
+#include "OGLBeaconArray.h"
 #include "OrbiterAPI.h"
 #include "VesselAPI.h"
 #include <cstdio>
@@ -198,6 +201,10 @@ HWND OGLClient::clbkCreateRenderWindow()
 	// Initialize blit/panel resources
 	InitBlitResources();
 
+	// Initialize particle and beacon systems
+	OGLParticleStream::InitShared(m_shaderMgr, m_texturePath);
+	OGLBeaconArray::InitShared(m_shaderMgr);
+
 	fprintf(stderr, "[OGLClient] Scene initialized\n");
 	return (HWND)m_sdlWindow;
 }
@@ -206,6 +213,8 @@ void OGLClient::clbkDestroyRenderWindow(bool fastclose)
 {
 	fprintf(stderr, "[OGLClient] clbkDestroyRenderWindow\n");
 
+	OGLParticleStream::ReleaseShared();
+	OGLBeaconArray::ReleaseShared();
 	ReleaseBlitResources();
 	delete m_scene; m_scene = nullptr;
 	delete m_shaderMgr; m_shaderMgr = nullptr;
@@ -697,10 +706,37 @@ MESHHANDLE OGLClient::clbkGetMesh(VISHANDLE vis, UINT idx)
 
 int OGLClient::clbkVisEvent(OBJHANDLE hObj, VISHANDLE vis, DWORD msg, DWORD_PTR context)
 {
-	// Accept all visual events — vessel modules expect this to return 1
-	// to confirm the graphics client is handling visuals.
-	// Specific message handling will be added as the visual system matures.
 	return 1;
+}
+
+// ============================================================================
+// Particle streams (Phase 5A)
+// ============================================================================
+
+oapi::ParticleStream *OGLClient::clbkCreateParticleStream(PARTICLESTREAMSPEC *pss)
+{
+	return new OGLParticleStream(this, pss, m_shaderMgr);
+}
+
+oapi::ParticleStream *OGLClient::clbkCreateExhaustStream(PARTICLESTREAMSPEC *pss,
+	OBJHANDLE hVessel, const double *lvl, const VECTOR3 *ref, const VECTOR3 *dir)
+{
+	return new OGLExhaustStream(this, pss, m_shaderMgr, hVessel, lvl, ref, dir);
+}
+
+oapi::ParticleStream *OGLClient::clbkCreateReentryStream(PARTICLESTREAMSPEC *pss,
+	OBJHANDLE hVessel)
+{
+	return new OGLReentryStream(this, pss, m_shaderMgr, hVessel);
+}
+
+// ============================================================================
+// Screen annotations (Phase 5C)
+// ============================================================================
+
+oapi::ScreenAnnotation *OGLClient::clbkCreateAnnotation()
+{
+	return new OGLAnnotation(this);
 }
 
 // ============================================================================

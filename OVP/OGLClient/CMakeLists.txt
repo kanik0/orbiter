@@ -18,6 +18,10 @@ if(NOT WIN32)
 		OGLSurface.cpp
 		OGLLaunchpad.cpp
 		OGLTile.cpp
+		OGLParticle.cpp
+		OGLBeaconArray.cpp
+		OGLAnnotation.cpp
+		OGLAtmosphere.cpp
 		${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
 		${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
 	)

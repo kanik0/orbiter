@@ -7,6 +7,7 @@
 #include "OGLShaderMgr.h"
 #include "OGLTexture.h"
 #include "OGLTile.h"
+#include "OGLAtmosphere.h"
 #include <cstdio>
 #include <cmath>
 #include <cstring>
@@ -191,14 +192,18 @@ void OGLvPlanet::InitRingsShared(ShaderMgr *shaderMgr, const std::string &textur
 // --- Instance methods ---
 
 OGLvPlanet::OGLvPlanet(OBJHANDLE hObj, ShaderMgr *shaderMgr)
-	: OGLvObject(hObj, shaderMgr), m_texture(nullptr), m_tileMgr(nullptr)
+	: OGLvObject(hObj, shaderMgr), m_texture(nullptr), m_tileMgr(nullptr), m_atmo(nullptr)
 {
+	// Initialize atmosphere for planets that have one
+	if (oapiGetObjectType(hObj) == OBJTP_PLANET)
+		m_atmo = new OGLAtmosphere(hObj, shaderMgr);
 }
 
 OGLvPlanet::~OGLvPlanet()
 {
 	delete m_texture;
 	delete m_tileMgr;
+	delete m_atmo;
 }
 
 void OGLvPlanet::InitTiles(const std::string &texturePath)
@@ -251,6 +256,12 @@ void OGLvPlanet::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 		MATRIX3 planetRot;
 		oapiGetRotationMatrix(m_hObj, &planetRot);
 		m_tileMgr->Render(vp, camPos, sunPos, planetRadius, planetRot);
+		// Render atmospheric haze after surface
+		if (m_atmo && m_atmo->HasAtmosphere()) {
+			VECTOR3 ppos;
+			oapiGetGlobalPos(m_hObj, &ppos);
+			m_atmo->Render(vp, camPos, sunPos, planetRadius, ppos);
+		}
 		RenderRings(vp, camPos, sunPos);
 		return;
 	}
@@ -322,6 +333,13 @@ void OGLvPlanet::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 	glBindVertexArray(0);
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glUseProgram(0);
+
+	// Render atmospheric haze
+	if (m_atmo && m_atmo->HasAtmosphere()) {
+		VECTOR3 ppos;
+		oapiGetGlobalPos(m_hObj, &ppos);
+		m_atmo->Render(vp, camPos, sunPos, oapiGetSize(m_hObj), ppos);
+	}
 
 	// Render rings if applicable
 	RenderRings(vp, camPos, sunPos);

@@ -89,6 +89,18 @@ public:
 
 	int clbkVisEvent(OBJHANDLE hObj, VISHANDLE vis, DWORD msg, DWORD_PTR context) override;
 
+	// === Particle streams ===
+
+	oapi::ParticleStream *clbkCreateParticleStream(PARTICLESTREAMSPEC *pss) override;
+	oapi::ParticleStream *clbkCreateExhaustStream(PARTICLESTREAMSPEC *pss,
+		OBJHANDLE hVessel, const double *lvl, const VECTOR3 *ref, const VECTOR3 *dir) override;
+	oapi::ParticleStream *clbkCreateReentryStream(PARTICLESTREAMSPEC *pss,
+		OBJHANDLE hVessel) override;
+
+	// === Screen annotations ===
+
+	oapi::ScreenAnnotation *clbkCreateAnnotation() override;
+
 	// === 2D Drawing ===
 
 	oapi::Font *clbkCreateFont(int height, bool prop, const char *face,
