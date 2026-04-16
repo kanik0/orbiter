@@ -1,0 +1,25 @@
+BEGIN_DESC
+Test scenario with camera far from Earth to see planets as dots
+END_DESC
+BEGIN_ENVIRONMENT
+  System Sol
+  Date MJD 52170.5
+END_ENVIRONMENT
+BEGIN_FOCUS
+  Ship GL-01
+END_FOCUS
+BEGIN_CAMERA
+  TARGET GL-01
+  MODE Extern
+  POS 200.00 30.00 0.01
+  TRACKMODE TargetRelative
+  FOV 50.00
+END_CAMERA
+BEGIN_SHIPS
+GL-01:ShuttlePB
+  STATUS Orbiting Earth
+  RPOS 6731000 0 0
+  RVEL 0 7791 0
+  AROT 0 0 0
+END
+END_SHIPS
