@@ -63,6 +63,9 @@
 #include "SDLPlatform.h"
 #include "OGLClient.h"
 #include "OGLLaunchpad.h"
+#include "imgui.h"
+#include "backends/imgui_impl_sdl2.h"
+#include "backends/imgui_impl_opengl3.h"
 #include <OpenGL/gl.h>
 #endif
 #include <filesystem>
@@ -1218,20 +1221,81 @@ INT Orbiter::Run ()
 {
 #ifndef _WIN32
 	// SDL2 main loop
-	if (!pConfig->CfgCmdlinePrm.LaunchScenario.empty()) {
-			Launch (pConfig->CfgCmdlinePrm.LaunchScenario.c_str());
-		}
 
-	// ImGui launchpad for scenario selection (when no -s flag given)
-	ogl::OGLLaunchpad *launchpad = nullptr;
-	if (pConfig->CfgCmdlinePrm.LaunchScenario.empty()) {
-		launchpad = new ogl::OGLLaunchpad();
-		// Determine Scenarios path
+	// If no scenario specified on command line, show ImGui Launchpad
+	if (pConfig->CfgCmdlinePrm.LaunchScenario.empty() && m_pSDL) {
+		ogl::OGLLaunchpad launchpadUI;
 		char cwd[1024];
 		std::string scnDir = "Scenarios";
 		if (getcwd(cwd, sizeof(cwd)))
 			scnDir = std::string(cwd) + "/Scenarios";
-		launchpad->ScanScenarios(scnDir);
+		launchpadUI.ScanScenarios(scnDir);
+
+		// Dedicated Launchpad render loop using SDL+ImGui directly
+		// (no graphics client needed — just clear + ImGui overlay)
+		SDL_Window *sdlWin = m_pSDL->GetWindow();
+		SDL_GLContext glCtx = m_pSDL->GetGLContext();
+
+		IMGUI_CHECKVERSION();
+		ImGui::CreateContext();
+		ImGuiIO &io = ImGui::GetIO();
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+		io.ConfigFlags &= ~ImGuiConfigFlags_ViewportsEnable;
+		ImGui::StyleColorsDark();
+		ImGui_ImplSDL2_InitForOpenGL(sdlWin, glCtx);
+		ImGui_ImplOpenGL3_Init("#version 410");
+
+		bool lpRunning = true;
+		while (lpRunning) {
+			SDL_Event event;
+			while (SDL_PollEvent(&event)) {
+				ImGui_ImplSDL2_ProcessEvent(&event);
+				if (event.type == SDL_QUIT) lpRunning = false;
+				if (event.type == SDL_WINDOWEVENT &&
+					event.window.event == SDL_WINDOWEVENT_CLOSE)
+					lpRunning = false;
+			}
+
+			ImGui_ImplOpenGL3_NewFrame();
+			ImGui_ImplSDL2_NewFrame();
+			ImGui::NewFrame();
+
+			bool quit = false;
+			bool doLaunch = launchpadUI.Render(quit);
+
+			ImGui::Render();
+
+			int w, h;
+			SDL_GL_GetDrawableSize(sdlWin, &w, &h);
+			glViewport(0, 0, w, h);
+			glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
+			glClear(GL_COLOR_BUFFER_BIT);
+			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+			SDL_GL_SwapWindow(sdlWin);
+
+			if (doLaunch) {
+				pConfig->CfgCmdlinePrm.LaunchScenario = launchpadUI.GetSelectedScenario();
+				pConfig->CfgLogicPrm.bStartPaused = launchpadUI.GetStartPaused();
+				lpRunning = false;
+			}
+			if (quit) {
+				// User closed launchpad without launching
+				ImGui_ImplOpenGL3_Shutdown();
+				ImGui_ImplSDL2_Shutdown();
+				ImGui::DestroyContext();
+				if (m_pSDL) { m_pSDL->Shutdown(); delete m_pSDL; m_pSDL = nullptr; }
+				return 0;
+			}
+		}
+
+		ImGui_ImplOpenGL3_Shutdown();
+		ImGui_ImplSDL2_Shutdown();
+		ImGui::DestroyContext();
+	}
+
+	// Launch the selected scenario
+	if (!pConfig->CfgCmdlinePrm.LaunchScenario.empty()) {
+		Launch (pConfig->CfgCmdlinePrm.LaunchScenario.c_str());
 	}
 
 	bool running = true;
@@ -1261,29 +1325,9 @@ INT Orbiter::Run ()
 		}
 
 		if (!bSession) {
-			if (launchpad) {
-				// Show ImGui launchpad
-				Render3DEnvironment(); // renders background + ImGui
-				bool quit = false;
-				if (launchpad->Render(quit)) {
-					// User clicked Launch
-					std::string scn = launchpad->GetSelectedScenario();
-					pConfig->CfgLogicPrm.bStartPaused = launchpad->GetStartPaused();
-					delete launchpad;
-					launchpad = nullptr;
-					Launch(scn.c_str());
-				} else if (quit) {
-					delete launchpad;
-					launchpad = nullptr;
-					running = false;
-				}
-			} else {
-				SDL_Delay(16); // ~60fps idle
-			}
+			SDL_Delay(16); // ~60fps idle
 		}
 	}
-
-	delete launchpad;
 
 	if (m_pSDL) {
 		m_pSDL->Shutdown();

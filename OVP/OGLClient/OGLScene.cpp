@@ -119,8 +119,13 @@ void OGLScene::RenderScene(DWORD viewW, DWORD viewH)
 {
 	if (!m_initialized) return;
 
+	static int frameDbg = 0;
+	if (frameDbg < 3) {
+		fprintf(stderr, "[OGLScene] RenderScene frame %d (%ux%u)\n", frameDbg, viewW, viewH);
+	}
+
 	glViewport(0, 0, viewW, viewH);
-	glClearColor(0.0f, 0.0f, 0.01f, 1.0f);
+	glClearColor(0.0f, 0.0f, 0.02f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	VECTOR3 camPos;
@@ -129,7 +134,13 @@ void OGLScene::RenderScene(DWORD viewW, DWORD viewH)
 	BuildViewProjection(viewW, viewH, vp, camPos, camRot);
 
 	bool validCamera = !std::isnan(camPos.x) && !std::isnan(camPos.y) && !std::isnan(camPos.z);
-	if (!validCamera) return;
+	if (frameDbg < 10 || (!validCamera && frameDbg < 100)) {
+		fprintf(stderr, "[OGLScene] Frame %d camera=(%.3g,%.3g,%.3g) valid=%d planets=%zu\n",
+			frameDbg, camPos.x, camPos.y, camPos.z, validCamera, m_planets.size());
+		frameDbg++;
+	}
+	// Skip only if truly NaN — zero camera is acceptable (render at origin)
+	if (std::isnan(camPos.x)) return;
 
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_PROGRAM_POINT_SIZE);

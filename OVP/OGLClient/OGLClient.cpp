@@ -142,20 +142,9 @@ void OGLClient::clbkRenderScene()
 		m_viewH = h;
 	}
 
-	// Post-processing: render scene to HDR FBO, then apply bloom + tone map
-	if (m_postProcess && m_postProcess->IsEnabled()) {
-		m_postProcess->Resize(m_viewW, m_viewH);
-		m_postProcess->BeginScene();
-
-		if (m_scene)
-			m_scene->RenderScene(m_viewW, m_viewH);
-
-		// TODO: compute sun screen position for lens flare
-		m_postProcess->EndScene(0, 0, false);
-	} else {
-		if (m_scene)
-			m_scene->RenderScene(m_viewW, m_viewH);
-	}
+	// Render 3D scene (post-processing disabled for now — enable via config)
+	if (m_scene)
+		m_scene->RenderScene(m_viewW, m_viewH);
 
 	Render2DOverlay();
 }
