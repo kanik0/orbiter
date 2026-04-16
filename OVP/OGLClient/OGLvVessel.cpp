@@ -150,6 +150,7 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 	oapiGetGlobalPos(m_hObj, &vpos);
 	double vx = vpos.x - camPos.x, vy = vpos.y - camPos.y, vz = vpos.z - camPos.z;
 	double vdist = sqrt(vx * vx + vy * vy + vz * vz);
+
 	if (vdist > 1e5) return;
 
 	MATRIX3 vrot;
@@ -166,8 +167,8 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 	if (vdist > 1000.0) { normDist = 1000.0; scale = normDist / vdist; }
 	double nvx = vx * scale, nvy = vy * scale, nvz = vz * scale;
 
-	// Use PBR shader if available, fall back to legacy
-	GLuint activeShader = s_pbrShader ? s_pbrShader : s_vesselShader;
+	// Force legacy shader for now — PBR needs more testing
+	GLuint activeShader = s_vesselShader;
 	glUseProgram(activeShader);
 	glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(activeShader, "uViewProj"), 1, GL_FALSE, vp);
 	glUniform3fv(s_shaderMgr->GetUniformLoc(activeShader, "uSunDir"), 1, sunDir);

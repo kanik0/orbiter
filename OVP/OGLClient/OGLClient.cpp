@@ -521,7 +521,7 @@ void OGLClient::clbkRender2DPanel(SURFHANDLE *hSurf, MESHHANDLE hMesh, MATRIX3 *
 
 void OGLClient::clbkRender2DPanel(SURFHANDLE *hSurf, MESHHANDLE hMesh, MATRIX3 *T, float alpha, bool additive)
 {
-	if (!hMesh || !m_panel2dShader) return;
+	if (!hMesh || !m_panel2dShader || !T) return;
 
 	DWORD nGrp = oapiMeshGroupCount(hMesh);
 	if (nGrp == 0) return;

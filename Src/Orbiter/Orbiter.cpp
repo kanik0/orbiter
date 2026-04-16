@@ -255,8 +255,21 @@ INT WINAPI WinMain (HINSTANCE hInstance, HINSTANCE, LPSTR strCmdLine, INT nCmdSh
 
 #else // !_WIN32 -- POSIX entry point (macOS/Linux)
 
+#include <signal.h>
+#include <execinfo.h>
+static void crashHandler(int sig) {
+	void *bt[30];
+	int n = backtrace(bt, 30);
+	fprintf(stderr, "\n=== CRASH: signal %d ===\n", sig);
+	backtrace_symbols_fd(bt, n, 2);
+	fprintf(stderr, "=== END CRASH ===\n");
+	_exit(1);
+}
+
 int main (int argc, char *argv[])
 {
+	signal(SIGSEGV, crashHandler);
+	signal(SIGABRT, crashHandler);
 	// On macOS, when launched as .app bundle or from Finder, CWD may not
 	// be the data directory. Resolve the executable's location and chdir
 	// to it so relative paths (./Config/, ./Textures/, etc.) work.
