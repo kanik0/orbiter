@@ -10,6 +10,6 @@ void main() {
     vec4 worldPos = uModel * vec4(aPos, 1.0);
     gl_Position = uViewProj * worldPos;
     vec3 worldNormal = normalize(mat3(uModel) * aNormal);
-    vLight = max(0.05, dot(worldNormal, uSunDir));
+    vLight = max(0.15, dot(worldNormal, uSunDir));
     vNormal = worldNormal;
 }

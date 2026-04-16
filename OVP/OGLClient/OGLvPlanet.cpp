@@ -250,6 +250,8 @@ void OGLvPlanet::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 {
 	if (!s_sharedInitialized) return;
 
+	// (debug logging removed)
+
 	// Use LOD tile rendering if available
 	if (m_tileMgr) {
 		double planetRadius = oapiGetSize(m_hObj);
@@ -314,7 +316,7 @@ void OGLvPlanet::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 		} else {
 			char name[64];
 			oapiGetObjectName(m_hObj, name, 64);
-			if (strcmp(name, "Earth") == 0) { color[0] = 0.2f; color[1] = 0.4f; color[2] = 0.8f; }
+			if (strcmp(name, "Earth") == 0) { color[0] = 0.3f; color[1] = 0.5f; color[2] = 1.0f; }
 			else if (strcmp(name, "Moon") == 0) { color[0] = 0.7f; color[1] = 0.7f; color[2] = 0.7f; }
 			else if (strcmp(name, "Mars") == 0) { color[0] = 0.8f; color[1] = 0.3f; color[2] = 0.1f; }
 			else if (strcmp(name, "Venus") == 0) { color[0] = 0.9f; color[1] = 0.8f; color[2] = 0.6f; }

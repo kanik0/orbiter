@@ -4,5 +4,7 @@ in vec3 vNormal;
 uniform vec3 uColor;
 out vec4 FragColor;
 void main() {
-    FragColor = vec4(uColor * vLight, 1.0);
+    // Boost ambient so dark side is still visible
+    float light = max(0.15, vLight);
+    FragColor = vec4(uColor * light, 1.0);
 }
