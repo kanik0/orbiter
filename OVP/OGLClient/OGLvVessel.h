@@ -19,6 +19,7 @@ struct OGLTexture;
 namespace ogl {
 
 class OGLEnvMap;
+class OGLShadowMap;
 
 // Cached OpenGL buffers for a single mesh group.
 //
@@ -76,6 +77,8 @@ private:
 	static GLuint s_exhaustShader;
 	static GLuint s_exhaustVAO, s_exhaustVBO, s_exhaustEBO;
 	static GLuint s_materialUBO;      // bound to UBO::Material for both shaders
+	static GLuint s_shadowShader;     // depth-only pre-pass shader
+	static OGLShadowMap *s_shadowMap; // shared 1024x1024 depth RT for self-shadowing
 	static OGLTexture *s_exhaustTexture;
 	static bool s_sharedInitialized;
 	static ShaderMgr *s_shaderMgr;

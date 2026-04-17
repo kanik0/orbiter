@@ -7,6 +7,7 @@
 #include "OGLShaderMgr.h"
 #include "OGLMaterial.h"
 #include "OGLEnvMap.h"
+#include "OGLShadowMap.h"
 #include "OGLMeshRegistry.h"
 #include "OGLTexture.h"
 #include "OGLSurface.h"
@@ -23,6 +24,8 @@ GLuint OGLvVessel::s_pbrShader = 0;
 GLuint OGLvVessel::s_exhaustShader = 0;
 GLuint OGLvVessel::s_exhaustVAO = 0, OGLvVessel::s_exhaustVBO = 0, OGLvVessel::s_exhaustEBO = 0;
 GLuint OGLvVessel::s_materialUBO = 0;
+GLuint OGLvVessel::s_shadowShader = 0;
+OGLShadowMap *OGLvVessel::s_shadowMap = nullptr;
 OGLTexture *OGLvVessel::s_exhaustTexture = nullptr;
 bool OGLvVessel::s_sharedInitialized = false;
 ShaderMgr *OGLvVessel::s_shaderMgr = nullptr;
@@ -124,10 +127,18 @@ void OGLvVessel::InitShared(ShaderMgr *shaderMgr, const std::string &texturePath
 	s_vesselShader = shaderMgr->LoadProgram("vessel", "vessel.vert", "vessel.frag");
 	s_pbrShader = shaderMgr->LoadProgram("vessel_pbr", "vessel_pbr.vert", "vessel_pbr.frag");
 	s_exhaustShader = shaderMgr->LoadProgram("exhaust", "exhaust.vert", "exhaust.frag");
+	s_shadowShader = shaderMgr->LoadProgram("shadow_cast", "shadow_cast.vert", "shadow_cast.frag");
 
 	// The Material UBO is shared by both vessel programs — sized to match
 	// shaders/include/material.glsl.inc and bound to UBO::Material.
 	s_materialUBO = shaderMgr->CreateUBO(UBO::Material, sizeof(UBOMaterialData));
+
+	// Shared 1024x1024 depth target for the vessel shadow pre-pass.
+	s_shadowMap = new OGLShadowMap();
+	if (!s_shadowMap->Init(1024)) {
+		delete s_shadowMap;
+		s_shadowMap = nullptr;
+	}
 
 	// Load exhaust texture
 	std::string path = texturePath + "Exhaust.dds";
@@ -167,6 +178,7 @@ void OGLvVessel::ReleaseShared()
 	if (s_exhaustVBO) { glDeleteBuffers(1, &s_exhaustVBO); s_exhaustVBO = 0; }
 	if (s_exhaustEBO) { glDeleteBuffers(1, &s_exhaustEBO); s_exhaustEBO = 0; }
 	if (s_materialUBO && s_shaderMgr) { s_shaderMgr->ReleaseUBO(s_materialUBO); s_materialUBO = 0; }
+	delete s_shadowMap; s_shadowMap = nullptr;
 	delete s_exhaustTexture; s_exhaustTexture = nullptr;
 	s_sharedInitialized = false;
 }
@@ -265,9 +277,85 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 	// the PBR link dropped out.
 	GLuint activeShader = s_pbrShader ? s_pbrShader : s_vesselShader;
 	const bool pbrActive = (activeShader == s_pbrShader);
+
+	// ----- Shadow pre-pass (PBR path only) ----------------------------------
+	// Render the vessel's meshes into the shared shadow depth map from the
+	// sun's point of view. Both passes work in the distance-normalised frame
+	// the main pass uses, so the uModel matrix is identical between them.
+	const bool shadowsReady = pbrActive && s_shadowMap && s_shadowShader;
+	if (shadowsReady) {
+		VECTOR3 sunUnit    = { (double)sunDir[0], (double)sunDir[1], (double)sunDir[2] };
+		VECTOR3 tgtScaled  = { nvx, nvy, nvz };
+		double  halfExtent = std::max(1.0, vessel->GetSize() * scale * 2.0);
+		double  sunDistOrth = halfExtent * 4.0;
+		double  farDistOrth = sunDistOrth * 2.0 + halfExtent;
+		s_shadowMap->BuildLightMatrix(sunUnit, tgtScaled, halfExtent, sunDistOrth, farDistOrth);
+
+		s_shadowMap->BeginPass();
+		glUseProgram(s_shadowShader);
+		glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(s_shadowShader, "uLightVP"),
+		                   1, GL_FALSE, s_shadowMap->GetLightVP());
+
+		DWORD nMeshShadow = vessel->GetMeshCount();
+		for (DWORD m = 0; m < nMeshShadow; m++) {
+			MESHHANDLE hMesh = vessel->GetMeshTemplate(m);
+			if (!hMesh) {
+				const char *className = vessel->GetClassName();
+				if (className) {
+					auto it = s_fallbackMeshes.find(className);
+					if (it != s_fallbackMeshes.end()) hMesh = it->second;
+				}
+			}
+			if (!hMesh) continue;
+
+			VECTOR3 meshOfs = {0, 0, 0};
+			vessel->GetMeshOffset(m, meshOfs);
+			CachedMesh *cached = GetOrCreateMeshCache(hMesh);
+			if (!cached) continue;
+
+			double ox = vrot.m11 * meshOfs.x + vrot.m12 * meshOfs.y + vrot.m13 * meshOfs.z;
+			double oy = vrot.m21 * meshOfs.x + vrot.m22 * meshOfs.y + vrot.m23 * meshOfs.z;
+			double oz = vrot.m31 * meshOfs.x + vrot.m32 * meshOfs.y + vrot.m33 * meshOfs.z;
+			float tx = (float)(nvx + ox * scale);
+			float ty = (float)(nvy + oy * scale);
+			float tz = (float)(nvz + oz * scale);
+			float sS = (float)scale;
+			float model[16] = {
+				(float)(vrot.m11 * sS), (float)(vrot.m21 * sS), (float)(vrot.m31 * sS), 0.0f,
+				(float)(vrot.m12 * sS), (float)(vrot.m22 * sS), (float)(vrot.m32 * sS), 0.0f,
+				(float)(vrot.m13 * sS), (float)(vrot.m23 * sS), (float)(vrot.m33 * sS), 0.0f,
+				tx, ty, tz, 1.0f
+			};
+			glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(s_shadowShader, "uModel"),
+			                   1, GL_FALSE, model);
+
+			for (const CachedMeshGroup &cmg : cached->groups) {
+				if (!cmg.vao || cmg.indexCount == 0) continue;
+				glBindVertexArray(cmg.vao);
+				glDrawElements(GL_TRIANGLES, cmg.indexCount, GL_UNSIGNED_INT, 0);
+			}
+		}
+		glBindVertexArray(0);
+		glUseProgram(0);
+		s_shadowMap->EndPass();
+	}
+
+	// ----- Main pass ---------------------------------------------------------
 	glUseProgram(activeShader);
 	glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(activeShader, "uViewProj"), 1, GL_FALSE, vp);
 	glUniform3fv(s_shaderMgr->GetUniformLoc(activeShader, "uSunDir"), 1, sunDir);
+
+	// Shadow-map sampling: bind the depth target + its light VP on the PBR
+	// shader. shadowsReady implies pbrActive so we only do this on the PBR
+	// path; the legacy shader doesn't declare uShadowMap.
+	if (shadowsReady) {
+		glActiveTexture(GL_TEXTURE3);
+		glBindTexture(GL_TEXTURE_2D, s_shadowMap->GetDepthTexture());
+		glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uShadowMap"), 3);
+		glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(activeShader, "uLightVP"),
+		                   1, GL_FALSE, s_shadowMap->GetLightVP());
+		glActiveTexture(GL_TEXTURE0);
+	}
 
 	// Bind the IBL environment cubemap once per vessel. The legacy shader
 	// doesn't sample samplerCubes but the driver is happy with an unused

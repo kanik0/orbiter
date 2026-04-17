@@ -1,5 +1,6 @@
 #version 410 core
 #include "common.glsl"
+#include "shadow.glsl"
 #include "include/material.glsl.inc"
 #include "include/brdf.glsl.inc"
 #include "include/ibl.glsl.inc"
@@ -20,6 +21,12 @@ uniform sampler2D  uEmissiveTex;
 uniform sampler2D  uRoughnessTex;
 uniform sampler2D  uMetalnessTex;
 uniform samplerCube uEnvMap;
+
+// M10 shadow map (depth). uLightVP is identity when the host left shadows
+// disabled; worldToShadow then maps vWorldPos to the unit cube diagonal so
+// shadowPCF3x3's bounds check short-circuits to "fully lit".
+uniform sampler2D uShadowMap;
+uniform mat4      uLightVP;
 
 out vec4 FragColor;
 
@@ -75,6 +82,18 @@ void main() {
     vec3  specular = cookTorranceSpec(N, V, L, F0, roughness, NdotL, F);
     vec3  kD = (1.0 - F) * (1.0 - metalness);
     vec3  Lo = (kD * albedo.rgb * INV_PI + specular) * NdotL;
+
+    // --- Shadow mapping ---
+    // Attenuate direct lighting with the shadow visibility. A soft floor of
+    // 0.15 keeps the shadowed side from going pure black — at low sun
+    // elevations the scatter pass + IBL ambient handle the rest.
+    float vis = 1.0;
+    if (NdotL > 0.0) {
+        vec3  sUV  = worldToShadow(uLightVP, vWorldPos);
+        float bias = shadowBias(NdotL);
+        vis        = shadowPCF3x3(uShadowMap, sUV, bias);
+    }
+    Lo *= mix(0.15, 1.0, vis);
 
     // --- Clearcoat lobe ---
     // A thin dielectric film (F0 = 0.04) that sits on top of the base

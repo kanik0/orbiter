@@ -13,6 +13,7 @@ if(NOT WIN32)
 		OGLMeshRegistry.cpp
 		OGLMaterial.cpp
 		OGLEnvMap.cpp
+		OGLShadowMap.cpp
 		OGLScene.cpp
 		OGLvObject.cpp
 		OGLvPlanet.cpp

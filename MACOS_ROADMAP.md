@@ -379,7 +379,7 @@ Ogni milestone comincia con:
 | M7 | Planet tile LOD | B | 🟡 partial | this branch (culling/priority/cache done; elevation + skirts pending) |
 | M8 | PBR vessel | B | ✅ | this branch |
 | M9 | IBL environment maps | B | ✅ | this branch |
-| M10 | Shadow mapping | B | ☐ | — |
+| M10 | Shadow mapping | B | ✅ | this branch |
 | M11 | Post-processing HDR | B | ☐ | — |
 | M12 | Particle systems | B | ☐ | — |
 | M13 | Glare/corona | B | ☐ | — |
