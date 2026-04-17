@@ -9,6 +9,7 @@
 #ifndef _WIN32
 #include "OGLvObject.h"
 #include <OpenGL/gl3.h>
+#include <cstdint>
 #include <map>
 #include <string>
 #include <vector>
@@ -63,10 +64,9 @@ private:
 	static bool s_sharedInitialized;
 	static ShaderMgr *s_shaderMgr;
 
-	// Mesh cache: maps MESHHANDLE to GPU buffers
-	static std::map<uintptr_t, CachedMesh*> s_meshCache;
-
-	// Fallback mesh cache: maps class name to MESHHANDLE
+	// GPU mesh cache lives in ogl::MeshRegistry now; see OGLMeshRegistry.h.
+	// Fallback mesh cache maps vessel class name to MESHHANDLE, used when
+	// VESSEL::GetMeshTemplate() returns null on macOS.
 	static std::map<std::string, MESHHANDLE> s_fallbackMeshes;
 };
 

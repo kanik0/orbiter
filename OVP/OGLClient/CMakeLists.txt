@@ -10,6 +10,7 @@ if(NOT WIN32)
 		OGLClient.cpp
 		OGLTexture.cpp
 		OGLShaderMgr.cpp
+		OGLMeshRegistry.cpp
 		OGLScene.cpp
 		OGLvObject.cpp
 		OGLvPlanet.cpp

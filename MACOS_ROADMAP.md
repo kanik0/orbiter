@@ -367,7 +367,7 @@ Ogni milestone comincia con:
 |---|---|---|---|---|
 | M0 | Shader sourcing + hot-reload | A | ✅ | this branch |
 | M1 | Framebuffer + RT API | A | ✅ | this branch |
-| M2 | Mesh GPU cache | A | ☐ | — |
+| M2 | Mesh GPU cache | A | ✅ | this branch |
 | M3 | Material system UBO | A | ☐ | — |
 | M4 | Rayleigh+Mie scattering | B | ☐ | — |
 | M5 | Cloud layers | B | ☐ | — |

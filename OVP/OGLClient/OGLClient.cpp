@@ -10,6 +10,7 @@
 #include "OGLTexture.h"
 #include "OGLSurface.h"
 #include "OGLShaderMgr.h"
+#include "OGLMeshRegistry.h"
 #include "OGLScene.h"
 #include "OGLPostProcess.h"
 #include "OGLParticle.h"
@@ -146,6 +147,11 @@ void OGLClient::clbkRenderScene()
 	// rebuilds affected programs in place. No-op in release builds.
 	if (m_shaderMgr)
 		m_shaderMgr->CheckReload();
+
+	// Periodic (≥5 s) one-liner with mesh-cache counters — proves the
+	// registry is actually servicing hits rather than re-uploading every
+	// mesh each frame.
+	MeshRegistry::Instance().LogStatsPeriodic();
 
 	// Render 3D scene (post-processing disabled for now — enable via config)
 	if (m_scene)
@@ -692,23 +698,34 @@ void OGLClient::RunM1SelfTest()
 
 bool OGLClient::clbkSetMeshTexture(DEVMESHHANDLE hMesh, DWORD texidx, SURFHANDLE tex)
 {
-	// Device meshes are not yet tracked separately; stub for now
+	// A proper device-mesh texture override requires a per-DEVMESHHANDLE
+	// texture table (tracked by OGLvVessel, not the registry). That lands
+	// with M17 when the Sketchpad/MFD pipeline gains a distinct device mesh.
+	// For M2 we stay "not supported" so callers fall back to the template's
+	// own texture slot.
+	(void)hMesh; (void)texidx; (void)tex;
 	return false;
 }
 
 int OGLClient::clbkSetMeshMaterial(DEVMESHHANDLE hMesh, DWORD matidx, const MATERIAL *mat)
 {
-	return 2; // not yet supported
+	// Material plumbing through a UBO is M3 territory — until then we advertise
+	// "not supported" so vessel modules fall back to their own legacy path.
+	// We do *not* invalidate: nothing on the GPU side changed.
+	(void)hMesh; (void)matidx; (void)mat;
+	return 2;
 }
 
 int OGLClient::clbkMeshMaterial(DEVMESHHANDLE hMesh, DWORD matidx, MATERIAL *mat)
 {
-	return 2; // not yet supported
+	(void)hMesh; (void)matidx; (void)mat;
+	return 2;
 }
 
 bool OGLClient::clbkSetMeshProperty(DEVMESHHANDLE hMesh, DWORD property, DWORD value)
 {
-	return false; // not yet supported
+	(void)hMesh; (void)property; (void)value;
+	return false;
 }
 
 int OGLClient::clbkGetMeshGroup(DEVMESHHANDLE hMesh, DWORD grpidx, GROUPREQUESTSPEC *grs)
@@ -779,7 +796,10 @@ int OGLClient::clbkEditMeshGroup(DEVMESHHANDLE hMesh, DWORD grpidx, GROUPEDITSPE
 			}
 		}
 	}
-	// TODO: invalidate GPU mesh cache for this mesh handle
+	// Edit affected this group's vertex data: mark the cache entry dirty
+	// so the next Acquire rebuilds the VBO/EBO tuple from the fresh
+	// MESHGROUPEX contents.
+	MeshRegistry::Instance().InvalidateGroup((MESHHANDLE)hMesh, grpidx);
 	return 0;
 }
 

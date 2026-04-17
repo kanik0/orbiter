@@ -5,6 +5,7 @@
 
 #include "OGLvVessel.h"
 #include "OGLShaderMgr.h"
+#include "OGLMeshRegistry.h"
 #include "OGLTexture.h"
 #include "OGLSurface.h"
 #include "VesselAPI.h"
@@ -22,7 +23,6 @@ GLuint OGLvVessel::s_exhaustVAO = 0, OGLvVessel::s_exhaustVBO = 0, OGLvVessel::s
 OGLTexture *OGLvVessel::s_exhaustTexture = nullptr;
 bool OGLvVessel::s_sharedInitialized = false;
 ShaderMgr *OGLvVessel::s_shaderMgr = nullptr;
-std::map<uintptr_t, CachedMesh*> OGLvVessel::s_meshCache;
 std::map<std::string, MESHHANDLE> OGLvVessel::s_fallbackMeshes;
 
 static bool FileExists(const char *path) {
@@ -82,8 +82,7 @@ void OGLvVessel::InitShared(ShaderMgr *shaderMgr, const std::string &texturePath
 
 void OGLvVessel::ReleaseShared()
 {
-	for (auto &kv : s_meshCache) delete kv.second;
-	s_meshCache.clear();
+	MeshRegistry::Instance().Clear();
 	s_fallbackMeshes.clear();
 	if (s_exhaustVAO) { glDeleteVertexArrays(1, &s_exhaustVAO); s_exhaustVAO = 0; }
 	if (s_exhaustVBO) { glDeleteBuffers(1, &s_exhaustVBO); s_exhaustVBO = 0; }
@@ -101,10 +100,11 @@ OGLvVessel::~OGLvVessel() {}
 
 CachedMesh *OGLvVessel::GetOrCreateMeshCache(MESHHANDLE hMesh)
 {
-	uintptr_t key = (uintptr_t)hMesh;
-	auto it = s_meshCache.find(key);
-	if (it != s_meshCache.end()) return it->second;
+	MeshRegistry &reg = MeshRegistry::Instance();
+	if (CachedMesh *hit = reg.Acquire(hMesh))
+		return hit;
 
+	// Miss or dirty — rebuild the VBO/EBO/VAO tuple for every group.
 	CachedMesh *cached = new CachedMesh();
 	DWORD nGrp = oapiMeshGroupCount(hMesh);
 	for (DWORD g = 0; g < nGrp; g++) {
@@ -134,8 +134,8 @@ CachedMesh *OGLvVessel::GetOrCreateMeshCache(MESHHANDLE hMesh)
 		glBindVertexArray(0);
 		cached->groups.push_back(cmg);
 	}
-	s_meshCache[key] = cached;
-	fprintf(stderr, "[OGLvVessel] Cached mesh %p: %d groups\n", hMesh, (int)nGrp);
+	reg.Store(hMesh, cached);
+	fprintf(stderr, "[OGLvVessel] Rebuilt mesh %p: %d groups\n", hMesh, (int)nGrp);
 	return cached;
 }
 
