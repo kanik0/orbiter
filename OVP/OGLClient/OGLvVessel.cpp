@@ -34,10 +34,83 @@ static bool FileExists(const char *path) {
 
 CachedMesh::~CachedMesh() {
 	for (auto &g : groups) {
-		if (g.vao) glDeleteVertexArrays(1, &g.vao);
-		if (g.vbo) glDeleteBuffers(1, &g.vbo);
-		if (g.ebo) glDeleteBuffers(1, &g.ebo);
+		if (g.vao)    glDeleteVertexArrays(1, &g.vao);
+		if (g.vbo)    glDeleteBuffers(1, &g.vbo);
+		if (g.tbnVbo) glDeleteBuffers(1, &g.tbnVbo);
+		if (g.ebo)    glDeleteBuffers(1, &g.ebo);
 	}
+}
+
+// Compute per-vertex tangents using the classic Lengyel-2001 method:
+// accumulate (tangent, bitangent) from every triangle that references a
+// vertex, then Gram-Schmidt orthogonalise against the vertex normal and
+// store the bitangent handedness in .w. Returns a flat array of vec4s
+// sized to grp->nVtx.
+static std::vector<float> ComputeTangents(const MESHGROUPEX *grp)
+{
+	const DWORD n = grp->nVtx;
+	std::vector<float> tAcc(n * 3, 0.0f);
+	std::vector<float> bAcc(n * 3, 0.0f);
+
+	for (DWORD i = 0; i + 2 < grp->nIdx; i += 3) {
+		WORD i0 = grp->Idx[i + 0];
+		WORD i1 = grp->Idx[i + 1];
+		WORD i2 = grp->Idx[i + 2];
+		if (i0 >= n || i1 >= n || i2 >= n) continue;
+
+		const NTVERTEX &v0 = grp->Vtx[i0];
+		const NTVERTEX &v1 = grp->Vtx[i1];
+		const NTVERTEX &v2 = grp->Vtx[i2];
+
+		float e1x = v1.x - v0.x, e1y = v1.y - v0.y, e1z = v1.z - v0.z;
+		float e2x = v2.x - v0.x, e2y = v2.y - v0.y, e2z = v2.z - v0.z;
+		float du1 = v1.tu - v0.tu, dv1 = v1.tv - v0.tv;
+		float du2 = v2.tu - v0.tu, dv2 = v2.tv - v0.tv;
+
+		float denom = du1 * dv2 - du2 * dv1;
+		if (std::fabs(denom) < 1e-8f) continue;
+		float r = 1.0f / denom;
+
+		float tx = (dv2 * e1x - dv1 * e2x) * r;
+		float ty = (dv2 * e1y - dv1 * e2y) * r;
+		float tz = (dv2 * e1z - dv1 * e2z) * r;
+		float bx = (-du2 * e1x + du1 * e2x) * r;
+		float by = (-du2 * e1y + du1 * e2y) * r;
+		float bz = (-du2 * e1z + du1 * e2z) * r;
+
+		const WORD idx[3] = { i0, i1, i2 };
+		for (int k = 0; k < 3; k++) {
+			DWORD vi = idx[k];
+			tAcc[vi * 3 + 0] += tx; tAcc[vi * 3 + 1] += ty; tAcc[vi * 3 + 2] += tz;
+			bAcc[vi * 3 + 0] += bx; bAcc[vi * 3 + 1] += by; bAcc[vi * 3 + 2] += bz;
+		}
+	}
+
+	std::vector<float> out(n * 4, 0.0f);
+	for (DWORD v = 0; v < n; v++) {
+		float nx = grp->Vtx[v].nx, ny = grp->Vtx[v].ny, nz = grp->Vtx[v].nz;
+		float tx = tAcc[v * 3 + 0], ty = tAcc[v * 3 + 1], tz = tAcc[v * 3 + 2];
+
+		// Gram-Schmidt orthogonalisation of tangent against the vertex normal.
+		float nt = nx * tx + ny * ty + nz * tz;
+		tx -= nx * nt; ty -= ny * nt; tz -= nz * nt;
+		float len = std::sqrt(tx * tx + ty * ty + tz * tz);
+		if (len > 1e-6f) { float inv = 1.0f / len; tx *= inv; ty *= inv; tz *= inv; }
+		else { tx = 1.0f; ty = 0.0f; tz = 0.0f; }
+
+		// Handedness = sign(dot(cross(normal, tangent), accumulated bitangent))
+		float cx = ny * tz - nz * ty;
+		float cy = nz * tx - nx * tz;
+		float cz = nx * ty - ny * tx;
+		float bxA = bAcc[v * 3 + 0], byA = bAcc[v * 3 + 1], bzA = bAcc[v * 3 + 2];
+		float h = (cx * bxA + cy * byA + cz * bzA) < 0.0f ? -1.0f : 1.0f;
+
+		out[v * 4 + 0] = tx;
+		out[v * 4 + 1] = ty;
+		out[v * 4 + 2] = tz;
+		out[v * 4 + 3] = h;
+	}
+	return out;
 }
 
 void OGLvVessel::InitShared(ShaderMgr *shaderMgr, const std::string &texturePath)
@@ -115,27 +188,39 @@ CachedMesh *OGLvVessel::GetOrCreateMeshCache(MESHHANDLE hMesh)
 	for (DWORD g = 0; g < nGrp; g++) {
 		MESHGROUPEX *grp = oapiMeshGroupEx(hMesh, g);
 		if (!grp || !grp->nVtx || !grp->nIdx) {
-			cached->groups.push_back({0, 0, 0, 0});
+			cached->groups.push_back({0, 0, 0, 0, 0, false});
 			continue;
 		}
-		CachedMeshGroup cmg;
+		CachedMeshGroup cmg{};
 		cmg.indexCount = (int)grp->nIdx;
 		glGenVertexArrays(1, &cmg.vao);
 		glGenBuffers(1, &cmg.vbo);
+		glGenBuffers(1, &cmg.tbnVbo);
 		glGenBuffers(1, &cmg.ebo);
 		glBindVertexArray(cmg.vao);
+
 		glBindBuffer(GL_ARRAY_BUFFER, cmg.vbo);
 		glBufferData(GL_ARRAY_BUFFER, grp->nVtx * sizeof(NTVERTEX), grp->Vtx, GL_STATIC_DRAW);
-		std::vector<unsigned int> indices(grp->nIdx);
-		for (DWORD i = 0; i < grp->nIdx; i++) indices[i] = (unsigned int)grp->Idx[i];
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, cmg.ebo);
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER, grp->nIdx * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
 		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(NTVERTEX), (void*)0);
 		glEnableVertexAttribArray(0);
 		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(NTVERTEX), (void*)(3 * sizeof(float)));
 		glEnableVertexAttribArray(1);
 		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(NTVERTEX), (void*)(6 * sizeof(float)));
 		glEnableVertexAttribArray(2);
+
+		// Tangent stream: vec4(tangent.xyz, bitangent sign) per vertex.
+		std::vector<float> tangents = ComputeTangents(grp);
+		glBindBuffer(GL_ARRAY_BUFFER, cmg.tbnVbo);
+		glBufferData(GL_ARRAY_BUFFER, tangents.size() * sizeof(float), tangents.data(), GL_STATIC_DRAW);
+		glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+		glEnableVertexAttribArray(3);
+		cmg.hasTangent = true;
+
+		std::vector<unsigned int> indices(grp->nIdx);
+		for (DWORD i = 0; i < grp->nIdx; i++) indices[i] = (unsigned int)grp->Idx[i];
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, cmg.ebo);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, grp->nIdx * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+
 		glBindVertexArray(0);
 		cached->groups.push_back(cmg);
 	}
@@ -254,6 +339,7 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 				}
 			}
 			matData.hasDiffuse = hasTexture ? 1 : 0;
+			matData.hasTangent = cmg.hasTangent ? 1 : 0;
 
 			s_shaderMgr->UpdateUBO(s_materialUBO, sizeof(matData), &matData);
 

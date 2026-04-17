@@ -26,27 +26,32 @@
 
 namespace ogl {
 
-// 112-byte std140 block — must match shaders/include/material.glsl.inc.
+// 128-byte std140 block — must match shaders/include/material.glsl.inc.
 struct alignas(16) UBOMaterialData {
-	float diffuse[4];       // offset  0 — vec4 rgba
-	float specular[4];      // offset 16 — vec4 rgb + power
-	float emissive[4];      // offset 32 — vec4 rgb + pad
-	float reflect[4];       // offset 48 — vec4 rgb + pad (F0 override)
-	float roughness;        // offset 64
-	float metalness;        // offset 68
-	float opacity;          // offset 72
-	float fresnelPow;       // offset 76
-	int32_t hasDiffuse;     // offset 80
-	int32_t hasNormal;      // offset 84
-	int32_t hasSpecular;    // offset 88
-	int32_t hasEmissive;    // offset 92
-	int32_t hasRoughness;   // offset 96
-	int32_t hasMetalness;   // offset 100
-	int32_t hasEnvMap;      // offset 104
-	int32_t pad0;           // offset 108
+	float diffuse[4];         // offset  0 — vec4 rgba
+	float specular[4];        // offset 16 — vec4 rgb + power
+	float emissive[4];        // offset 32 — vec4 rgb + pad
+	float reflect[4];         // offset 48 — vec4 rgb + pad (F0 override)
+	float roughness;          // offset 64
+	float metalness;          // offset 68
+	float opacity;            // offset 72
+	float fresnelPow;         // offset 76
+	int32_t hasDiffuse;       // offset 80
+	int32_t hasNormal;        // offset 84
+	int32_t hasSpecular;      // offset 88
+	int32_t hasEmissive;      // offset 92
+	int32_t hasRoughness;     // offset 96
+	int32_t hasMetalness;     // offset 100
+	int32_t hasEnvMap;        // offset 104
+	int32_t hasTangent;       // offset 108 — true when the VBO carries a
+	                          //              per-vertex tangent stream
+	float clearcoat;          // offset 112 — intensity [0..1]
+	float clearcoatRoughness; // offset 116
+	float anisotropy;         // offset 120 — [-1..1]
+	float matPad1;            // offset 124
 };
-static_assert(sizeof(UBOMaterialData) == 112,
-              "UBOMaterialData size must match std140 Material block (112 bytes)");
+static_assert(sizeof(UBOMaterialData) == 128,
+              "UBOMaterialData size must match std140 Material block (128 bytes)");
 
 // Populate `out` from the Orbiter MESH material referenced by `grp->MtrlIdx`.
 // Defaults are used when the mesh has no explicit material. The legacy

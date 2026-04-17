@@ -2,6 +2,10 @@
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec2 aUV;
+// Tangent stream is present even on the legacy shader's VAO so we don't have
+// to keep two VAO layouts in sync; the non-PBR pipeline simply ignores it.
+layout(location = 3) in vec4 aTangent;
+
 uniform mat4 uViewProj;
 uniform mat4 uModel;
 uniform vec3 uSunDir;

@@ -5,7 +5,7 @@
 // automatically whenever a shader declares a block named `Material`.
 //
 // Layout mirrors OGLvVessel's upload path; any change here must be kept
-// in sync with the CPU-side struct in OGLvVessel.cpp.
+// in sync with the CPU-side struct in OGLMaterial.h (128 bytes total).
 
 #pragma once
 
@@ -26,7 +26,11 @@ layout(std140) uniform Material {
     int   matHasRoughness;
     int   matHasMetalness;
     int   matHasEnvMap;
-    int   matPad0;
+    int   matHasTangent;          // vertex stream carries a tangent attribute
+    float matClearcoat;           // clearcoat intensity [0..1]
+    float matClearcoatRoughness;  // roughness of the clearcoat lobe
+    float matAnisotropy;          // [-1..1] — along the vertex tangent direction
+    float matPad1;
 };
 
 // Compute F0 with the standard "albedo for metals, 0.04 for dielectrics"

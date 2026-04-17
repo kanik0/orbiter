@@ -359,6 +359,10 @@ Ogni milestone comincia con:
 
 **Milestone ad alto rischio** (M4 scattering, M7 tiles, M15 VC, M17 MFD): branch esplorativo su singolo sotto-task per validare approach prima di committarsi all'intera milestone.
 
+### Follow-up da riprendere prima di uscire da Fase B
+
+- **M7.b** — chiudere M7 al 100%: elevation displacement (parse `.elv` → 259×259 Int16 height grid, Z-offset mesh, re-compute normals), crack-hiding skirts ai confini LOD, label overlay M14-ready. Richiede una sessione dedicata (stimati 5–6gg).
+
 ---
 
 ## Stato avanzamento
@@ -373,7 +377,7 @@ Ogni milestone comincia con:
 | M5 | Cloud layers | B | ✅ | this branch |
 | M6 | Night city lights | B | ✅ | this branch |
 | M7 | Planet tile LOD | B | 🟡 partial | this branch (culling/priority/cache done; elevation + skirts pending) |
-| M8 | PBR vessel | B | ☐ | — |
+| M8 | PBR vessel | B | ✅ | this branch |
 | M9 | IBL environment maps | B | ☐ | — |
 | M10 | Shadow mapping | B | ☐ | — |
 | M11 | Post-processing HDR | B | ☐ | — |

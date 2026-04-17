@@ -18,12 +18,20 @@ struct OGLTexture;
 
 namespace ogl {
 
-// Cached OpenGL buffers for a single mesh group
+// Cached OpenGL buffers for a single mesh group.
+//
+// `tbnVbo` carries a second interleaved attribute stream with the vertex
+// tangent (vec4: xyz = tangent direction, w = bitangent handedness sign).
+// It's kept in a separate VBO so the primary NTVERTEX buffer layout stays
+// unchanged, and so we don't pay the upload cost on mesh groups that end up
+// rendered with the non-PBR shader.
 struct CachedMeshGroup {
 	GLuint vao;
 	GLuint vbo;
+	GLuint tbnVbo;
 	GLuint ebo;
 	int indexCount;
+	bool   hasTangent;
 };
 
 // Cached OpenGL buffers for an entire mesh (all groups)

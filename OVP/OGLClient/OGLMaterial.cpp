@@ -33,7 +33,11 @@ void BuildMaterialData(UBOMaterialData &out, MESHHANDLE hMesh, DWORD grpIdx)
 	out.fresnelPow   = 5.0f;
 	out.hasDiffuse = out.hasNormal = out.hasSpecular = out.hasEmissive = 0;
 	out.hasRoughness = out.hasMetalness = out.hasEnvMap = 0;
-	out.pad0 = 0;
+	out.hasTangent = 0;
+	out.clearcoat          = 0.0f;
+	out.clearcoatRoughness = 0.1f;
+	out.anisotropy         = 0.0f;
+	out.matPad1            = 0.0f;
 
 	if (!hMesh) return;
 
