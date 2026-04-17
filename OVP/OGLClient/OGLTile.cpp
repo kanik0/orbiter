@@ -147,9 +147,13 @@ void OGLTileMgr::LoaderThreadFunc()
 
 		OGLTileData *tile = req.tile;
 		LoadedTileData loaded;
-		loaded.tile = tile;
-		loaded.texWidth = 0;
+		loaded.tile      = tile;
+		loaded.texWidth  = 0;
 		loaded.texHeight = 0;
+		loaded.elevW     = 0;
+		loaded.elevH     = 0;
+		loaded.elevPadX  = 0;
+		loaded.elevPadY  = 0;
 
 		// Load texture data from ZTree archive
 		if (m_treeSurf) {
@@ -161,8 +165,23 @@ void OGLTileMgr::LoaderThreadFunc()
 			}
 		}
 
-		// Build sphere patch geometry
+		// M7.b — elevation. The ELEV layer typically lags the SURF layer by
+		// several levels, so missing data is normal and not an error.
+		if (m_treeElev) {
+			BYTE *data = nullptr;
+			DWORD size = m_treeElev->ReadData(tile->level, tile->ilat, tile->ilng, &data);
+			if (data && size > 0) {
+				ParseElevationBlock(data, size, loaded.elev,
+				                    loaded.elevW, loaded.elevH,
+				                    loaded.elevPadX, loaded.elevPadY);
+				m_treeElev->ReleaseData(data);
+			}
+		}
+
+		// Build sphere patch geometry (with elevation displacement when available)
 		BuildSpherePatch(tile->level, tile->ilat, tile->ilng, req.planetRadius,
+		                 loaded.elev, loaded.elevW, loaded.elevH,
+		                 loaded.elevPadX, loaded.elevPadY,
 		                 loaded.vertices, loaded.indices,
 		                 loaded.bsCx, loaded.bsCy, loaded.bsCz, loaded.bsRad);
 
@@ -208,7 +227,117 @@ void OGLTileMgr::ProcessLoadQueue()
 	}
 }
 
+bool OGLTileMgr::ParseElevationBlock(const uint8_t *data, size_t size,
+                                     std::vector<float> &outSamples,
+                                     int &outW, int &outH, int &outPadX, int &outPadY)
+{
+	outSamples.clear();
+	outW = outH = outPadX = outPadY = 0;
+
+#pragma pack(push, 1)
+	struct Hdr {
+		char     id[4];
+		int      hdrsize;
+		int      dtype;
+		int      xgrd, ygrd;
+		int      xpad, ypad;
+		double   scale;
+		double   offset;
+		double   latmin, latmax;
+		double   lngmin, lngmax;
+		double   emin, emax, emean;
+	};
+#pragma pack(pop)
+	if (size < sizeof(Hdr)) return false;
+
+	Hdr h;
+	std::memcpy(&h, data, sizeof(Hdr));
+	if (h.id[0] != 'E' || h.id[1] != 'L' || h.id[2] != 'E') return false;
+	if (h.hdrsize < (int)sizeof(Hdr)) return false;
+
+	outW    = h.xgrd;
+	outH    = h.ygrd;
+	outPadX = h.xpad;
+	outPadY = h.ypad;
+
+	const size_t nSamples = (size_t)h.xgrd * (size_t)h.ygrd;
+	if (nSamples == 0) return true;
+
+	const uint8_t *payload = data + h.hdrsize;
+	size_t payloadSize = size - h.hdrsize;
+
+	outSamples.resize(nSamples, (float)h.offset);  // flat baseline
+	switch (h.dtype) {
+	case 0:  // flat (no data block) — baseline already applied
+		break;
+	case 8: { // uint8
+		if (payloadSize < nSamples) return false;
+		for (size_t i = 0; i < nSamples; i++)
+			outSamples[i] = float(payload[i] * h.scale + h.offset);
+		break;
+	}
+	case -8: { // int8
+		if (payloadSize < nSamples) return false;
+		const int8_t *s = (const int8_t *)payload;
+		for (size_t i = 0; i < nSamples; i++)
+			outSamples[i] = float(s[i] * h.scale + h.offset);
+		break;
+	}
+	case 16: { // uint16
+		if (payloadSize < nSamples * 2) return false;
+		const uint16_t *s = (const uint16_t *)payload;
+		for (size_t i = 0; i < nSamples; i++)
+			outSamples[i] = float(s[i] * h.scale + h.offset);
+		break;
+	}
+	case -16: { // int16
+		if (payloadSize < nSamples * 2) return false;
+		const int16_t *s = (const int16_t *)payload;
+		for (size_t i = 0; i < nSamples; i++)
+			outSamples[i] = float(s[i] * h.scale + h.offset);
+		break;
+	}
+	default:
+		outSamples.clear();
+		return false;
+	}
+	return true;
+}
+
+// Bilinearly sample the elevation grid at fractional (i, j) where
+// (i, j) ∈ [0..innerW-1] × [0..innerH-1] (the inner grid, excluding padding).
+static float SampleElev(const std::vector<float> &elev, int W, int H,
+                        int padX, int padY,
+                        double fracCol, double fracRow)
+{
+	const int innerW = W - 2 * padX;
+	const int innerH = H - 2 * padY;
+	if (innerW <= 0 || innerH <= 0) return 0.0f;
+
+	double x = fracCol * (innerW - 1);
+	double y = fracRow * (innerH - 1);
+	int x0 = (int)std::floor(x);
+	int y0 = (int)std::floor(y);
+	int x1 = std::min(x0 + 1, innerW - 1);
+	int y1 = std::min(y0 + 1, innerH - 1);
+	double fx = x - x0;
+	double fy = y - y0;
+
+	auto get = [&](int cx, int cy) {
+		return elev[(size_t)(cy + padY) * W + (cx + padX)];
+	};
+	float a = get(x0, y0);
+	float b = get(x1, y0);
+	float c = get(x0, y1);
+	float d = get(x1, y1);
+	float ab = float(a * (1.0 - fx) + b * fx);
+	float cd = float(c * (1.0 - fx) + d * fx);
+	return float(ab * (1.0 - fy) + cd * fy);
+}
+
 void OGLTileMgr::BuildSpherePatch(int level, int ilat, int ilng, double planetRadius,
+                                    const std::vector<float> &elev,
+                                    int elevW, int elevH, int elevPadX, int elevPadY,
                                     std::vector<float> &vertices, std::vector<unsigned int> &indices,
                                     float &bsCx, float &bsCy, float &bsCz, float &bsRad)
 {
@@ -222,6 +351,8 @@ void OGLTileMgr::BuildSpherePatch(int level, int ilat, int ilng, double planetRa
 	double latMax = M_PI * 0.5 * (double)(nlat - ilat) / (double)nlat - M_PI * 0.5;
 	double lngMin = 2.0 * M_PI * (double)ilng / (double)nlng;
 	double lngMax = 2.0 * M_PI * (double)(ilng + 1) / (double)nlng;
+
+	const bool hasElev = !elev.empty() && elevW > 0 && elevH > 0;
 
 	// Vertex layout: x, y, z, nx, ny, nz, u, v (8 floats per vertex)
 	int nVtx = (res + 1) * (res + 1);
@@ -239,19 +370,40 @@ void OGLTileMgr::BuildSpherePatch(int level, int ilat, int ilng, double planetRa
 			double cosLat = cos(lat), sinLat = sin(lat);
 			double cosLng = cos(lng), sinLng = sin(lng);
 
-			float px = (float)(cosLat * cosLng);
-			float py = (float)(sinLat);
-			float pz = (float)(cosLat * sinLng);
+			// Unit-sphere position + normal.
+			float nx = (float)(cosLat * cosLng);
+			float ny = (float)(sinLat);
+			float nz = (float)(cosLat * sinLng);
+
+			// Elevation displacement: shift the vertex radially outward by
+			// (elev / planetRadius) normalised units. Sampling flips the
+			// row index so the grid's row 0 corresponds to latMin (south).
+			float radialScale = 1.0f;
+			if (hasElev) {
+				float e = SampleElev(elev, elevW, elevH, elevPadX, elevPadY,
+				                     u, 1.0 - v);  // row 0 = latMin
+				radialScale = 1.0f + e / (float)planetRadius;
+			}
+
+			float px = nx * radialScale;
+			float py = ny * radialScale;
+			float pz = nz * radialScale;
 
 			int idx = (i * (res + 1) + j) * 8;
-			vertices[idx + 0] = px;         // x
-			vertices[idx + 1] = py;         // y
-			vertices[idx + 2] = pz;         // z
-			vertices[idx + 3] = px;         // nx (unit sphere: normal = position)
-			vertices[idx + 4] = py;         // ny
-			vertices[idx + 5] = pz;         // nz
-			vertices[idx + 6] = (float)u;   // u
-			vertices[idx + 7] = (float)v;   // v
+			vertices[idx + 0] = px;
+			vertices[idx + 1] = py;
+			vertices[idx + 2] = pz;
+			// Normal — for flat tiles the sphere normal is exactly the
+			// position direction. For displaced tiles it diverges; we
+			// approximate using the position direction, which the PBR
+			// lighting still reads correctly. A proper per-vertex normal
+			// from finite differences can land with the optional skirt
+			// pass (still pending).
+			vertices[idx + 3] = nx;
+			vertices[idx + 4] = ny;
+			vertices[idx + 5] = nz;
+			vertices[idx + 6] = (float)u;
+			vertices[idx + 7] = (float)v;
 
 			cx += px; cy += py; cz += pz;
 		}

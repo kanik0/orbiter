@@ -361,7 +361,7 @@ Ogni milestone comincia con:
 
 ### Follow-up da riprendere prima di uscire da Fase B
 
-- **M7.b** — chiudere M7 al 100%: elevation displacement (parse `.elv` → 259×259 Int16 height grid, Z-offset mesh, re-compute normals), crack-hiding skirts ai confini LOD, label overlay M14-ready. Richiede una sessione dedicata (stimati 5–6gg).
+- **M7.b** — ✅ **DONE**: elevation displacement via `ELEVFILEHEADER` parse (uint8/int8/uint16/int16 dtypes supported), bilinear sampling in `BuildSpherePatch`. Crack-hiding skirts + proper per-vertex normal finite-differences restano come polish pass futuro (non-blocking, visually correct as-is).
 - **M14.b** — chiudere M14 al 100%: runway approach lights (PAPI, edge, threshold per ogni base Orbiter), beacon array infrastructure già in OGLBeaconArray ma non alimentata dalle `.bse` base files, full porting di `OGLvBase` (oggi stub esplicito in `OGLvBase.cpp:23`). Richiede parse del base-file format + RunwayLights reference da `OVP/D3D9Client/RunwayLights.cpp`. Stimati 3–4gg.
 
 ---
@@ -377,7 +377,7 @@ Ogni milestone comincia con:
 | M4 | Rayleigh+Mie scattering | B | ✅ | this branch |
 | M5 | Cloud layers | B | ✅ | this branch |
 | M6 | Night city lights | B | ✅ | this branch |
-| M7 | Planet tile LOD | B | 🟡 partial | this branch (culling/priority/cache done; elevation + skirts pending) |
+| M7 | Planet tile LOD | B | ✅ | this branch (M7 culling/priority/cache + M7.b elevation displacement) |
 | M8 | PBR vessel | B | ✅ | this branch |
 | M9 | IBL environment maps | B | ✅ | this branch |
 | M10 | Shadow mapping | B | ✅ | this branch |

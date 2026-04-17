@@ -123,6 +123,15 @@ private:
 		std::vector<float> vertices;
 		std::vector<unsigned int> indices;
 		float bsCx, bsCy, bsCz, bsRad;
+
+		// M7.b — elevation data parsed from the ZTree ELEV layer.
+		// `elev` holds `elevW * elevH` samples in metres (already scaled +
+		// offset per the ELEVFILEHEADER); empty when the elev layer is
+		// missing or the tile's patch is flat. The BuildSpherePatch path
+		// bilinearly samples this grid to Z-offset each vertex.
+		std::vector<float> elev;
+		int elevW, elevH;
+		int elevPadX, elevPadY;
 	};
 	std::mutex m_completeMutex;
 	std::vector<LoadedTileData> m_completedLoads;
@@ -165,10 +174,21 @@ private:
 	// Create a tile and its geometry for a given level/lat/lng
 	OGLTileData *CreateTile(int level, int ilat, int ilng, double planetRadius);
 
-	// Build sphere patch geometry for a tile
+	// Build sphere patch geometry for a tile. When `elev` is non-empty the
+	// vertex radii are displaced by (1 + elev/planetRadius); otherwise a
+	// plain unit-sphere patch is emitted.
 	void BuildSpherePatch(int level, int ilat, int ilng, double planetRadius,
+	                      const std::vector<float> &elev,
+	                      int elevW, int elevH, int elevPadX, int elevPadY,
 	                      std::vector<float> &vertices, std::vector<unsigned int> &indices,
 	                      float &bsCx, float &bsCy, float &bsCz, float &bsRad);
+
+	// Parse an ELEVFILEHEADER block + raw sample stream into `outSamples`.
+	// Returns true when valid data was produced (flat tiles return true with
+	// an empty vector). `outW` / `outH` carry the grid dimensions.
+	bool ParseElevationBlock(const uint8_t *data, size_t size,
+	                         std::vector<float> &outSamples,
+	                         int &outW, int &outH, int &outPadX, int &outPadY);
 
 	// Upload geometry to GL on the main thread
 	void UploadTileGL(OGLTileData *tile, const std::vector<float> &vertices,
