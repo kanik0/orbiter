@@ -492,7 +492,13 @@ Orbiter::Orbiter ()
 			g_pOrbiter->OpenHelp (&DefHelpContext);			
 		});
 	RegisterMenuCmd("Save",     "MenuInfoBar/save.png",     [](void *) {g_pOrbiter->Quicksave();});
-	RegisterMenuCmd("Exit",     "MenuInfoBar/exit.png",     [](void *) {PostMessage(g_pOrbiter->GetRenderWnd(), WM_CLOSE, 0, 0);});
+	RegisterMenuCmd("Exit",     "MenuInfoBar/exit.png",     [](void *) {
+#ifdef _WIN32
+		PostMessage(g_pOrbiter->GetRenderWnd(), WM_CLOSE, 0, 0);
+#else
+		SDL_Event ev; ev.type = SDL_QUIT; SDL_PushEvent(&ev);
+#endif
+	});
 
 }
 

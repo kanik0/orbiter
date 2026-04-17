@@ -424,6 +424,62 @@ OGLTexture *OGLTexture::LoadDDS(const char *path) {
 		bool hasAlpha = (pfFlags & DDPF_ALPHAPIXELS) != 0;
 		uint32_t bytesPerPixel = rgbBits / 8;
 
+		// 16-bit formats: convert to 32-bit RGBA on the fly
+		if (rgbBits == 16) {
+			uint32_t mw = width, mh = height;
+			for (uint32_t level = 0; level < mipCount; level++) {
+				uint32_t pxCount = mw * mh;
+				std::vector<uint16_t> raw16(pxCount);
+				fread(raw16.data(), 2, pxCount, fp);
+				std::vector<unsigned char> rgba(pxCount * 4);
+				// Detect format by mask: A1R5G5B5, R5G6B5, A4R4G4B4
+				bool a1rgb5 = (rMask == 0x7C00 && gMask == 0x03E0 && bMask == 0x001F);
+				bool a4rgb4 = (rMask == 0x0F00 && gMask == 0x00F0 && bMask == 0x000F);
+				bool rgb565 = (rMask == 0xF800 && gMask == 0x07E0 && bMask == 0x001F);
+				if (!a1rgb5 && !a4rgb4 && !rgb565) rgb565 = true; // default
+				for (uint32_t i = 0; i < pxCount; i++) {
+					uint16_t p = raw16[i];
+					unsigned r, g, b, a;
+					if (rgb565) {
+						r = ((p >> 11) & 0x1F) * 255 / 31;
+						g = ((p >> 5) & 0x3F) * 255 / 63;
+						b = (p & 0x1F) * 255 / 31;
+						a = 255;
+					} else if (a1rgb5) {
+						a = (p & 0x8000) ? 255 : 0;
+						r = ((p >> 10) & 0x1F) * 255 / 31;
+						g = ((p >> 5) & 0x1F) * 255 / 31;
+						b = (p & 0x1F) * 255 / 31;
+					} else { // a4rgb4
+						a = ((p >> 12) & 0x0F) * 255 / 15;
+						r = ((p >> 8) & 0x0F) * 255 / 15;
+						g = ((p >> 4) & 0x0F) * 255 / 15;
+						b = (p & 0x0F) * 255 / 15;
+					}
+					rgba[i*4+0] = r; rgba[i*4+1] = g; rgba[i*4+2] = b; rgba[i*4+3] = a;
+				}
+				glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA8, mw, mh, 0,
+					GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+				mw = (mw > 1) ? mw / 2 : 1;
+				mh = (mh > 1) ? mh / 2 : 1;
+			}
+			if (mipCount <= 1) {
+				glGenerateMipmap(GL_TEXTURE_2D);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+			} else {
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, mipCount - 1);
+				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+			}
+			glBindTexture(GL_TEXTURE_2D, 0);
+			fclose(fp);
+			OGLTexture *result = new OGLTexture();
+			result->texId = tex;
+			result->width = width;
+			result->height = height;
+			fprintf(stderr, "[OGLTexture] Loaded DDS-RGB16 %ux%u '%s'\n", width, height, path);
+			return result;
+		}
+
 		if (bytesPerPixel != 3 && bytesPerPixel != 4) {
 			fprintf(stderr, "[OGLTexture] DDS unsupported RGB bits=%u '%s'\n", rgbBits, path);
 			glDeleteTextures(1, &tex);

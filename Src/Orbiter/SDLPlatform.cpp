@@ -84,6 +84,12 @@ static void InitSDLToDInputMapping()
 
 	// Left control
 	s_sdlToDInput[SDL_SCANCODE_LCTRL]     = 0x1D;
+#ifdef __APPLE__
+	// On macOS, Ctrl+arrow conflicts with Spaces/Mission Control.
+	// Map Cmd (LGUI/RGUI) to Ctrl scancode so Cmd+arrows work for camera control.
+	s_sdlToDInput[SDL_SCANCODE_LGUI]      = 0x1D;
+	s_sdlToDInput[SDL_SCANCODE_RGUI]      = 0x9D;
+#endif
 
 	// ASDF row
 	s_sdlToDInput[SDL_SCANCODE_A]         = 0x1E;

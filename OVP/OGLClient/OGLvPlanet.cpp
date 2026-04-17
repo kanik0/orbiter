@@ -232,6 +232,7 @@ void OGLvPlanet::LoadTexture(const std::string &texturePath)
 	char name[64];
 	oapiGetObjectName(m_hObj, name, 64);
 
+	// Primary: <Name>.tex / .dds / .bmp
 	const char *extensions[] = { ".tex", ".dds", ".bmp", nullptr };
 	for (int i = 0; extensions[i]; i++) {
 		std::string tryPath = texturePath + name + extensions[i];
@@ -243,6 +244,17 @@ void OGLvPlanet::LoadTexture(const std::string &texturePath)
 			}
 		}
 	}
+
+	// Fallback: <Name>M.bmp (low-res equirectangular map shipped with base distribution)
+	std::string fallbackPath = texturePath + name + "M.bmp";
+	if (FileExists(fallbackPath.c_str())) {
+		m_texture = OGLTexture::LoadTexture(fallbackPath.c_str());
+		if (m_texture) {
+			fprintf(stderr, "[OGLvPlanet] Loaded fallback '%s' for %s\n", fallbackPath.c_str(), name);
+			return;
+		}
+	}
+
 	fprintf(stderr, "[OGLvPlanet] No texture found for '%s'\n", name);
 }
 
