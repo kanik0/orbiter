@@ -2737,15 +2737,7 @@ void Orbiter::KbdInputBuffered_System (char *kstate, DIDEVICEOBJECTDATA *dod, DW
 		else if (keymap.IsLogicalKey(key, kstate, OAPI_LKEY_DlgMap))               pDlgMgr->EnsureEntry<DlgMap>();
 		else if (keymap.IsLogicalKey(key, kstate, OAPI_LKEY_DlgRecorder))          pDlgMgr->EnsureEntry<DlgRecorder>();
 		else if (keymap.IsLogicalKey(key, kstate, OAPI_LKEY_ToggleCamInternal)) {
-#ifdef _WIN32
 			SetView(g_focusobj, !g_camera->IsExternal());
-#else
-			// Only allow external views on macOS until cockpit rendering is fully implemented
-			if (g_camera->IsExternal())
-				fprintf(stderr, "[Orbiter] Cockpit view not yet supported on macOS\n");
-			else
-				SetView(g_focusobj, true); // switch to external
-#endif
 		}
 		else if (keymap.IsLogicalKey(key, kstate, OAPI_LKEY_DlgVisHelper))         pDlgMgr->EnsureEntry<DlgOptions>()->SwitchPage("Visual helpers");
 		else if (keymap.IsLogicalKey(key, kstate, OAPI_LKEY_DlgCapture))           pDlgMgr->EnsureEntry<DlgCapture>();
