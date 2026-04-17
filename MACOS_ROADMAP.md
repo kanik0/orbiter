@@ -382,7 +382,7 @@ Ogni milestone comincia con:
 | M10 | Shadow mapping | B | ✅ | this branch |
 | M11 | Post-processing HDR | B | ✅ | this branch |
 | M12 | Particle systems | B | ✅ | this branch |
-| M13 | Glare/corona | B | ☐ | — |
+| M13 | Glare/corona | B | ✅ | this branch |
 | M14 | Runway lights+annotations | B | ☐ | — |
 | M15 | Virtual Cockpit | C | ☐ | — |
 | M16 | 2D Panel | C | ☐ | — |

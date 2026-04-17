@@ -204,9 +204,15 @@ void OGLScene::RenderScene(DWORD viewW, DWORD viewH)
 		}
 	}
 
-	// 1) Render starfield (at infinite distance)
-	if (m_celSphere)
-		m_celSphere->Render(vp);
+	// 1) Render starfield + solar corona (at infinite distance). Sun NDC
+	//    comes from the projection block above; sim time drives the subtle
+	//    star twinkle and the corona ray rotation.
+	if (m_celSphere) {
+		const float simTime = (float)oapiGetSimTime();
+		m_celSphere->Render(vp, simTime,
+		                    m_lastSunNDC[0], m_lastSunNDC[1], m_lastSunVisible,
+		                    (int)viewW, (int)viewH);
+	}
 
 	// 2) Render planets (depth test off for distance-normalized rendering)
 	glDisable(GL_DEPTH_TEST);
