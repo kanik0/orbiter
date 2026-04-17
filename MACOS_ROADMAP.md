@@ -381,7 +381,7 @@ Ogni milestone comincia con:
 | M9 | IBL environment maps | B | ✅ | this branch |
 | M10 | Shadow mapping | B | ✅ | this branch |
 | M11 | Post-processing HDR | B | ✅ | this branch |
-| M12 | Particle systems | B | ☐ | — |
+| M12 | Particle systems | B | ✅ | this branch |
 | M13 | Glare/corona | B | ☐ | — |
 | M14 | Runway lights+annotations | B | ☐ | — |
 | M15 | Virtual Cockpit | C | ☐ | — |
