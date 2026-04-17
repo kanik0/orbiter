@@ -5,6 +5,10 @@
 
 #include "OGLvVessel.h"
 #include "OGLShaderMgr.h"
+#include "OGLMaterial.h"
+#include "OGLEnvMap.h"
+#include "OGLShadowMap.h"
+#include "OGLMeshRegistry.h"
 #include "OGLTexture.h"
 #include "OGLSurface.h"
 #include "VesselAPI.h"
@@ -19,10 +23,13 @@ GLuint OGLvVessel::s_vesselShader = 0;
 GLuint OGLvVessel::s_pbrShader = 0;
 GLuint OGLvVessel::s_exhaustShader = 0;
 GLuint OGLvVessel::s_exhaustVAO = 0, OGLvVessel::s_exhaustVBO = 0, OGLvVessel::s_exhaustEBO = 0;
+GLuint OGLvVessel::s_materialUBO = 0;
+GLuint OGLvVessel::s_shadowShader = 0;
+OGLShadowMap *OGLvVessel::s_shadowMap = nullptr;
 OGLTexture *OGLvVessel::s_exhaustTexture = nullptr;
 bool OGLvVessel::s_sharedInitialized = false;
 ShaderMgr *OGLvVessel::s_shaderMgr = nullptr;
-std::map<uintptr_t, CachedMesh*> OGLvVessel::s_meshCache;
+OGLEnvMap *OGLvVessel::s_envMap = nullptr;
 std::map<std::string, MESHHANDLE> OGLvVessel::s_fallbackMeshes;
 
 static bool FileExists(const char *path) {
@@ -30,15 +37,85 @@ static bool FileExists(const char *path) {
 	return stat(path, &st) == 0;
 }
 
-template<typename T>
-static T clamp(T v, T lo, T hi) { return v < lo ? lo : (v > hi ? hi : v); }
-
 CachedMesh::~CachedMesh() {
 	for (auto &g : groups) {
-		if (g.vao) glDeleteVertexArrays(1, &g.vao);
-		if (g.vbo) glDeleteBuffers(1, &g.vbo);
-		if (g.ebo) glDeleteBuffers(1, &g.ebo);
+		if (g.vao)    glDeleteVertexArrays(1, &g.vao);
+		if (g.vbo)    glDeleteBuffers(1, &g.vbo);
+		if (g.tbnVbo) glDeleteBuffers(1, &g.tbnVbo);
+		if (g.ebo)    glDeleteBuffers(1, &g.ebo);
 	}
+}
+
+// Compute per-vertex tangents using the classic Lengyel-2001 method:
+// accumulate (tangent, bitangent) from every triangle that references a
+// vertex, then Gram-Schmidt orthogonalise against the vertex normal and
+// store the bitangent handedness in .w. Returns a flat array of vec4s
+// sized to grp->nVtx.
+static std::vector<float> ComputeTangents(const MESHGROUPEX *grp)
+{
+	const DWORD n = grp->nVtx;
+	std::vector<float> tAcc(n * 3, 0.0f);
+	std::vector<float> bAcc(n * 3, 0.0f);
+
+	for (DWORD i = 0; i + 2 < grp->nIdx; i += 3) {
+		WORD i0 = grp->Idx[i + 0];
+		WORD i1 = grp->Idx[i + 1];
+		WORD i2 = grp->Idx[i + 2];
+		if (i0 >= n || i1 >= n || i2 >= n) continue;
+
+		const NTVERTEX &v0 = grp->Vtx[i0];
+		const NTVERTEX &v1 = grp->Vtx[i1];
+		const NTVERTEX &v2 = grp->Vtx[i2];
+
+		float e1x = v1.x - v0.x, e1y = v1.y - v0.y, e1z = v1.z - v0.z;
+		float e2x = v2.x - v0.x, e2y = v2.y - v0.y, e2z = v2.z - v0.z;
+		float du1 = v1.tu - v0.tu, dv1 = v1.tv - v0.tv;
+		float du2 = v2.tu - v0.tu, dv2 = v2.tv - v0.tv;
+
+		float denom = du1 * dv2 - du2 * dv1;
+		if (std::fabs(denom) < 1e-8f) continue;
+		float r = 1.0f / denom;
+
+		float tx = (dv2 * e1x - dv1 * e2x) * r;
+		float ty = (dv2 * e1y - dv1 * e2y) * r;
+		float tz = (dv2 * e1z - dv1 * e2z) * r;
+		float bx = (-du2 * e1x + du1 * e2x) * r;
+		float by = (-du2 * e1y + du1 * e2y) * r;
+		float bz = (-du2 * e1z + du1 * e2z) * r;
+
+		const WORD idx[3] = { i0, i1, i2 };
+		for (int k = 0; k < 3; k++) {
+			DWORD vi = idx[k];
+			tAcc[vi * 3 + 0] += tx; tAcc[vi * 3 + 1] += ty; tAcc[vi * 3 + 2] += tz;
+			bAcc[vi * 3 + 0] += bx; bAcc[vi * 3 + 1] += by; bAcc[vi * 3 + 2] += bz;
+		}
+	}
+
+	std::vector<float> out(n * 4, 0.0f);
+	for (DWORD v = 0; v < n; v++) {
+		float nx = grp->Vtx[v].nx, ny = grp->Vtx[v].ny, nz = grp->Vtx[v].nz;
+		float tx = tAcc[v * 3 + 0], ty = tAcc[v * 3 + 1], tz = tAcc[v * 3 + 2];
+
+		// Gram-Schmidt orthogonalisation of tangent against the vertex normal.
+		float nt = nx * tx + ny * ty + nz * tz;
+		tx -= nx * nt; ty -= ny * nt; tz -= nz * nt;
+		float len = std::sqrt(tx * tx + ty * ty + tz * tz);
+		if (len > 1e-6f) { float inv = 1.0f / len; tx *= inv; ty *= inv; tz *= inv; }
+		else { tx = 1.0f; ty = 0.0f; tz = 0.0f; }
+
+		// Handedness = sign(dot(cross(normal, tangent), accumulated bitangent))
+		float cx = ny * tz - nz * ty;
+		float cy = nz * tx - nx * tz;
+		float cz = nx * ty - ny * tx;
+		float bxA = bAcc[v * 3 + 0], byA = bAcc[v * 3 + 1], bzA = bAcc[v * 3 + 2];
+		float h = (cx * bxA + cy * byA + cz * bzA) < 0.0f ? -1.0f : 1.0f;
+
+		out[v * 4 + 0] = tx;
+		out[v * 4 + 1] = ty;
+		out[v * 4 + 2] = tz;
+		out[v * 4 + 3] = h;
+	}
+	return out;
 }
 
 void OGLvVessel::InitShared(ShaderMgr *shaderMgr, const std::string &texturePath)
@@ -50,6 +127,18 @@ void OGLvVessel::InitShared(ShaderMgr *shaderMgr, const std::string &texturePath
 	s_vesselShader = shaderMgr->LoadProgram("vessel", "vessel.vert", "vessel.frag");
 	s_pbrShader = shaderMgr->LoadProgram("vessel_pbr", "vessel_pbr.vert", "vessel_pbr.frag");
 	s_exhaustShader = shaderMgr->LoadProgram("exhaust", "exhaust.vert", "exhaust.frag");
+	s_shadowShader = shaderMgr->LoadProgram("shadow_cast", "shadow_cast.vert", "shadow_cast.frag");
+
+	// The Material UBO is shared by both vessel programs — sized to match
+	// shaders/include/material.glsl.inc and bound to UBO::Material.
+	s_materialUBO = shaderMgr->CreateUBO(UBO::Material, sizeof(UBOMaterialData));
+
+	// Shared 1024x1024 depth target for the vessel shadow pre-pass.
+	s_shadowMap = new OGLShadowMap();
+	if (!s_shadowMap->Init(1024)) {
+		delete s_shadowMap;
+		s_shadowMap = nullptr;
+	}
 
 	// Load exhaust texture
 	std::string path = texturePath + "Exhaust.dds";
@@ -82,12 +171,14 @@ void OGLvVessel::InitShared(ShaderMgr *shaderMgr, const std::string &texturePath
 
 void OGLvVessel::ReleaseShared()
 {
-	for (auto &kv : s_meshCache) delete kv.second;
-	s_meshCache.clear();
+	MeshRegistry::Instance().Clear();
+	MaterialStore::Instance().Clear();
 	s_fallbackMeshes.clear();
 	if (s_exhaustVAO) { glDeleteVertexArrays(1, &s_exhaustVAO); s_exhaustVAO = 0; }
 	if (s_exhaustVBO) { glDeleteBuffers(1, &s_exhaustVBO); s_exhaustVBO = 0; }
 	if (s_exhaustEBO) { glDeleteBuffers(1, &s_exhaustEBO); s_exhaustEBO = 0; }
+	if (s_materialUBO && s_shaderMgr) { s_shaderMgr->ReleaseUBO(s_materialUBO); s_materialUBO = 0; }
+	delete s_shadowMap; s_shadowMap = nullptr;
 	delete s_exhaustTexture; s_exhaustTexture = nullptr;
 	s_sharedInitialized = false;
 }
@@ -101,41 +192,54 @@ OGLvVessel::~OGLvVessel() {}
 
 CachedMesh *OGLvVessel::GetOrCreateMeshCache(MESHHANDLE hMesh)
 {
-	uintptr_t key = (uintptr_t)hMesh;
-	auto it = s_meshCache.find(key);
-	if (it != s_meshCache.end()) return it->second;
+	MeshRegistry &reg = MeshRegistry::Instance();
+	if (CachedMesh *hit = reg.Acquire(hMesh))
+		return hit;
 
+	// Miss or dirty — rebuild the VBO/EBO/VAO tuple for every group.
 	CachedMesh *cached = new CachedMesh();
 	DWORD nGrp = oapiMeshGroupCount(hMesh);
 	for (DWORD g = 0; g < nGrp; g++) {
 		MESHGROUPEX *grp = oapiMeshGroupEx(hMesh, g);
 		if (!grp || !grp->nVtx || !grp->nIdx) {
-			cached->groups.push_back({0, 0, 0, 0});
+			cached->groups.push_back({0, 0, 0, 0, 0, false});
 			continue;
 		}
-		CachedMeshGroup cmg;
+		CachedMeshGroup cmg{};
 		cmg.indexCount = (int)grp->nIdx;
 		glGenVertexArrays(1, &cmg.vao);
 		glGenBuffers(1, &cmg.vbo);
+		glGenBuffers(1, &cmg.tbnVbo);
 		glGenBuffers(1, &cmg.ebo);
 		glBindVertexArray(cmg.vao);
+
 		glBindBuffer(GL_ARRAY_BUFFER, cmg.vbo);
 		glBufferData(GL_ARRAY_BUFFER, grp->nVtx * sizeof(NTVERTEX), grp->Vtx, GL_STATIC_DRAW);
-		std::vector<unsigned int> indices(grp->nIdx);
-		for (DWORD i = 0; i < grp->nIdx; i++) indices[i] = (unsigned int)grp->Idx[i];
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, cmg.ebo);
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER, grp->nIdx * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
 		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(NTVERTEX), (void*)0);
 		glEnableVertexAttribArray(0);
 		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(NTVERTEX), (void*)(3 * sizeof(float)));
 		glEnableVertexAttribArray(1);
 		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(NTVERTEX), (void*)(6 * sizeof(float)));
 		glEnableVertexAttribArray(2);
+
+		// Tangent stream: vec4(tangent.xyz, bitangent sign) per vertex.
+		std::vector<float> tangents = ComputeTangents(grp);
+		glBindBuffer(GL_ARRAY_BUFFER, cmg.tbnVbo);
+		glBufferData(GL_ARRAY_BUFFER, tangents.size() * sizeof(float), tangents.data(), GL_STATIC_DRAW);
+		glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+		glEnableVertexAttribArray(3);
+		cmg.hasTangent = true;
+
+		std::vector<unsigned int> indices(grp->nIdx);
+		for (DWORD i = 0; i < grp->nIdx; i++) indices[i] = (unsigned int)grp->Idx[i];
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, cmg.ebo);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, grp->nIdx * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+
 		glBindVertexArray(0);
 		cached->groups.push_back(cmg);
 	}
-	s_meshCache[key] = cached;
-	fprintf(stderr, "[OGLvVessel] Cached mesh %p: %d groups\n", hMesh, (int)nGrp);
+	reg.Store(hMesh, cached);
+	fprintf(stderr, "[OGLvVessel] Rebuilt mesh %p: %d groups\n", hMesh, (int)nGrp);
 	return cached;
 }
 
@@ -167,11 +271,104 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 	if (vdist > 1000.0) { normDist = 1000.0; scale = normDist / vdist; }
 	double nvx = vx * scale, nvy = vy * scale, nvz = vz * scale;
 
-	// Force legacy shader for now — PBR needs more testing
-	GLuint activeShader = s_vesselShader;
+	// Prefer the PBR pipeline — M3 + M8 have the full Material UBO and real
+	// TBN frames in place, and M9 now supplies the prefiltered environment
+	// cubemap. We still fall back to the legacy shader if, for any reason,
+	// the PBR link dropped out.
+	GLuint activeShader = s_pbrShader ? s_pbrShader : s_vesselShader;
+	const bool pbrActive = (activeShader == s_pbrShader);
+
+	// ----- Shadow pre-pass (PBR path only) ----------------------------------
+	// Render the vessel's meshes into the shared shadow depth map from the
+	// sun's point of view. Both passes work in the distance-normalised frame
+	// the main pass uses, so the uModel matrix is identical between them.
+	const bool shadowsReady = pbrActive && s_shadowMap && s_shadowShader;
+	if (shadowsReady) {
+		VECTOR3 sunUnit    = { (double)sunDir[0], (double)sunDir[1], (double)sunDir[2] };
+		VECTOR3 tgtScaled  = { nvx, nvy, nvz };
+		double  halfExtent = std::max(1.0, vessel->GetSize() * scale * 2.0);
+		double  sunDistOrth = halfExtent * 4.0;
+		double  farDistOrth = sunDistOrth * 2.0 + halfExtent;
+		s_shadowMap->BuildLightMatrix(sunUnit, tgtScaled, halfExtent, sunDistOrth, farDistOrth);
+
+		s_shadowMap->BeginPass();
+		glUseProgram(s_shadowShader);
+		glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(s_shadowShader, "uLightVP"),
+		                   1, GL_FALSE, s_shadowMap->GetLightVP());
+
+		DWORD nMeshShadow = vessel->GetMeshCount();
+		for (DWORD m = 0; m < nMeshShadow; m++) {
+			MESHHANDLE hMesh = vessel->GetMeshTemplate(m);
+			if (!hMesh) {
+				const char *className = vessel->GetClassName();
+				if (className) {
+					auto it = s_fallbackMeshes.find(className);
+					if (it != s_fallbackMeshes.end()) hMesh = it->second;
+				}
+			}
+			if (!hMesh) continue;
+
+			VECTOR3 meshOfs = {0, 0, 0};
+			vessel->GetMeshOffset(m, meshOfs);
+			CachedMesh *cached = GetOrCreateMeshCache(hMesh);
+			if (!cached) continue;
+
+			double ox = vrot.m11 * meshOfs.x + vrot.m12 * meshOfs.y + vrot.m13 * meshOfs.z;
+			double oy = vrot.m21 * meshOfs.x + vrot.m22 * meshOfs.y + vrot.m23 * meshOfs.z;
+			double oz = vrot.m31 * meshOfs.x + vrot.m32 * meshOfs.y + vrot.m33 * meshOfs.z;
+			float tx = (float)(nvx + ox * scale);
+			float ty = (float)(nvy + oy * scale);
+			float tz = (float)(nvz + oz * scale);
+			float sS = (float)scale;
+			float model[16] = {
+				(float)(vrot.m11 * sS), (float)(vrot.m21 * sS), (float)(vrot.m31 * sS), 0.0f,
+				(float)(vrot.m12 * sS), (float)(vrot.m22 * sS), (float)(vrot.m32 * sS), 0.0f,
+				(float)(vrot.m13 * sS), (float)(vrot.m23 * sS), (float)(vrot.m33 * sS), 0.0f,
+				tx, ty, tz, 1.0f
+			};
+			glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(s_shadowShader, "uModel"),
+			                   1, GL_FALSE, model);
+
+			for (const CachedMeshGroup &cmg : cached->groups) {
+				if (!cmg.vao || cmg.indexCount == 0) continue;
+				glBindVertexArray(cmg.vao);
+				glDrawElements(GL_TRIANGLES, cmg.indexCount, GL_UNSIGNED_INT, 0);
+			}
+		}
+		glBindVertexArray(0);
+		glUseProgram(0);
+		s_shadowMap->EndPass();
+	}
+
+	// ----- Main pass ---------------------------------------------------------
 	glUseProgram(activeShader);
 	glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(activeShader, "uViewProj"), 1, GL_FALSE, vp);
 	glUniform3fv(s_shaderMgr->GetUniformLoc(activeShader, "uSunDir"), 1, sunDir);
+
+	// Shadow-map sampling: bind the depth target + its light VP on the PBR
+	// shader. shadowsReady implies pbrActive so we only do this on the PBR
+	// path; the legacy shader doesn't declare uShadowMap.
+	if (shadowsReady) {
+		glActiveTexture(GL_TEXTURE3);
+		glBindTexture(GL_TEXTURE_2D, s_shadowMap->GetDepthTexture());
+		glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uShadowMap"), 3);
+		glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(activeShader, "uLightVP"),
+		                   1, GL_FALSE, s_shadowMap->GetLightVP());
+		glActiveTexture(GL_TEXTURE0);
+	}
+
+	// Bind the IBL environment cubemap once per vessel. The legacy shader
+	// doesn't sample samplerCubes but the driver is happy with an unused
+	// sampler bound — we just leave matHasEnvMap=0 so the PBR fragment
+	// shader skips the IBL lookup when the bake hasn't finished yet.
+	const bool envReady = pbrActive && s_envMap && s_envMap->IsReady();
+	if (pbrActive) {
+		glActiveTexture(GL_TEXTURE2);
+		glBindTexture(GL_TEXTURE_CUBE_MAP,
+		              envReady ? s_envMap->GetPrefilterCube() : 0);
+		glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uEnvMap"), 2);
+		glActiveTexture(GL_TEXTURE0);
+	}
 
 	DWORD nMesh = vessel->GetMeshCount();
 	for (DWORD m = 0; m < nMesh; m++) {
@@ -211,7 +408,6 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 		};
 		glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(activeShader, "uModel"), 1, GL_FALSE, model);
 
-		DWORD nMat = oapiMeshMaterialCount(hMesh);
 		DWORD nTex = oapiMeshTextureCount(hMesh);
 
 		for (DWORD g = 0; g < (DWORD)cached->groups.size(); g++) {
@@ -220,46 +416,19 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 
 			MESHGROUPEX *grp = oapiMeshGroupEx(hMesh, g);
 
-			// Set material uniforms
-			float diffuse[4] = {0.8f, 0.8f, 0.8f, 1.0f};
-			float emissive[3] = {0.0f, 0.0f, 0.0f};
-			float specular[4] = {0.3f, 0.3f, 0.3f, 20.0f};
-			float reflect[3] = {0.04f, 0.04f, 0.04f};
-			float roughness = 0.5f;
-			float metalness = 0.0f;
-
-			if (grp && grp->MtrlIdx > 0 && grp->MtrlIdx <= nMat) {
-				MATERIAL *mat = oapiMeshMaterial(hMesh, grp->MtrlIdx - 1);
-				if (mat) {
-					diffuse[0] = mat->diffuse.r; diffuse[1] = mat->diffuse.g;
-					diffuse[2] = mat->diffuse.b; diffuse[3] = mat->diffuse.a;
-					emissive[0] = mat->emissive.r; emissive[1] = mat->emissive.g;
-					emissive[2] = mat->emissive.b;
-					specular[0] = mat->specular.r; specular[1] = mat->specular.g;
-					specular[2] = mat->specular.b; specular[3] = mat->power;
-					// Convert specular power to roughness (approximate)
-					if (mat->power > 1.0f)
-						roughness = 1.0f - clamp((float)(log2(mat->power) / 12.0f), 0.0f, 1.0f);
-				}
-			}
-			glUniform4fv(s_shaderMgr->GetUniformLoc(activeShader, "uDiffuse"), 1, diffuse);
-			glUniform3fv(s_shaderMgr->GetUniformLoc(activeShader, "uEmissive"), 1, emissive);
-
-			if (activeShader == s_pbrShader) {
-				// PBR-specific uniforms
-				glUniform4fv(s_shaderMgr->GetUniformLoc(activeShader, "uSpecular"), 1, specular);
-				glUniform3fv(s_shaderMgr->GetUniformLoc(activeShader, "uReflect"), 1, reflect);
-				glUniform1f(s_shaderMgr->GetUniformLoc(activeShader, "uRoughness"), roughness);
-				glUniform1f(s_shaderMgr->GetUniformLoc(activeShader, "uMetalness"), metalness);
-				// No additional texture maps yet — set all to false
-				glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uHasNormalMap"), 0);
-				glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uHasSpecularMap"), 0);
-				glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uHasEmissiveMap"), 0);
-				glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uHasRoughnessMap"), 0);
-				glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uHasMetalnessMap"), 0);
-				glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uHasEnvMap"), 0);
+			// Build the std140 Material block: defaults + Orbiter MESH
+			// material + any runtime override installed by vessel modules
+			// through clbkSetMeshMaterialEx.
+			UBOMaterialData matData;
+			BuildMaterialData(matData, hMesh, g);
+			if (grp && grp->MtrlIdx > 0) {
+				MaterialStore::Instance().Apply(
+					matData, (DEVMESHHANDLE)hMesh, grp->MtrlIdx - 1);
 			}
 
+			// Diffuse texture sampling is driven by matHasDiffuse inside the
+			// shader; the sampler itself still needs a traditional binding
+			// (GLSL 410 forbids opaque types in uniform blocks).
 			bool hasTexture = false;
 			if (grp && grp->TexIdx > 0 && grp->TexIdx <= nTex) {
 				SURFHANDLE hSurf = oapiGetTextureHandle(hMesh, grp->TexIdx);
@@ -276,9 +445,11 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 					}
 				}
 			}
-			GLint htLoc = s_shaderMgr->GetUniformLoc(activeShader,
-				activeShader == s_pbrShader ? "uHasDiffuseTex" : "uHasTexture");
-			glUniform1i(htLoc, hasTexture ? 1 : 0);
+			matData.hasDiffuse = hasTexture ? 1 : 0;
+			matData.hasTangent = cmg.hasTangent ? 1 : 0;
+			matData.hasEnvMap  = envReady ? 1 : 0;
+
+			s_shaderMgr->UpdateUBO(s_materialUBO, sizeof(matData), &matData);
 
 			glBindVertexArray(cmg.vao);
 			glDrawElements(GL_TRIANGLES, cmg.indexCount, GL_UNSIGNED_INT, 0);

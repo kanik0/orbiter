@@ -21,6 +21,46 @@ ShaderMgr *OGLParticleStream::s_shaderMgr = nullptr;
 
 static bool FileExists(const char *p) { struct stat st; return stat(p, &st) == 0; }
 
+// Map stream level (0..1) to particle alpha envelope using the
+// PARTICLESTREAMSPEC::LEVELMAP enum. Defaults to the linear mapping so
+// modules that leave `levelmap` zero-initialised still get a sensible curve.
+static float MapLevel(double level, PARTICLESTREAMSPEC::LEVELMAP m,
+                      double lmin, double lmax)
+{
+	double l = level < 0.0 ? 0.0 : (level > 1.0 ? 1.0 : level);
+	switch (m) {
+	case PARTICLESTREAMSPEC::LVL_FLAT:
+		return 1.0f;
+	case PARTICLESTREAMSPEC::LVL_SQRT:
+		return (float)std::sqrt(l);
+	case PARTICLESTREAMSPEC::LVL_PLIN: {
+		if (lmax <= lmin) return (l >= lmax) ? 1.0f : 0.0f;
+		double t = (l - lmin) / (lmax - lmin);
+		return (float)(t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t));
+	}
+	case PARTICLESTREAMSPEC::LVL_PSQRT: {
+		if (lmax <= lmin) return (l >= lmax) ? 1.0f : 0.0f;
+		double t = (l - lmin) / (lmax - lmin);
+		t = t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t);
+		return (float)std::sqrt(t);
+	}
+	case PARTICLESTREAMSPEC::LVL_LIN:
+	default:
+		return (float)l;
+	}
+}
+
+// Fade-in / plateau / fade-out envelope over [0..1] normalised particle age.
+// Much smoother than 1-t — matches the curve the Windows Particle.fx uses.
+static inline float LifeCurve(float t)
+{
+	if (t <= 0.0f) return 0.0f;
+	if (t >= 1.0f) return 0.0f;
+	const float fadeIn  = t < 0.15f ? t / 0.15f : 1.0f;
+	const float fadeOut = t > 0.60f ? (1.0f - t) / 0.40f : 1.0f;
+	return fadeIn * fadeOut;
+}
+
 void OGLParticleStream::InitShared(ShaderMgr *shaderMgr, const std::string &texturePath)
 {
 	if (s_initialized) return;
@@ -106,11 +146,22 @@ void OGLParticleStream::EmitParticle(double simT)
 		p.vel = { ldir.x * v0, ldir.y * v0, ldir.z * v0 };
 	}
 
-	p.size = (float)(m_spec.srcsize * (*level));
-	p.alpha = 1.0f;
-	p.age = 0;
+	p.size     = (float)(m_spec.srcsize * (*level));
+	p.age      = 0.0f;
 	p.lifetime = (float)m_spec.lifetime;
-	if (p.lifetime <= 0) p.lifetime = 2.0f;
+	if (p.lifetime <= 0.0f) p.lifetime = 2.0f;
+
+	// Envelope from stream level, clamped to [0,1].
+	p.streamAlpha = MapLevel(*level, m_spec.levelmap, m_spec.lmin, m_spec.lmax);
+	p.alpha       = p.streamAlpha;
+
+	// Birth colour: emissive plumes start near-white hot, diffuse smoke
+	// starts bright and drifts toward grey in the Update() tint shift.
+	if (m_spec.ltype == PARTICLESTREAMSPEC::EMISSIVE) {
+		p.tint[0] = 1.00f; p.tint[1] = 0.95f; p.tint[2] = 0.80f;
+	} else {
+		p.tint[0] = p.tint[1] = p.tint[2] = 1.0f;
+	}
 
 	// Add random spread
 	float spread = (float)m_spec.srcspread;
@@ -142,22 +193,34 @@ void OGLParticleStream::Update(double simT, double dt)
 			continue;
 		}
 
-		// Move
+		// Advect
 		it->pos.x += it->vel.x * dt;
 		it->pos.y += it->vel.y * dt;
 		it->pos.z += it->vel.z * dt;
 
-		// Grow
-		it->size += (float)(m_spec.growthrate * dt);
+		// Growth rate is in m/s; clamp negative growth to zero because a
+		// shrinking smoke puff looks wrong next to a bloomed core.
+		if (m_spec.growthrate > 0.0)
+			it->size += (float)(m_spec.growthrate * dt);
 
-		// Fade
-		float t = it->age / it->lifetime;
-		it->alpha = 1.0f - t;
+		// Life-curve envelope (fade in + hold + fade out).
+		const float t = it->age / it->lifetime;
+		it->alpha = it->streamAlpha * LifeCurve(t);
 
-		// Atmospheric slowdown
+		// DIFFUSE streams dissipate toward neutral grey — simulates the
+		// optical thinning of a real contrail / exhaust smoke tail.
+		if (m_spec.ltype != PARTICLESTREAMSPEC::EMISSIVE) {
+			const float k = 0.55f * t;
+			it->tint[0] = 1.0f - k;
+			it->tint[1] = 1.0f - k;
+			it->tint[2] = 1.0f - k;
+		}
+
+		// Atmospheric slowdown — spec value is in 1/s, clamp so a single
+		// long dt (paused-then-resumed simulation) never flips the sign.
 		if (m_spec.atmslowdown > 0) {
 			double drag = 1.0 - m_spec.atmslowdown * dt;
-			if (drag < 0.5) drag = 0.5;
+			if (drag < 0.2) drag = 0.2;
 			it->vel.x *= drag;
 			it->vel.y *= drag;
 			it->vel.z *= drag;
@@ -225,7 +288,8 @@ void OGLParticleStream::Render(const float *vp, const VECTOR3 &camPos)
 		glBindVertexArray(s_vao);
 		glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
 		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
-		glUniform1f(s_shaderMgr->GetUniformLoc(s_shader, "uAlpha"), p.alpha);
+		glUniform1f (s_shaderMgr->GetUniformLoc(s_shader, "uAlpha"), p.alpha);
+		glUniform3fv(s_shaderMgr->GetUniformLoc(s_shader, "uTint"),  1, p.tint);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	}
 

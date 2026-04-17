@@ -17,14 +17,22 @@ namespace ogl {
 
 class ShaderMgr;
 
-// A single particle in the stream
+// A single particle in the stream.
+//
+// `streamAlpha` captures the stream level → alpha mapping evaluated at
+// spawn time (see PARTICLESTREAMSPEC::LEVELMAP). It's kept constant over
+// the particle's life; the per-frame opacity is streamAlpha * lifeCurve(t).
+// `tint0` holds the colour at birth — for DIFFUSE streams we interpolate
+// toward a desaturated grey over life to sell smoke dissipation.
 struct Particle {
-	VECTOR3 pos;       // global position
-	VECTOR3 vel;       // velocity
-	float size;        // current size
-	float alpha;       // current opacity
-	float age;         // seconds since creation
-	float lifetime;    // max lifetime
+	VECTOR3 pos;         // global position
+	VECTOR3 vel;         // velocity
+	float   size;        // current size [m]
+	float   streamAlpha; // envelope at spawn (0..1)
+	float   alpha;       // current opacity after the life curve
+	float   age;         // seconds since creation
+	float   lifetime;    // max lifetime
+	float   tint[3];     // birth colour — drifts toward grey for DIFFUSE
 };
 
 class OGLParticleStream : public oapi::ParticleStream {

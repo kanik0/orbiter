@@ -18,11 +18,20 @@ class ShaderMgr;
 class OGLCelSphere;
 class OGLvPlanet;
 class OGLvVessel;
+class OGLEnvMap;
 
 class OGLScene {
 public:
 	OGLScene(ShaderMgr *shaderMgr);
 	~OGLScene();
+
+	OGLEnvMap *GetEnvMap() const { return m_envMap; }
+
+	// Sun position in NDC coordinates as projected by the last frame's VP.
+	// `visible` is false when the sun ended up behind the camera.
+	void GetSunNDC(float &x, float &y, bool &visible) const {
+		x = m_lastSunNDC[0]; y = m_lastSunNDC[1]; visible = m_lastSunVisible;
+	}
 
 	// Initialize the scene: create shared resources, build object lists.
 	// texturePath = base directory for textures.
@@ -41,9 +50,19 @@ private:
 	// Celestial sphere (starfield)
 	OGLCelSphere *m_celSphere;
 
+	// IBL environment (prefiltered cubemap shared across every vessel).
+	OGLEnvMap *m_envMap;
+	bool m_envMapBaked;
+
 	// Visual objects
 	std::vector<OGLvPlanet*> m_planets;
 	std::vector<OGLvVessel*> m_vessels;
+	std::vector<class OGLvBase*> m_bases;
+
+	// Sun screen position cached each frame for the post-process lens-flare
+	// pass. (-1..1) in NDC; visible=false when behind the camera.
+	float m_lastSunNDC[2];
+	bool  m_lastSunVisible;
 
 	bool m_initialized;
 

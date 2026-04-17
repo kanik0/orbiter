@@ -175,6 +175,10 @@ private:
 	void BlitQuad(OGLSurface *tgt, DWORD tgtx, DWORD tgty, DWORD tgtw, DWORD tgth,
 	              OGLSurface *src, DWORD srcx, DWORD srcy, DWORD srcw, DWORD srch,
 	              DWORD flag) const;
+
+	// Opt-in round-trip of an RGBA8 render target: create → clear →
+	// readback center pixel → log PASS/FAIL. Gated by OGL_M1_SELFTEST=1.
+	void RunM1SelfTest();
 };
 
 } // namespace ogl

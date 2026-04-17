@@ -23,6 +23,7 @@ int OGLvPlanet::s_sphereIndexCount = 0;
 GLuint OGLvPlanet::s_texPlanetShader = 0;
 GLuint OGLvPlanet::s_texSphereVAO = 0, OGLvPlanet::s_texSphereVBO = 0, OGLvPlanet::s_texSphereEBO = 0;
 int OGLvPlanet::s_texSphereIndexCount = 0;
+GLuint OGLvPlanet::s_cloudShader = 0;
 GLuint OGLvPlanet::s_ringShader = 0;
 GLuint OGLvPlanet::s_ringVAO = 0, OGLvPlanet::s_ringVBO = 0, OGLvPlanet::s_ringEBO = 0;
 int OGLvPlanet::s_ringIndexCount = 0;
@@ -124,6 +125,9 @@ void OGLvPlanet::InitShared(ShaderMgr *shaderMgr, const std::string &texturePath
 	s_texPlanetShader = shaderMgr->LoadProgram("texplanet", "texplanet.vert", "texplanet.frag");
 	CreateTexturedSphere(64, 32, s_texSphereVAO, s_texSphereVBO, s_texSphereEBO, s_texSphereIndexCount);
 
+	// Cloud shell reuses the textured-sphere geometry; only the shader differs.
+	s_cloudShader = shaderMgr->LoadProgram("clouds", "clouds.vert", "clouds.frag");
+
 	InitRingsShared(shaderMgr, texturePath);
 }
 
@@ -192,7 +196,9 @@ void OGLvPlanet::InitRingsShared(ShaderMgr *shaderMgr, const std::string &textur
 // --- Instance methods ---
 
 OGLvPlanet::OGLvPlanet(OBJHANDLE hObj, ShaderMgr *shaderMgr)
-	: OGLvObject(hObj, shaderMgr), m_texture(nullptr), m_tileMgr(nullptr), m_atmo(nullptr)
+	: OGLvObject(hObj, shaderMgr),
+	  m_texture(nullptr), m_cloudTex(nullptr), m_nightTex(nullptr),
+	  m_tileMgr(nullptr), m_atmo(nullptr)
 {
 	// Initialize atmosphere for planets that have one
 	if (oapiGetObjectType(hObj) == OBJTP_PLANET)
@@ -202,6 +208,8 @@ OGLvPlanet::OGLvPlanet(OBJHANDLE hObj, ShaderMgr *shaderMgr)
 OGLvPlanet::~OGLvPlanet()
 {
 	delete m_texture;
+	delete m_cloudTex;
+	delete m_nightTex;
 	delete m_tileMgr;
 	delete m_atmo;
 }
@@ -258,6 +266,51 @@ void OGLvPlanet::LoadTexture(const std::string &texturePath)
 	fprintf(stderr, "[OGLvPlanet] No texture found for '%s'\n", name);
 }
 
+void OGLvPlanet::LoadCloudTexture(const std::string &texturePath)
+{
+	char name[64];
+	oapiGetObjectName(m_hObj, name, 64);
+
+	// Only bodies flagged by the module system as having clouds participate
+	// in the cloud pass; this keeps the loader from probing every rock for a
+	// cloud sheet.
+	const void *flag = oapiGetObjectParam(m_hObj, OBJPRM_PLANET_HASCLOUDS);
+	bool hasClouds = (flag && *(const bool*)flag);
+	if (!hasClouds) return;
+
+	const char *extensions[] = { "_cloud.tex", "_cloud.dds", "_cloud.bmp", nullptr };
+	for (int i = 0; extensions[i]; i++) {
+		std::string tryPath = texturePath + name + extensions[i];
+		if (FileExists(tryPath.c_str())) {
+			m_cloudTex = OGLTexture::LoadTexture(tryPath.c_str());
+			if (m_cloudTex) {
+				fprintf(stderr, "[OGLvPlanet] Loaded clouds '%s' for %s\n",
+				        tryPath.c_str(), name);
+				return;
+			}
+		}
+	}
+}
+
+void OGLvPlanet::LoadNightTexture(const std::string &texturePath)
+{
+	char name[64];
+	oapiGetObjectName(m_hObj, name, 64);
+
+	const char *extensions[] = { "_night.tex", "_night.dds", "_night.bmp", nullptr };
+	for (int i = 0; extensions[i]; i++) {
+		std::string tryPath = texturePath + name + extensions[i];
+		if (FileExists(tryPath.c_str())) {
+			m_nightTex = OGLTexture::LoadTexture(tryPath.c_str());
+			if (m_nightTex) {
+				fprintf(stderr, "[OGLvPlanet] Loaded night '%s' for %s\n",
+				        tryPath.c_str(), name);
+				return;
+			}
+		}
+	}
+}
+
 void OGLvPlanet::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &sunPos)
 {
 	if (!s_sharedInitialized) return;
@@ -270,7 +323,7 @@ void OGLvPlanet::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 		MATRIX3 planetRot;
 		oapiGetRotationMatrix(m_hObj, &planetRot);
 		m_tileMgr->Render(vp, camPos, sunPos, planetRadius, planetRot);
-		// Render atmospheric haze after surface
+		RenderClouds(vp, camPos, sunPos);
 		if (m_atmo && m_atmo->HasAtmosphere()) {
 			VECTOR3 ppos;
 			oapiGetGlobalPos(m_hObj, &ppos);
@@ -318,6 +371,18 @@ void OGLvPlanet::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, m_texture->texId);
 		glUniform1i(s_shaderMgr->GetUniformLoc(s_texPlanetShader, "uTexture"), 0);
+
+		// Night-lights overlay. Bind to TEXTURE1 either the real night map
+		// or the day texture as a valid-but-ignored placeholder so the
+		// sampler unit never goes unbound (macOS GL is strict about this).
+		const bool hasNight = m_nightTex && m_nightTex->texId;
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, hasNight ? m_nightTex->texId : m_texture->texId);
+		glUniform1i(s_shaderMgr->GetUniformLoc(s_texPlanetShader, "uNightTex"),       1);
+		glUniform1i(s_shaderMgr->GetUniformLoc(s_texPlanetShader, "uHasNight"),       hasNight ? 1 : 0);
+		glUniform1f(s_shaderMgr->GetUniformLoc(s_texPlanetShader, "uNightIntensity"), 1.5f);
+		glActiveTexture(GL_TEXTURE0);   // leave the active unit where callers expect it
+
 		glBindVertexArray(s_texSphereVAO);
 		glDrawElements(GL_TRIANGLES, s_texSphereIndexCount, GL_UNSIGNED_INT, 0);
 	} else {
@@ -348,6 +413,8 @@ void OGLvPlanet::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glUseProgram(0);
 
+	RenderClouds(vp, camPos, sunPos);
+
 	// Render atmospheric haze
 	if (m_atmo && m_atmo->HasAtmosphere()) {
 		VECTOR3 ppos;
@@ -357,6 +424,96 @@ void OGLvPlanet::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 
 	// Render rings if applicable
 	RenderRings(vp, camPos, sunPos);
+}
+
+void OGLvPlanet::RenderClouds(const float *vp, const VECTOR3 &camPos, const VECTOR3 &sunPos)
+{
+	if (!m_cloudTex || !m_cloudTex->texId || !s_cloudShader || !s_texSphereVAO)
+		return;
+
+	VECTOR3 pos;
+	oapiGetGlobalPos(m_hObj, &pos);
+
+	const double rx   = pos.x - camPos.x;
+	const double ry   = pos.y - camPos.y;
+	const double rz   = pos.z - camPos.z;
+	const double dist = std::sqrt(rx * rx + ry * ry + rz * rz);
+	const double size = oapiGetSize(m_hObj);
+	if (dist < size * 0.5) return;   // camera inside planet (fallback sanity check)
+
+	// Cloud shell altitude: OBJPRM if available, otherwise the common
+	// Earth-analogue ~8 km (scales with planet size so gas giants get a
+	// sensible envelope too).
+	double cloudAlt = size * 0.0015;
+	if (const void *p = oapiGetObjectParam(m_hObj, OBJPRM_PLANET_CLOUDALT); p)
+		cloudAlt = *(const double *)p;
+
+	// Distance normalisation matching the surface pass.
+	const double normDist = 10.0;
+	const double scale    = normDist / dist;
+	const float  nrx      = float(rx * scale);
+	const float  nry      = float(ry * scale);
+	const float  nrz      = float(rz * scale);
+	const float  ns       = float((size + cloudAlt) * scale);
+
+	const float model[16] = {
+		ns,   0,    0,    0,
+		0,    ns,   0,    0,
+		0,    0,    ns,   0,
+		nrx,  nry,  nrz,  1
+	};
+
+	// Sun direction (same formula as the surface pass).
+	double sdx = sunPos.x - pos.x;
+	double sdy = sunPos.y - pos.y;
+	double sdz = sunPos.z - pos.z;
+	double sdist = std::sqrt(sdx * sdx + sdy * sdy + sdz * sdz);
+	if (sdist > 0) { sdx /= sdist; sdy /= sdist; sdz /= sdist; }
+	const float sunDir[3] = { float(sdx), float(sdy), float(sdz) };
+
+	// Slow differential drift — the simulation clock ticks real seconds in
+	// Orbiter, so a 1e-5 factor gives roughly one texture revolution per
+	// ~28 real-time hours, plenty slow to keep time-accelerated orbits
+	// from turning clouds into a shear band.
+	const float uvOffset = float(std::fmod(oapiGetSimTime() * 1e-5, 1.0));
+
+	// Default cloud tint is plain white; individual bodies can override
+	// via OBJPRM_PLANET_ATMTINTCOLOUR which already drives the atmosphere
+	// colour — reuse it here so Venus' sulphur clouds stay yellow.
+	float tint[3] = { 1.0f, 1.0f, 1.0f };
+	if (const void *t = oapiGetObjectParam(m_hObj, OBJPRM_PLANET_ATMTINTCOLOUR); t) {
+		const VECTOR3 *tv = (const VECTOR3 *)t;
+		tint[0] = float(tv->x); tint[1] = float(tv->y); tint[2] = float(tv->z);
+	}
+
+	glUseProgram(s_cloudShader);
+	glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(s_cloudShader, "uViewProj"), 1, GL_FALSE, vp);
+	glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(s_cloudShader, "uModel"),    1, GL_FALSE, model);
+	glUniform3fv(s_shaderMgr->GetUniformLoc(s_cloudShader, "uSunDir"),   1, sunDir);
+	glUniform1f (s_shaderMgr->GetUniformLoc(s_cloudShader, "uUVOffset"), uvOffset);
+	glUniform3fv(s_shaderMgr->GetUniformLoc(s_cloudShader, "uTint"),     1, tint);
+	glUniform1f (s_shaderMgr->GetUniformLoc(s_cloudShader, "uOpacity"),  0.9f);
+	glUniform1f (s_shaderMgr->GetUniformLoc(s_cloudShader, "uAmbient"),  0.08f);
+
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, m_cloudTex->texId);
+	glUniform1i(s_shaderMgr->GetUniformLoc(s_cloudShader, "uCloudTex"), 0);
+
+	// Clouds occlude what's behind them but should not write depth — the
+	// atmosphere pass downstream needs to see the planet's depth, not the
+	// cloud shell's, otherwise the scatter integration stops on the cloud.
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glDepthMask(GL_FALSE);
+
+	glBindVertexArray(s_texSphereVAO);
+	glDrawElements(GL_TRIANGLES, s_texSphereIndexCount, GL_UNSIGNED_INT, 0);
+	glBindVertexArray(0);
+
+	glDepthMask(GL_TRUE);
+	glDisable(GL_BLEND);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glUseProgram(0);
 }
 
 void OGLvPlanet::RenderRings(const float *vp, const VECTOR3 &camPos, const VECTOR3 &sunPos)

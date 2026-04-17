@@ -8,6 +8,8 @@
 #include "OGLCelSphere.h"
 #include "OGLvPlanet.h"
 #include "OGLvVessel.h"
+#include "OGLvBase.h"
+#include "OGLEnvMap.h"
 #include <cstdio>
 #include <cmath>
 
@@ -15,8 +17,11 @@ namespace ogl {
 
 OGLScene::OGLScene(ShaderMgr *shaderMgr)
 	: m_shaderMgr(shaderMgr), m_celSphere(nullptr),
-	  m_initialized(false), m_objectsPopulated(false)
+	  m_envMap(nullptr), m_envMapBaked(false),
+	  m_initialized(false), m_objectsPopulated(false),
+	  m_lastSunVisible(false)
 {
+	m_lastSunNDC[0] = m_lastSunNDC[1] = 0.0f;
 }
 
 OGLScene::~OGLScene()
@@ -36,6 +41,11 @@ void OGLScene::Init(const std::string &texturePath)
 	m_celSphere = new OGLCelSphere(m_shaderMgr);
 	m_celSphere->Init(4000);
 
+	// IBL env map — allocated lazily on first render frame so we can bake
+	// with the correct sun direction (Init needs vp/scene state).
+	m_envMap = new OGLEnvMap();
+	m_envMapBaked = false;
+
 	m_initialized = true;
 }
 
@@ -43,11 +53,17 @@ void OGLScene::Release()
 {
 	for (auto *p : m_planets) delete p;
 	m_planets.clear();
+	for (auto *b : m_bases) delete b;
+	m_bases.clear();
 	for (auto *v : m_vessels) delete v;
 	m_vessels.clear();
 
 	delete m_celSphere;
 	m_celSphere = nullptr;
+
+	delete m_envMap;
+	m_envMap = nullptr;
+	m_envMapBaked = false;
 
 	OGLvPlanet::ReleaseShared();
 	OGLvVessel::ReleaseShared();
@@ -69,11 +85,25 @@ void OGLScene::PopulateObjects()
 		if (type == OBJTP_PLANET || type == OBJTP_STAR) {
 			OGLvPlanet *vp = new OGLvPlanet(hObj, m_shaderMgr);
 			vp->LoadTexture(m_texturePath);
+			vp->LoadCloudTexture(m_texturePath);
+			vp->LoadNightTexture(m_texturePath);
 			vp->InitTiles(m_texturePath);
 			m_planets.push_back(vp);
+
+			// Enumerate all bases (spaceports) on this planet so their
+			// pad beacons can be drawn on approach.
+			if (type == OBJTP_PLANET) {
+				DWORD nBase = oapiGetBaseCount(hObj);
+				for (DWORD b = 0; b < nBase; b++) {
+					OBJHANDLE hBase = oapiGetBaseByIndex(hObj, (int)b);
+					if (hBase)
+						m_bases.push_back(new OGLvBase(hBase, m_shaderMgr));
+				}
+			}
 		}
 	}
-	fprintf(stderr, "[OGLScene] Populated %zu planets/stars\n", m_planets.size());
+	fprintf(stderr, "[OGLScene] Populated %zu planets/stars, %zu bases\n",
+	        m_planets.size(), m_bases.size());
 }
 
 void OGLScene::BuildViewProjection(DWORD viewW, DWORD viewH,
@@ -141,9 +171,63 @@ void OGLScene::RenderScene(DWORD viewW, DWORD viewH)
 	OBJHANDLE hSun = oapiGetObjectByName((char*)"Sun");
 	if (hSun) oapiGetGlobalPos(hSun, &sunPos);
 
-	// 1) Render starfield (at infinite distance)
-	if (m_celSphere)
-		m_celSphere->Render(vp);
+	// Project the sun into NDC so the post-process lens-flare pass can
+	// place its sprite. The scene uses distance-normalised camera-relative
+	// coords (camera at origin, body translations scaled by scale=normDist/dist)
+	// — the sun is *the* distant body, so the direction vector suffices:
+	// a point at distance normDist along sunDir is a faithful proxy.
+	{
+		double sdx = sunPos.x - camPos.x;
+		double sdy = sunPos.y - camPos.y;
+		double sdz = sunPos.z - camPos.z;
+		double sdl = std::sqrt(sdx * sdx + sdy * sdy + sdz * sdz);
+		if (sdl > 1e-9) {
+			const double normDist = 10.0; // must match OGLvPlanet / OGLTile
+			double px = (sdx / sdl) * normDist;
+			double py = (sdy / sdl) * normDist;
+			double pz = (sdz / sdl) * normDist;
+			// VP is column-major float[16]; build clip-space vector.
+			double cx = vp[0]*px + vp[4]*py + vp[8]*pz  + vp[12];
+			double cy = vp[1]*px + vp[5]*py + vp[9]*pz  + vp[13];
+			double cz = vp[2]*px + vp[6]*py + vp[10]*pz + vp[14];
+			double cw = vp[3]*px + vp[7]*py + vp[11]*pz + vp[15];
+			if (cw > 1e-6) {
+				m_lastSunNDC[0]   = float(cx / cw);
+				m_lastSunNDC[1]   = float(cy / cw);
+				m_lastSunVisible  = (cz / cw > -1.0 && cz / cw < 1.0) &&
+				                    std::fabs(m_lastSunNDC[0]) < 1.2 &&
+				                    std::fabs(m_lastSunNDC[1]) < 1.2;
+			} else {
+				m_lastSunVisible = false;
+			}
+		} else {
+			m_lastSunVisible = false;
+		}
+	}
+
+	// Bake the IBL environment on the first frame we know the sun position.
+	// The prefilter chain only needs to be rebuilt when the sun direction
+	// shifts significantly — currently we bake once and reuse; M9 follow-up
+	// can add periodic refresh when that becomes visible.
+	if (m_envMap && !m_envMapBaked) {
+		VECTOR3 sunDir = { sunPos.x - camPos.x,
+		                   sunPos.y - camPos.y,
+		                   sunPos.z - camPos.z };
+		if (m_envMap->Init(m_shaderMgr, sunDir)) {
+			OGLvVessel::SetEnvMap(m_envMap);
+			m_envMapBaked = true;
+		}
+	}
+
+	// 1) Render starfield + solar corona (at infinite distance). Sun NDC
+	//    comes from the projection block above; sim time drives the subtle
+	//    star twinkle and the corona ray rotation.
+	if (m_celSphere) {
+		const float simTime = (float)oapiGetSimTime();
+		m_celSphere->Render(vp, simTime,
+		                    m_lastSunNDC[0], m_lastSunNDC[1], m_lastSunVisible,
+		                    (int)viewW, (int)viewH);
+	}
 
 	// 2) Render planets (depth test off for distance-normalized rendering)
 	glDisable(GL_DEPTH_TEST);
@@ -152,6 +236,10 @@ void OGLScene::RenderScene(DWORD viewW, DWORD viewH)
 		planet->Render(vp, camPos, sunPos);
 	glEnable(GL_DEPTH_TEST);
 	glDepthMask(GL_TRUE);
+
+	// 2.1) Base beacons — runway/threshold lights at every base's pad.
+	for (auto *base : m_bases)
+		base->Render(vp, camPos, sunPos);
 
 	// 3) Render vessels
 	// Rebuild vessel list each frame (vessels can be created/destroyed)
