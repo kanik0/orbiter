@@ -380,7 +380,7 @@ Ogni milestone comincia con:
 | M8 | PBR vessel | B | ✅ | this branch |
 | M9 | IBL environment maps | B | ✅ | this branch |
 | M10 | Shadow mapping | B | ✅ | this branch |
-| M11 | Post-processing HDR | B | ☐ | — |
+| M11 | Post-processing HDR | B | ✅ | this branch |
 | M12 | Particle systems | B | ☐ | — |
 | M13 | Glare/corona | B | ☐ | — |
 | M14 | Runway lights+annotations | B | ☐ | — |

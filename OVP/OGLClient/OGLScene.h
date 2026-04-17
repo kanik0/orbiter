@@ -27,6 +27,12 @@ public:
 
 	OGLEnvMap *GetEnvMap() const { return m_envMap; }
 
+	// Sun position in NDC coordinates as projected by the last frame's VP.
+	// `visible` is false when the sun ended up behind the camera.
+	void GetSunNDC(float &x, float &y, bool &visible) const {
+		x = m_lastSunNDC[0]; y = m_lastSunNDC[1]; visible = m_lastSunVisible;
+	}
+
 	// Initialize the scene: create shared resources, build object lists.
 	// texturePath = base directory for textures.
 	void Init(const std::string &texturePath);
@@ -51,6 +57,11 @@ private:
 	// Visual objects
 	std::vector<OGLvPlanet*> m_planets;
 	std::vector<OGLvVessel*> m_vessels;
+
+	// Sun screen position cached each frame for the post-process lens-flare
+	// pass. (-1..1) in NDC; visible=false when behind the camera.
+	float m_lastSunNDC[2];
+	bool  m_lastSunVisible;
 
 	bool m_initialized;
 

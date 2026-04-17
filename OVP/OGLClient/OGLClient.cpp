@@ -154,9 +154,29 @@ void OGLClient::clbkRenderScene()
 	// mesh each frame.
 	MeshRegistry::Instance().LogStatsPeriodic();
 
-	// Render 3D scene (post-processing disabled for now — enable via config)
+	// M11 post-processing: route the 3D scene through the HDR RGBA16F FBO so
+	// bloom + tone map + lens flare can run before the frame hits the
+	// backbuffer. Opt-out via OGL_NO_POSTFX=1 for low-spec hardware.
+	static const bool s_postFxDisabled = []() {
+		const char *v = std::getenv("OGL_NO_POSTFX");
+		return v && v[0] == '1';
+	}();
+	const bool useHDR = m_postProcess && !s_postFxDisabled;
+
+	if (useHDR) {
+		m_postProcess->Resize(m_viewW, m_viewH);
+		m_postProcess->BeginScene();
+	}
+
 	if (m_scene)
 		m_scene->RenderScene(m_viewW, m_viewH);
+
+	if (useHDR) {
+		float sunX = 0.0f, sunY = 0.0f;
+		bool  sunVisible = false;
+		m_scene->GetSunNDC(sunX, sunY, sunVisible);
+		m_postProcess->EndScene(sunX, sunY, sunVisible);
+	}
 
 	Render2DOverlay();
 }

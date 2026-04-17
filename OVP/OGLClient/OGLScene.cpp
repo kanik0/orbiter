@@ -17,8 +17,10 @@ namespace ogl {
 OGLScene::OGLScene(ShaderMgr *shaderMgr)
 	: m_shaderMgr(shaderMgr), m_celSphere(nullptr),
 	  m_envMap(nullptr), m_envMapBaked(false),
-	  m_initialized(false), m_objectsPopulated(false)
+	  m_initialized(false), m_objectsPopulated(false),
+	  m_lastSunVisible(false)
 {
+	m_lastSunNDC[0] = m_lastSunNDC[1] = 0.0f;
 }
 
 OGLScene::~OGLScene()
@@ -153,6 +155,40 @@ void OGLScene::RenderScene(DWORD viewW, DWORD viewH)
 	VECTOR3 sunPos = {0, 0, 0};
 	OBJHANDLE hSun = oapiGetObjectByName((char*)"Sun");
 	if (hSun) oapiGetGlobalPos(hSun, &sunPos);
+
+	// Project the sun into NDC so the post-process lens-flare pass can
+	// place its sprite. The scene uses distance-normalised camera-relative
+	// coords (camera at origin, body translations scaled by scale=normDist/dist)
+	// — the sun is *the* distant body, so the direction vector suffices:
+	// a point at distance normDist along sunDir is a faithful proxy.
+	{
+		double sdx = sunPos.x - camPos.x;
+		double sdy = sunPos.y - camPos.y;
+		double sdz = sunPos.z - camPos.z;
+		double sdl = std::sqrt(sdx * sdx + sdy * sdy + sdz * sdz);
+		if (sdl > 1e-9) {
+			const double normDist = 10.0; // must match OGLvPlanet / OGLTile
+			double px = (sdx / sdl) * normDist;
+			double py = (sdy / sdl) * normDist;
+			double pz = (sdz / sdl) * normDist;
+			// VP is column-major float[16]; build clip-space vector.
+			double cx = vp[0]*px + vp[4]*py + vp[8]*pz  + vp[12];
+			double cy = vp[1]*px + vp[5]*py + vp[9]*pz  + vp[13];
+			double cz = vp[2]*px + vp[6]*py + vp[10]*pz + vp[14];
+			double cw = vp[3]*px + vp[7]*py + vp[11]*pz + vp[15];
+			if (cw > 1e-6) {
+				m_lastSunNDC[0]   = float(cx / cw);
+				m_lastSunNDC[1]   = float(cy / cw);
+				m_lastSunVisible  = (cz / cw > -1.0 && cz / cw < 1.0) &&
+				                    std::fabs(m_lastSunNDC[0]) < 1.2 &&
+				                    std::fabs(m_lastSunNDC[1]) < 1.2;
+			} else {
+				m_lastSunVisible = false;
+			}
+		} else {
+			m_lastSunVisible = false;
+		}
+	}
 
 	// Bake the IBL environment on the first frame we know the sun position.
 	// The prefilter chain only needs to be rebuilt when the sun direction
