@@ -333,6 +333,24 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 		}
 	}
 
+	// Cache the VC HUD binding. Unlike MFDs the HUD is an additive overlay:
+	// the group draws once with its base texture (window glass), then we
+	// re-draw the same geometry with the HUD surface and an additive blend
+	// so the transparent sketchpad background leaves the glass visible and
+	// only the painted strokes add colour — equivalent to the 0x100 screen
+	// type D3D9Client tags its HUD group with (VVessel.cpp:802-806).
+	DWORD hudMesh = (DWORD)-1, hudGroup = (DWORD)-1;
+	OGLSurface *hudSurf = nullptr;
+	if (bVC && s_gc) {
+		const VCHUDSPEC *hudspec = nullptr;
+		SURFHANDLE s = s_gc->GetVCHUDSurface(&hudspec);
+		if (s && hudspec) {
+			hudMesh  = hudspec->nmesh;
+			hudGroup = hudspec->ngroup;
+			hudSurf  = (OGLSurface*)s;
+		}
+	}
+
 	// ----- Shadow pre-pass (PBR path only) ----------------------------------
 	// Render the vessel's meshes into the shared shadow depth map from the
 	// sun's point of view. Both passes work in the distance-normalised frame
@@ -545,6 +563,36 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 
 			glBindVertexArray(cmg.vao);
 			glDrawElements(GL_TRIANGLES, cmg.indexCount, GL_UNSIGNED_INT, 0);
+
+			// VC HUD overlay: re-draw the matching group additively with the
+			// HUD surface on top. The sketchpad background is transparent so
+			// only stroked pixels contribute; the underlying window glass
+			// (just drawn above) stays visible.
+			if (internalpass && bVC && hudSurf && m == hudMesh && g == hudGroup) {
+				GLuint hudTexId = hudSurf->GetTexture();
+				if (hudTexId) {
+					glActiveTexture(GL_TEXTURE0);
+					glBindTexture(GL_TEXTURE_2D, hudTexId);
+					GLint texLoc = s_shaderMgr->GetUniformLoc(activeShader,
+						activeShader == s_pbrShader ? "uDiffuseTex" : "uTexture");
+					glUniform1i(texLoc, 0);
+
+					// Emissive-only material so the HUD strokes aren't
+					// modulated by diffuse lighting — HUD should read the
+					// same at any cockpit orientation.
+					UBOMaterialData hudMat = matData;
+					hudMat.hasDiffuse = 1;
+					hudMat.hasEnvMap  = 0;
+					s_shaderMgr->UpdateUBO(s_materialUBO, sizeof(hudMat), &hudMat);
+
+					glEnable(GL_BLEND);
+					glBlendFunc(GL_SRC_ALPHA, GL_ONE);  // additive, alpha-weighted
+					glDepthMask(GL_FALSE);
+					glDrawElements(GL_TRIANGLES, cmg.indexCount, GL_UNSIGNED_INT, 0);
+					glDepthMask(GL_TRUE);
+					glDisable(GL_BLEND);
+				}
+			}
 		}
 	}
 	} // end pass loop
