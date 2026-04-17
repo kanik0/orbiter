@@ -142,6 +142,11 @@ void OGLClient::clbkRenderScene()
 		m_viewH = h;
 	}
 
+	// Debug-only hot-reload: polls shader file mtimes every N frames and
+	// rebuilds affected programs in place. No-op in release builds.
+	if (m_shaderMgr)
+		m_shaderMgr->CheckReload();
+
 	// Render 3D scene (post-processing disabled for now — enable via config)
 	if (m_scene)
 		m_scene->RenderScene(m_viewW, m_viewH);
@@ -210,6 +215,10 @@ HWND OGLClient::clbkCreateRenderWindow()
 	// Initialize post-processing pipeline
 	m_postProcess = new OGLPostProcess(m_shaderMgr);
 	m_postProcess->Init(m_viewW, m_viewH);
+
+	// All shader programs are now linked; emit a one-shot summary so the
+	// log makes it obvious which programs, files and UBO blocks are live.
+	m_shaderMgr->LogStatus();
 
 	fprintf(stderr, "[OGLClient] Scene initialized\n");
 	return (HWND)m_sdlWindow;

@@ -176,6 +176,9 @@ EOF
 
 ## Next Steps (Priority Order)
 
+> **See [MACOS_ROADMAP.md](MACOS_ROADMAP.md) for the detailed 30-milestone plan (M0–M30) to achieve 100% Windows parity — graphics, audio, UX. Effort ~189gg single-dev, critical path ~75gg.**
+
+
 ### 1. ~~Fix Camera Z Convention~~ DONE
 View matrix fixed: V = flipZ * GRot^T. Fallback mesh caching fixed.
 Vessels now render correctly alongside planets and stars.
