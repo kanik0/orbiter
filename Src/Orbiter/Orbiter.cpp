@@ -62,6 +62,10 @@
 #else
 #include "SDLPlatform.h"
 #include "OGLClient.h"
+#include "OGLLaunchpad.h"
+#include "imgui.h"
+#include "backends/imgui_impl_sdl2.h"
+#include "backends/imgui_impl_opengl3.h"
 #include <OpenGL/gl.h>
 #endif
 #include <filesystem>
@@ -251,8 +255,21 @@ INT WINAPI WinMain (HINSTANCE hInstance, HINSTANCE, LPSTR strCmdLine, INT nCmdSh
 
 #else // !_WIN32 -- POSIX entry point (macOS/Linux)
 
+#include <signal.h>
+#include <execinfo.h>
+static void crashHandler(int sig) {
+	void *bt[30];
+	int n = backtrace(bt, 30);
+	fprintf(stderr, "\n=== CRASH: signal %d ===\n", sig);
+	backtrace_symbols_fd(bt, n, 2);
+	fprintf(stderr, "=== END CRASH ===\n");
+	_exit(1);
+}
+
 int main (int argc, char *argv[])
 {
+	signal(SIGSEGV, crashHandler);
+	signal(SIGABRT, crashHandler);
 	// On macOS, when launched as .app bundle or from Finder, CWD may not
 	// be the data directory. Resolve the executable's location and chdir
 	// to it so relative paths (./Config/, ./Textures/, etc.) work.
@@ -475,7 +492,13 @@ Orbiter::Orbiter ()
 			g_pOrbiter->OpenHelp (&DefHelpContext);			
 		});
 	RegisterMenuCmd("Save",     "MenuInfoBar/save.png",     [](void *) {g_pOrbiter->Quicksave();});
-	RegisterMenuCmd("Exit",     "MenuInfoBar/exit.png",     [](void *) {PostMessage(g_pOrbiter->GetRenderWnd(), WM_CLOSE, 0, 0);});
+	RegisterMenuCmd("Exit",     "MenuInfoBar/exit.png",     [](void *) {
+#ifdef _WIN32
+		PostMessage(g_pOrbiter->GetRenderWnd(), WM_CLOSE, 0, 0);
+#else
+		SDL_Event ev; ev.type = SDL_QUIT; SDL_PushEvent(&ev);
+#endif
+	});
 
 }
 
@@ -1217,9 +1240,82 @@ INT Orbiter::Run ()
 {
 #ifndef _WIN32
 	// SDL2 main loop
-	if (!pConfig->CfgCmdlinePrm.LaunchScenario.empty()) {
-			Launch (pConfig->CfgCmdlinePrm.LaunchScenario.c_str());
+
+	// If no scenario specified on command line, show ImGui Launchpad
+	if (pConfig->CfgCmdlinePrm.LaunchScenario.empty() && m_pSDL) {
+		ogl::OGLLaunchpad launchpadUI;
+		char cwd[1024];
+		std::string scnDir = "Scenarios";
+		if (getcwd(cwd, sizeof(cwd)))
+			scnDir = std::string(cwd) + "/Scenarios";
+		launchpadUI.ScanScenarios(scnDir);
+
+		// Dedicated Launchpad render loop using SDL+ImGui directly
+		// (no graphics client needed — just clear + ImGui overlay)
+		SDL_Window *sdlWin = m_pSDL->GetWindow();
+		SDL_GLContext glCtx = m_pSDL->GetGLContext();
+
+		IMGUI_CHECKVERSION();
+		ImGui::CreateContext();
+		ImGuiIO &io = ImGui::GetIO();
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+		io.ConfigFlags &= ~ImGuiConfigFlags_ViewportsEnable;
+		ImGui::StyleColorsDark();
+		ImGui_ImplSDL2_InitForOpenGL(sdlWin, glCtx);
+		ImGui_ImplOpenGL3_Init("#version 410");
+
+		bool lpRunning = true;
+		while (lpRunning) {
+			SDL_Event event;
+			while (SDL_PollEvent(&event)) {
+				ImGui_ImplSDL2_ProcessEvent(&event);
+				if (event.type == SDL_QUIT) lpRunning = false;
+				if (event.type == SDL_WINDOWEVENT &&
+					event.window.event == SDL_WINDOWEVENT_CLOSE)
+					lpRunning = false;
+			}
+
+			ImGui_ImplOpenGL3_NewFrame();
+			ImGui_ImplSDL2_NewFrame();
+			ImGui::NewFrame();
+
+			bool quit = false;
+			bool doLaunch = launchpadUI.Render(quit);
+
+			ImGui::Render();
+
+			int w, h;
+			SDL_GL_GetDrawableSize(sdlWin, &w, &h);
+			glViewport(0, 0, w, h);
+			glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
+			glClear(GL_COLOR_BUFFER_BIT);
+			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+			SDL_GL_SwapWindow(sdlWin);
+
+			if (doLaunch) {
+				pConfig->CfgCmdlinePrm.LaunchScenario = launchpadUI.GetSelectedScenario();
+				pConfig->CfgLogicPrm.bStartPaused = launchpadUI.GetStartPaused();
+				lpRunning = false;
+			}
+			if (quit) {
+				// User closed launchpad without launching
+				ImGui_ImplOpenGL3_Shutdown();
+				ImGui_ImplSDL2_Shutdown();
+				ImGui::DestroyContext();
+				if (m_pSDL) { m_pSDL->Shutdown(); delete m_pSDL; m_pSDL = nullptr; }
+				return 0;
+			}
 		}
+
+		ImGui_ImplOpenGL3_Shutdown();
+		ImGui_ImplSDL2_Shutdown();
+		ImGui::DestroyContext();
+	}
+
+	// Launch the selected scenario
+	if (!pConfig->CfgCmdlinePrm.LaunchScenario.empty()) {
+		Launch (pConfig->CfgCmdlinePrm.LaunchScenario.c_str());
+	}
 
 	bool running = true;
 	while (running) {
@@ -1248,7 +1344,6 @@ INT Orbiter::Run ()
 		}
 
 		if (!bSession) {
-			// If no scenario loaded, auto-launch (Current state) or just idle
 			SDL_Delay(16); // ~60fps idle
 		}
 	}
@@ -2641,7 +2736,17 @@ void Orbiter::KbdInputBuffered_System (char *kstate, DIDEVICEOBJECTDATA *dod, DW
 		else if (keymap.IsLogicalKey(key, kstate, OAPI_LKEY_DlgInfo))              pDlgMgr->EnsureEntry<DlgInfo>();
 		else if (keymap.IsLogicalKey(key, kstate, OAPI_LKEY_DlgMap))               pDlgMgr->EnsureEntry<DlgMap>();
 		else if (keymap.IsLogicalKey(key, kstate, OAPI_LKEY_DlgRecorder))          pDlgMgr->EnsureEntry<DlgRecorder>();
-		else if (keymap.IsLogicalKey(key, kstate, OAPI_LKEY_ToggleCamInternal))    SetView(g_focusobj, !g_camera->IsExternal());
+		else if (keymap.IsLogicalKey(key, kstate, OAPI_LKEY_ToggleCamInternal)) {
+#ifdef _WIN32
+			SetView(g_focusobj, !g_camera->IsExternal());
+#else
+			// Only allow external views on macOS until cockpit rendering is fully implemented
+			if (g_camera->IsExternal())
+				fprintf(stderr, "[Orbiter] Cockpit view not yet supported on macOS\n");
+			else
+				SetView(g_focusobj, true); // switch to external
+#endif
+		}
 		else if (keymap.IsLogicalKey(key, kstate, OAPI_LKEY_DlgVisHelper))         pDlgMgr->EnsureEntry<DlgOptions>()->SwitchPage("Visual helpers");
 		else if (keymap.IsLogicalKey(key, kstate, OAPI_LKEY_DlgCapture))           pDlgMgr->EnsureEntry<DlgCapture>();
 		else if (keymap.IsLogicalKey(key, kstate, OAPI_LKEY_DlgSelectVessel))      pDlgMgr->EnsureEntry<DlgFocus>();

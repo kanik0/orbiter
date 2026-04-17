@@ -11,6 +11,7 @@ HMODULE MemStat::hLib = 0;
 
 MemStat::MemStat ()
 {
+#ifdef _WIN32
 	if (!bLib) {
 		hLib = LoadLibrary ("Psapi.dll");
 		bLib = true;
@@ -22,6 +23,13 @@ MemStat::MemStat ()
 	} else {
 		pGetProcessMemoryInfo = 0;
 	}
+#else
+	// Psapi.dll is Windows-only; memory stats not available on macOS/Linux
+	bLib = true;
+	hProc = 0;
+	active = false;
+	pGetProcessMemoryInfo = 0;
+#endif
 }
 
 MemStat::~MemStat ()

@@ -12,34 +12,15 @@
 #ifndef _WIN32
 #include <SDL.h>
 #include <OpenGL/gl3.h>
-#include <map>
 #include <string>
-#include <vector>
 #endif
 
-struct OGLTexture;
-
-// Cached OpenGL buffers for a single mesh group
-struct CachedMeshGroup {
-	GLuint vao;
-	GLuint vbo;
-	GLuint ebo;
-	int indexCount;
-};
-
-// Cached OpenGL buffers for an entire mesh (all groups)
-struct CachedMesh {
-	std::vector<CachedMeshGroup> groups;
-	~CachedMesh() {
-		for (auto &g : groups) {
-			if (g.vao) glDeleteVertexArrays(1, &g.vao);
-			if (g.vbo) glDeleteBuffers(1, &g.vbo);
-			if (g.ebo) glDeleteBuffers(1, &g.ebo);
-		}
-	}
-};
-
 namespace ogl {
+
+class ShaderMgr;
+class OGLScene;
+class OGLSurface;
+class OGLPostProcess;
 
 class OGLClient : public oapi::GraphicsClient {
 public:
@@ -76,6 +57,50 @@ public:
 	bool clbkReleaseSurface(SURFHANDLE surf) override;
 	SURFHANDLE clbkCreateSurfaceEx(DWORD w, DWORD h, DWORD attrib) override;
 	bool clbkGetSurfaceSize(SURFHANDLE surf, DWORD *w, DWORD *h) override;
+	void clbkIncrSurfaceRef(SURFHANDLE surf) override;
+	bool clbkSetSurfaceColourKey(SURFHANDLE surf, DWORD ckey) override;
+	DWORD clbkGetDeviceColour(BYTE r, BYTE g, BYTE b) override;
+
+	// === Surface blitting ===
+
+	bool clbkBlt(SURFHANDLE tgt, DWORD tgtx, DWORD tgty, SURFHANDLE src, DWORD flag = 0) const override;
+	bool clbkBlt(SURFHANDLE tgt, DWORD tgtx, DWORD tgty, SURFHANDLE src, DWORD srcx, DWORD srcy, DWORD w, DWORD h, DWORD flag = 0) const override;
+	bool clbkScaleBlt(SURFHANDLE tgt, DWORD tgtx, DWORD tgty, DWORD tgtw, DWORD tgth, SURFHANDLE src, DWORD srcx, DWORD srcy, DWORD srcw, DWORD srch, DWORD flag = 0) const override;
+	bool clbkFillSurface(SURFHANDLE surf, DWORD col) const override;
+	bool clbkFillSurface(SURFHANDLE surf, DWORD tgtx, DWORD tgty, DWORD w, DWORD h, DWORD col) const override;
+	int clbkBeginBltGroup(SURFHANDLE tgt) override;
+	int clbkEndBltGroup() override;
+
+	// === 2D Panel rendering ===
+
+	void clbkRender2DPanel(SURFHANDLE *hSurf, MESHHANDLE hMesh, MATRIX3 *T, bool additive = false) override;
+	void clbkRender2DPanel(SURFHANDLE *hSurf, MESHHANDLE hMesh, MATRIX3 *T, float alpha, bool additive = false) override;
+
+	// === Mesh manipulation ===
+
+	bool clbkSetMeshTexture(DEVMESHHANDLE hMesh, DWORD texidx, SURFHANDLE tex) override;
+	int clbkSetMeshMaterial(DEVMESHHANDLE hMesh, DWORD matidx, const MATERIAL *mat) override;
+	int clbkMeshMaterial(DEVMESHHANDLE hMesh, DWORD matidx, MATERIAL *mat) override;
+	bool clbkSetMeshProperty(DEVMESHHANDLE hMesh, DWORD property, DWORD value) override;
+	int clbkGetMeshGroup(DEVMESHHANDLE hMesh, DWORD grpidx, GROUPREQUESTSPEC *grs) override;
+	int clbkEditMeshGroup(DEVMESHHANDLE hMesh, DWORD grpidx, GROUPEDITSPEC *ges) override;
+	MESHHANDLE clbkGetMesh(VISHANDLE vis, UINT idx) override;
+
+	// === Visual events ===
+
+	int clbkVisEvent(OBJHANDLE hObj, VISHANDLE vis, DWORD msg, DWORD_PTR context) override;
+
+	// === Particle streams ===
+
+	oapi::ParticleStream *clbkCreateParticleStream(PARTICLESTREAMSPEC *pss) override;
+	oapi::ParticleStream *clbkCreateExhaustStream(PARTICLESTREAMSPEC *pss,
+		OBJHANDLE hVessel, const double *lvl, const VECTOR3 *ref, const VECTOR3 *dir) override;
+	oapi::ParticleStream *clbkCreateReentryStream(PARTICLESTREAMSPEC *pss,
+		OBJHANDLE hVessel) override;
+
+	// === Screen annotations ===
+
+	oapi::ScreenAnnotation *clbkCreateAnnotation() override;
 
 	// === 2D Drawing ===
 
@@ -86,8 +111,34 @@ public:
 	void clbkReleasePen(oapi::Pen *pen) const override;
 	oapi::Brush *clbkCreateBrush(DWORD col) const override;
 	void clbkReleaseBrush(oapi::Brush *brush) const override;
+	oapi::Font *clbkCreateFontEx(int height, char *face, int width = 0, int weight = 400,
+		FontStyle style = FONT_NORMAL, float spacing = 0.0f) const override;
 	oapi::Sketchpad *clbkGetSketchpad(SURFHANDLE surf) override;
 	void clbkReleaseSketchpad(oapi::Sketchpad *sp) override;
+
+	// === Additional surface methods ===
+
+	SURFHANDLE clbkLoadSurface(const char *fname, DWORD attrib, bool bPath = false) override;
+	SURFHANDLE clbkCreateTexture(DWORD w, DWORD h) override;
+	bool clbkSaveSurfaceToImage(SURFHANDLE surf, const char *fname,
+		oapi::ImageFileFormat fmt, float quality = 0.7f) override;
+
+	// === Splash screen ===
+
+	bool clbkSplashLoadMsg(const char *msg, int line) override;
+	void clbkSetSplashScreen(const char *fname, DWORD textCol) override;
+
+	// === Mesh persistence ===
+
+	void clbkStoreMeshPersistent(MESHHANDLE hMesh, const char *fname) override;
+	int clbkSetMeshMaterialEx(DEVMESHHANDLE hMesh, DWORD matidx, MatProp prp, const oapi::FVECTOR4 *in) override;
+	int clbkMeshMaterialEx(DEVMESHHANDLE hMesh, DWORD matidx, MatProp prp, oapi::FVECTOR4 *out) override;
+
+	// === Notification hooks ===
+
+	void clbkOptionChanged(DWORD cat, DWORD item) override;
+	void clbkPreOpenPopup() override;
+	bool clbkUseLaunchpadVideoTab() const override;
 
 	// === SDL2 integration ===
 
@@ -105,57 +156,25 @@ private:
 	bool m_fullscreen;
 	bool m_imguiInitialized;
 
-	// Starfield
-	GLuint m_starVAO, m_starVBO;
-	GLuint m_starShader;
-	int m_numStars;
-
-	// Planet rendering (flat color fallback)
-	GLuint m_planetShader;
-	GLuint m_sphereVAO, m_sphereVBO, m_sphereEBO;
-	int m_sphereIndexCount;
-
-	// Textured planet rendering
-	GLuint m_texPlanetShader;
-	GLuint m_texSphereVAO, m_texSphereVBO, m_texSphereEBO;
-	int m_texSphereIndexCount;
-
-	// Texture cache: maps OBJHANDLE (as uintptr_t) to planet texture
-	std::map<uintptr_t, OGLTexture*> m_planetTexCache;
-	bool m_planetTexLoaded; // have we attempted loading textures?
-
-	// Helper: try to find and load a planet texture
-	OGLTexture *LoadPlanetTexture(const char *planetName);
-
 	// Texture base directory
 	std::string m_texturePath;
 
-	// Vessel rendering
-	GLuint m_vesselShader;
-	std::map<uintptr_t, CachedMesh*> m_meshCache;
+	// Shader manager and scene renderer
+	ShaderMgr *m_shaderMgr;
+	OGLScene *m_scene;
+	OGLPostProcess *m_postProcess;
 
-	// Helper: get or create cached OpenGL buffers for a mesh
-	CachedMesh *GetOrCreateMeshCache(MESHHANDLE hMesh);
+	// Blit system (Phase 1)
+	GLuint m_blitShader;
+	GLuint m_blitVAO, m_blitVBO;
+	GLuint m_panel2dShader;
+	SURFHANDLE m_bltGroupTgt; // current blt group target (or nullptr)
 
-	// Exhaust rendering
-	GLuint m_exhaustShader;
-	GLuint m_exhaustVAO, m_exhaustVBO, m_exhaustEBO;
-	OGLTexture *m_exhaustTexture;
-	bool m_exhaustInitialized;
-	void InitExhaust();
-	void RenderExhausts(VESSEL *vessel, const MATRIX3 &vrot,
-	                    float tx, float ty, float tz, float scale,
-	                    const float *vp, const VECTOR3 &camPos);
-
-	// Planetary ring rendering
-	GLuint m_ringShader;
-	GLuint m_ringVAO, m_ringVBO, m_ringEBO;
-	int m_ringIndexCount;
-	OGLTexture *m_ringTexture;
-	bool m_ringsInitialized;
-	void InitRings();
-	void RenderRings(OBJHANDLE hPlanet, const VECTOR3 &camPos,
-	                 const float *vp, const VECTOR3 &sunPos);
+	void InitBlitResources();
+	void ReleaseBlitResources();
+	void BlitQuad(OGLSurface *tgt, DWORD tgtx, DWORD tgty, DWORD tgtw, DWORD tgth,
+	              OGLSurface *src, DWORD srcx, DWORD srcy, DWORD srcw, DWORD srch,
+	              DWORD flag) const;
 };
 
 } // namespace ogl
