@@ -362,6 +362,7 @@ Ogni milestone comincia con:
 ### Follow-up da riprendere prima di uscire da Fase B
 
 - **M7.b** — chiudere M7 al 100%: elevation displacement (parse `.elv` → 259×259 Int16 height grid, Z-offset mesh, re-compute normals), crack-hiding skirts ai confini LOD, label overlay M14-ready. Richiede una sessione dedicata (stimati 5–6gg).
+- **M14.b** — chiudere M14 al 100%: runway approach lights (PAPI, edge, threshold per ogni base Orbiter), beacon array infrastructure già in OGLBeaconArray ma non alimentata dalle `.bse` base files, full porting di `OGLvBase` (oggi stub esplicito in `OGLvBase.cpp:23`). Richiede parse del base-file format + RunwayLights reference da `OVP/D3D9Client/RunwayLights.cpp`. Stimati 3–4gg.
 
 ---
 
@@ -383,7 +384,7 @@ Ogni milestone comincia con:
 | M11 | Post-processing HDR | B | ✅ | this branch |
 | M12 | Particle systems | B | ✅ | this branch |
 | M13 | Glare/corona | B | ✅ | this branch |
-| M14 | Runway lights+annotations | B | ☐ | — |
+| M14 | Runway lights+annotations | B | 🟡 partial | this branch (planetarium grid done; runway lights + OGLvBase in M14.b) |
 | M15 | Virtual Cockpit | C | ☐ | — |
 | M16 | 2D Panel | C | ☐ | — |
 | M17 | MFD Sketchpad 100% | C | ☐ | — |

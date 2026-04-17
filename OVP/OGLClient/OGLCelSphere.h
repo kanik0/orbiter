@@ -40,6 +40,17 @@ private:
 
 	GLuint m_coronaVAO;       // empty VAO (vertices from gl_VertexID)
 	GLuint m_coronaShader;
+
+	// Planetarium grid (equatorial + ecliptic). Built once at Init, drawn
+	// only when OGL_PLANETARIUM=1 is set in the environment (matches the
+	// typical F9 toggle in the Windows HUD without requiring the keymap
+	// wiring to land first).
+	GLuint m_gridVAO, m_gridVBO;
+	GLuint m_gridShader;
+	int    m_gridVertCount;
+	bool   m_gridEnabled;
+
+	void BuildGrid();
 };
 
 } // namespace ogl
