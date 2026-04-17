@@ -16,6 +16,8 @@
 
 struct OGLTexture;
 
+namespace oapi { class GraphicsClient; }
+
 namespace ogl {
 
 class OGLEnvMap;
@@ -57,6 +59,11 @@ public:
 	// matHasEnvMap on whenever the pointer is non-null.
 	static void SetEnvMap(OGLEnvMap *env) { s_envMap = env; }
 
+	// Inject the GraphicsClient so the VC pass can query VC MFD/HUD surfaces
+	// via the virtual GetVCMFDSurface / GetVCHUDSurface methods. Called by
+	// OGLClient right after its OGLScene is up.
+	static void SetGraphicsClient(oapi::GraphicsClient *gc) { s_gc = gc; }
+
 	void Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &sunPos) override;
 
 private:
@@ -83,6 +90,7 @@ private:
 	static bool s_sharedInitialized;
 	static ShaderMgr *s_shaderMgr;
 	static OGLEnvMap *s_envMap;       // IBL environment (nullptr until scene bakes)
+	static oapi::GraphicsClient *s_gc; // client handle for VC MFD/HUD surface lookups
 
 	// GPU mesh cache lives in ogl::MeshRegistry now; see OGLMeshRegistry.h.
 	// Fallback mesh cache maps vessel class name to MESHHANDLE, used when

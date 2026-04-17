@@ -13,6 +13,7 @@
 #include "OGLMaterial.h"
 #include "OGLMeshRegistry.h"
 #include "OGLScene.h"
+#include "OGLvVessel.h"
 #include "OGLPostProcess.h"
 #include "OGLParticle.h"
 #include "OGLAnnotation.h"
@@ -231,6 +232,10 @@ HWND OGLClient::clbkCreateRenderWindow()
 	// Initialize scene
 	m_scene = new OGLScene(m_shaderMgr);
 	m_scene->Init(m_texturePath);
+
+	// Wire the vessel renderer up to this client so the VC pass can reach
+	// GetVCMFDSurface / GetVCHUDSurface through the virtual interface.
+	ogl::OGLvVessel::SetGraphicsClient(this);
 
 	// Initialize blit/panel resources
 	InitBlitResources();

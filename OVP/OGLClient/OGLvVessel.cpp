@@ -12,6 +12,7 @@
 #include "OGLTexture.h"
 #include "OGLSurface.h"
 #include "VesselAPI.h"
+#include "GraphicsAPI.h"
 #include <cstdio>
 #include <cmath>
 #include <sys/stat.h>
@@ -30,6 +31,7 @@ OGLTexture *OGLvVessel::s_exhaustTexture = nullptr;
 bool OGLvVessel::s_sharedInitialized = false;
 ShaderMgr *OGLvVessel::s_shaderMgr = nullptr;
 OGLEnvMap *OGLvVessel::s_envMap = nullptr;
+oapi::GraphicsClient *OGLvVessel::s_gc = nullptr;
 std::map<std::string, MESHHANDLE> OGLvVessel::s_fallbackMeshes;
 
 static bool FileExists(const char *path) {
@@ -310,6 +312,27 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 	const bool bVC      = (bCockpit && (oapiCockpitMode() == COCKPIT_VIRTUAL));
 	const int  nPasses  = bCockpit ? 2 : 1;
 
+	// Cache VC MFD surface bindings for this frame. For each registered MFD
+	// the client returns a SURFHANDLE holding the painted display and a spec
+	// identifying the mesh/group it should replace. When we hit (m, g) that
+	// matches, we bind the MFD surface instead of the group's base texture —
+	// same approach as D3D9Client's mesh->SetMFDScreenId(g, 1+mfd) plumbing.
+	struct MFDBinding { DWORD nmesh, ngroup; OGLSurface *surf; };
+	MFDBinding mfdBindings[MAXMFD];
+	int numMFDBindings = 0;
+	if (bVC && s_gc) {
+		for (int i = 0; i < MAXMFD; i++) {
+			const VCMFDSPEC *spec = nullptr;
+			SURFHANDLE s = s_gc->GetVCMFDSurface(i, &spec);
+			if (s && spec) {
+				mfdBindings[numMFDBindings].nmesh  = spec->nmesh;
+				mfdBindings[numMFDBindings].ngroup = spec->ngroup;
+				mfdBindings[numMFDBindings].surf   = (OGLSurface*)s;
+				numMFDBindings++;
+			}
+		}
+	}
+
 	// ----- Shadow pre-pass (PBR path only) ----------------------------------
 	// Render the vessel's meshes into the shared shadow depth map from the
 	// sun's point of view. Both passes work in the distance-normalised frame
@@ -480,7 +503,26 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 			// shader; the sampler itself still needs a traditional binding
 			// (GLSL 410 forbids opaque types in uniform blocks).
 			bool hasTexture = false;
-			if (grp && grp->TexIdx > 0 && grp->TexIdx <= nTex) {
+			OGLSurface *texOverride = nullptr;
+			if (internalpass && bVC) {
+				for (int k = 0; k < numMFDBindings; k++) {
+					if (mfdBindings[k].nmesh == m && mfdBindings[k].ngroup == g) {
+						texOverride = mfdBindings[k].surf;
+						break;
+					}
+				}
+			}
+			if (texOverride) {
+				GLuint texId = texOverride->GetTexture();
+				if (texId) {
+					glActiveTexture(GL_TEXTURE0);
+					glBindTexture(GL_TEXTURE_2D, texId);
+					GLint texLoc = s_shaderMgr->GetUniformLoc(activeShader,
+						activeShader == s_pbrShader ? "uDiffuseTex" : "uTexture");
+					glUniform1i(texLoc, 0);
+					hasTexture = true;
+				}
+			} else if (grp && grp->TexIdx > 0 && grp->TexIdx <= nTex) {
 				SURFHANDLE hSurf = oapiGetTextureHandle(hMesh, grp->TexIdx);
 				if (hSurf) {
 					OGLSurface *surf = (OGLSurface*)hSurf;
