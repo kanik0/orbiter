@@ -37,6 +37,30 @@ static bool FileExists(const char *path) {
 	return stat(path, &st) == 0;
 }
 
+// Port of D3D9Client vVessel::Render mesh-visibility filter (VVessel.cpp:739-757).
+// Returns true when the mesh should be drawn in the current pass.
+// `internalpass` distinguishes the external/VC pass; `bCockpit` is true when the
+// focus vessel is in internal view; `bVC` when cockpit mode is COCKPIT_VIRTUAL.
+static bool ShouldRenderMesh(WORD vismode, bool internalpass, bool bCockpit, bool bVC)
+{
+	if (vismode == 0) return false;                           // MESHVIS_NEVER
+
+	if (!internalpass) {
+		if (vismode == MESHVIS_VC) return false;              // pure-VC mesh never external
+		if (!(vismode & MESHVIS_EXTPASS) && bCockpit) return false;
+	}
+
+	if (bCockpit) {
+		if (internalpass && (vismode & MESHVIS_EXTPASS)) return false;
+		if (!(vismode & MESHVIS_COCKPIT)) {
+			if (!bVC || !(vismode & MESHVIS_VC)) return false;
+		}
+	} else {
+		if (!(vismode & MESHVIS_EXTERNAL)) return false;
+	}
+	return true;
+}
+
 CachedMesh::~CachedMesh() {
 	for (auto &g : groups) {
 		if (g.vao)    glDeleteVertexArrays(1, &g.vao);
@@ -278,6 +302,14 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 	GLuint activeShader = s_pbrShader ? s_pbrShader : s_vesselShader;
 	const bool pbrActive = (activeShader == s_pbrShader);
 
+	// Cockpit-view state: F1 toggles camera internal/external; when internal
+	// and this vessel is the focus we run a second pass with internalpass=true
+	// so MESHVIS_VC/MESHVIS_COCKPIT meshes can draw. Planetarium/env/shadow
+	// cameras never enter this path because they're not the "main" view.
+	const bool bCockpit = (oapiCameraInternal() && (m_hObj == oapiGetFocusObject()));
+	const bool bVC      = (bCockpit && (oapiCockpitMode() == COCKPIT_VIRTUAL));
+	const int  nPasses  = bCockpit ? 2 : 1;
+
 	// ----- Shadow pre-pass (PBR path only) ----------------------------------
 	// Render the vessel's meshes into the shared shadow depth map from the
 	// sun's point of view. Both passes work in the distance-normalised frame
@@ -298,6 +330,13 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 
 		DWORD nMeshShadow = vessel->GetMeshCount();
 		for (DWORD m = 0; m < nMeshShadow; m++) {
+			// Sun's POV is always external — filter out VC/cockpit-only meshes
+			// so we don't pay shadow cost for geometry that's never lit (and
+			// avoid self-shadowing artefacts from interior panels).
+			WORD vismode = vessel->GetMeshVisibilityMode(m);
+			if (!ShouldRenderMesh(vismode, /*internalpass=*/false, /*bCockpit=*/false, /*bVC=*/false))
+				continue;
+
 			MESHHANDLE hMesh = vessel->GetMeshTemplate(m);
 			if (!hMesh) {
 				const char *className = vessel->GetClassName();
@@ -371,7 +410,18 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 	}
 
 	DWORD nMesh = vessel->GetMeshCount();
+	// Pass 0: external (hull, EXTPASS bits even while in cockpit view).
+	// Pass 1: internal/VC — only runs when the focus vessel is in internal
+	// view. Both passes share the same shader state; depth buffer is kept
+	// across passes so any EXTPASS geometry (hull seen through windows)
+	// occludes VC interior correctly through the usual z-test.
+	for (int pass = 0; pass < nPasses; pass++) {
+		const bool internalpass = (pass == 1);
+
 	for (DWORD m = 0; m < nMesh; m++) {
+		WORD vismode = vessel->GetMeshVisibilityMode(m);
+		if (!ShouldRenderMesh(vismode, internalpass, bCockpit, bVC)) continue;
+
 		MESHHANDLE hMesh = vessel->GetMeshTemplate(m);
 		if (!hMesh) {
 			const char *className = vessel->GetClassName();
@@ -455,6 +505,7 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 			glDrawElements(GL_TRIANGLES, cmg.indexCount, GL_UNSIGNED_INT, 0);
 		}
 	}
+	} // end pass loop
 	glBindVertexArray(0);
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glUseProgram(0);
