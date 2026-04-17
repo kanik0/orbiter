@@ -371,7 +371,7 @@ Ogni milestone comincia con:
 | M3 | Material system UBO | A | ✅ | this branch |
 | M4 | Rayleigh+Mie scattering | B | ✅ | this branch |
 | M5 | Cloud layers | B | ✅ | this branch |
-| M6 | Night city lights | B | ☐ | — |
+| M6 | Night city lights | B | ✅ | this branch |
 | M7 | Planet tile LOD | B | ☐ | — |
 | M8 | PBR vessel | B | ☐ | — |
 | M9 | IBL environment maps | B | ☐ | — |

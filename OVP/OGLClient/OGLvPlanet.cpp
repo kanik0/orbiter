@@ -197,7 +197,7 @@ void OGLvPlanet::InitRingsShared(ShaderMgr *shaderMgr, const std::string &textur
 
 OGLvPlanet::OGLvPlanet(OBJHANDLE hObj, ShaderMgr *shaderMgr)
 	: OGLvObject(hObj, shaderMgr),
-	  m_texture(nullptr), m_cloudTex(nullptr),
+	  m_texture(nullptr), m_cloudTex(nullptr), m_nightTex(nullptr),
 	  m_tileMgr(nullptr), m_atmo(nullptr)
 {
 	// Initialize atmosphere for planets that have one
@@ -209,6 +209,7 @@ OGLvPlanet::~OGLvPlanet()
 {
 	delete m_texture;
 	delete m_cloudTex;
+	delete m_nightTex;
 	delete m_tileMgr;
 	delete m_atmo;
 }
@@ -291,6 +292,25 @@ void OGLvPlanet::LoadCloudTexture(const std::string &texturePath)
 	}
 }
 
+void OGLvPlanet::LoadNightTexture(const std::string &texturePath)
+{
+	char name[64];
+	oapiGetObjectName(m_hObj, name, 64);
+
+	const char *extensions[] = { "_night.tex", "_night.dds", "_night.bmp", nullptr };
+	for (int i = 0; extensions[i]; i++) {
+		std::string tryPath = texturePath + name + extensions[i];
+		if (FileExists(tryPath.c_str())) {
+			m_nightTex = OGLTexture::LoadTexture(tryPath.c_str());
+			if (m_nightTex) {
+				fprintf(stderr, "[OGLvPlanet] Loaded night '%s' for %s\n",
+				        tryPath.c_str(), name);
+				return;
+			}
+		}
+	}
+}
+
 void OGLvPlanet::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &sunPos)
 {
 	if (!s_sharedInitialized) return;
@@ -351,6 +371,18 @@ void OGLvPlanet::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, m_texture->texId);
 		glUniform1i(s_shaderMgr->GetUniformLoc(s_texPlanetShader, "uTexture"), 0);
+
+		// Night-lights overlay. Bind to TEXTURE1 either the real night map
+		// or the day texture as a valid-but-ignored placeholder so the
+		// sampler unit never goes unbound (macOS GL is strict about this).
+		const bool hasNight = m_nightTex && m_nightTex->texId;
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, hasNight ? m_nightTex->texId : m_texture->texId);
+		glUniform1i(s_shaderMgr->GetUniformLoc(s_texPlanetShader, "uNightTex"),       1);
+		glUniform1i(s_shaderMgr->GetUniformLoc(s_texPlanetShader, "uHasNight"),       hasNight ? 1 : 0);
+		glUniform1f(s_shaderMgr->GetUniformLoc(s_texPlanetShader, "uNightIntensity"), 1.5f);
+		glActiveTexture(GL_TEXTURE0);   // leave the active unit where callers expect it
+
 		glBindVertexArray(s_texSphereVAO);
 		glDrawElements(GL_TRIANGLES, s_texSphereIndexCount, GL_UNSIGNED_INT, 0);
 	} else {

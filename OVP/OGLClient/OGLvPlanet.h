@@ -35,6 +35,11 @@ public:
 	// sphere is rendered one shell above the surface every frame.
 	void LoadCloudTexture(const std::string &texturePath);
 
+	// Look for <PlanetName>_night.{tex,dds,bmp}; if present, the texplanet
+	// shader mixes it in across the terminator so cities, lightning and
+	// volcanic glow show through on the shadow hemisphere.
+	void LoadNightTexture(const std::string &texturePath);
+
 	// Initialize LOD tile manager for this planet (call after InitShared)
 	void InitTiles(const std::string &texturePath);
 
@@ -43,6 +48,7 @@ public:
 private:
 	OGLTexture *m_texture;   // planet surface texture (null → flat-color fallback)
 	OGLTexture *m_cloudTex;  // cloud layer texture   (null → no clouds)
+	OGLTexture *m_nightTex;  // city-lights overlay   (null → no night emission)
 	OGLTileMgr *m_tileMgr;   // LOD tile manager      (null → no .tree archives)
 	OGLAtmosphere *m_atmo;   // atmospheric haze      (null → no atmosphere)
 
