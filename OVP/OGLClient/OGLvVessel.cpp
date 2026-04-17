@@ -6,6 +6,7 @@
 #include "OGLvVessel.h"
 #include "OGLShaderMgr.h"
 #include "OGLMaterial.h"
+#include "OGLEnvMap.h"
 #include "OGLMeshRegistry.h"
 #include "OGLTexture.h"
 #include "OGLSurface.h"
@@ -25,6 +26,7 @@ GLuint OGLvVessel::s_materialUBO = 0;
 OGLTexture *OGLvVessel::s_exhaustTexture = nullptr;
 bool OGLvVessel::s_sharedInitialized = false;
 ShaderMgr *OGLvVessel::s_shaderMgr = nullptr;
+OGLEnvMap *OGLvVessel::s_envMap = nullptr;
 std::map<std::string, MESHHANDLE> OGLvVessel::s_fallbackMeshes;
 
 static bool FileExists(const char *path) {
@@ -257,11 +259,28 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 	if (vdist > 1000.0) { normDist = 1000.0; scale = normDist / vdist; }
 	double nvx = vx * scale, nvy = vy * scale, nvz = vz * scale;
 
-	// Force legacy shader for now — PBR needs more testing
-	GLuint activeShader = s_vesselShader;
+	// Prefer the PBR pipeline — M3 + M8 have the full Material UBO and real
+	// TBN frames in place, and M9 now supplies the prefiltered environment
+	// cubemap. We still fall back to the legacy shader if, for any reason,
+	// the PBR link dropped out.
+	GLuint activeShader = s_pbrShader ? s_pbrShader : s_vesselShader;
+	const bool pbrActive = (activeShader == s_pbrShader);
 	glUseProgram(activeShader);
 	glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(activeShader, "uViewProj"), 1, GL_FALSE, vp);
 	glUniform3fv(s_shaderMgr->GetUniformLoc(activeShader, "uSunDir"), 1, sunDir);
+
+	// Bind the IBL environment cubemap once per vessel. The legacy shader
+	// doesn't sample samplerCubes but the driver is happy with an unused
+	// sampler bound — we just leave matHasEnvMap=0 so the PBR fragment
+	// shader skips the IBL lookup when the bake hasn't finished yet.
+	const bool envReady = pbrActive && s_envMap && s_envMap->IsReady();
+	if (pbrActive) {
+		glActiveTexture(GL_TEXTURE2);
+		glBindTexture(GL_TEXTURE_CUBE_MAP,
+		              envReady ? s_envMap->GetPrefilterCube() : 0);
+		glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uEnvMap"), 2);
+		glActiveTexture(GL_TEXTURE0);
+	}
 
 	DWORD nMesh = vessel->GetMeshCount();
 	for (DWORD m = 0; m < nMesh; m++) {
@@ -340,6 +359,7 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 			}
 			matData.hasDiffuse = hasTexture ? 1 : 0;
 			matData.hasTangent = cmg.hasTangent ? 1 : 0;
+			matData.hasEnvMap  = envReady ? 1 : 0;
 
 			s_shaderMgr->UpdateUBO(s_materialUBO, sizeof(matData), &matData);
 

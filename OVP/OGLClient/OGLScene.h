@@ -18,11 +18,14 @@ class ShaderMgr;
 class OGLCelSphere;
 class OGLvPlanet;
 class OGLvVessel;
+class OGLEnvMap;
 
 class OGLScene {
 public:
 	OGLScene(ShaderMgr *shaderMgr);
 	~OGLScene();
+
+	OGLEnvMap *GetEnvMap() const { return m_envMap; }
 
 	// Initialize the scene: create shared resources, build object lists.
 	// texturePath = base directory for textures.
@@ -40,6 +43,10 @@ private:
 
 	// Celestial sphere (starfield)
 	OGLCelSphere *m_celSphere;
+
+	// IBL environment (prefiltered cubemap shared across every vessel).
+	OGLEnvMap *m_envMap;
+	bool m_envMapBaked;
 
 	// Visual objects
 	std::vector<OGLvPlanet*> m_planets;

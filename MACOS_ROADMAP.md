@@ -378,7 +378,7 @@ Ogni milestone comincia con:
 | M6 | Night city lights | B | ✅ | this branch |
 | M7 | Planet tile LOD | B | 🟡 partial | this branch (culling/priority/cache done; elevation + skirts pending) |
 | M8 | PBR vessel | B | ✅ | this branch |
-| M9 | IBL environment maps | B | ☐ | — |
+| M9 | IBL environment maps | B | ✅ | this branch |
 | M10 | Shadow mapping | B | ☐ | — |
 | M11 | Post-processing HDR | B | ☐ | — |
 | M12 | Particle systems | B | ☐ | — |

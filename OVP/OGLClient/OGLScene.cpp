@@ -8,6 +8,7 @@
 #include "OGLCelSphere.h"
 #include "OGLvPlanet.h"
 #include "OGLvVessel.h"
+#include "OGLEnvMap.h"
 #include <cstdio>
 #include <cmath>
 
@@ -15,6 +16,7 @@ namespace ogl {
 
 OGLScene::OGLScene(ShaderMgr *shaderMgr)
 	: m_shaderMgr(shaderMgr), m_celSphere(nullptr),
+	  m_envMap(nullptr), m_envMapBaked(false),
 	  m_initialized(false), m_objectsPopulated(false)
 {
 }
@@ -36,6 +38,11 @@ void OGLScene::Init(const std::string &texturePath)
 	m_celSphere = new OGLCelSphere(m_shaderMgr);
 	m_celSphere->Init(4000);
 
+	// IBL env map — allocated lazily on first render frame so we can bake
+	// with the correct sun direction (Init needs vp/scene state).
+	m_envMap = new OGLEnvMap();
+	m_envMapBaked = false;
+
 	m_initialized = true;
 }
 
@@ -48,6 +55,10 @@ void OGLScene::Release()
 
 	delete m_celSphere;
 	m_celSphere = nullptr;
+
+	delete m_envMap;
+	m_envMap = nullptr;
+	m_envMapBaked = false;
 
 	OGLvPlanet::ReleaseShared();
 	OGLvVessel::ReleaseShared();
@@ -142,6 +153,20 @@ void OGLScene::RenderScene(DWORD viewW, DWORD viewH)
 	VECTOR3 sunPos = {0, 0, 0};
 	OBJHANDLE hSun = oapiGetObjectByName((char*)"Sun");
 	if (hSun) oapiGetGlobalPos(hSun, &sunPos);
+
+	// Bake the IBL environment on the first frame we know the sun position.
+	// The prefilter chain only needs to be rebuilt when the sun direction
+	// shifts significantly — currently we bake once and reuse; M9 follow-up
+	// can add periodic refresh when that becomes visible.
+	if (m_envMap && !m_envMapBaked) {
+		VECTOR3 sunDir = { sunPos.x - camPos.x,
+		                   sunPos.y - camPos.y,
+		                   sunPos.z - camPos.z };
+		if (m_envMap->Init(m_shaderMgr, sunDir)) {
+			OGLvVessel::SetEnvMap(m_envMap);
+			m_envMapBaked = true;
+		}
+	}
 
 	// 1) Render starfield (at infinite distance)
 	if (m_celSphere)

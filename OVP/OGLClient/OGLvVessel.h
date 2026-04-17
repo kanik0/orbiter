@@ -18,6 +18,8 @@ struct OGLTexture;
 
 namespace ogl {
 
+class OGLEnvMap;
+
 // Cached OpenGL buffers for a single mesh group.
 //
 // `tbnVbo` carries a second interleaved attribute stream with the vertex
@@ -49,6 +51,11 @@ public:
 	static void InitShared(ShaderMgr *shaderMgr, const std::string &texturePath);
 	static void ReleaseShared();
 
+	// Inject the scene's IBL cubemap provider. Called by OGLScene once the
+	// prefilter chain is ready; vessels bind it during render and switch
+	// matHasEnvMap on whenever the pointer is non-null.
+	static void SetEnvMap(OGLEnvMap *env) { s_envMap = env; }
+
 	void Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &sunPos) override;
 
 private:
@@ -72,6 +79,7 @@ private:
 	static OGLTexture *s_exhaustTexture;
 	static bool s_sharedInitialized;
 	static ShaderMgr *s_shaderMgr;
+	static OGLEnvMap *s_envMap;       // IBL environment (nullptr until scene bakes)
 
 	// GPU mesh cache lives in ogl::MeshRegistry now; see OGLMeshRegistry.h.
 	// Fallback mesh cache maps vessel class name to MESHHANDLE, used when

@@ -12,6 +12,7 @@ if(NOT WIN32)
 		OGLShaderMgr.cpp
 		OGLMeshRegistry.cpp
 		OGLMaterial.cpp
+		OGLEnvMap.cpp
 		OGLScene.cpp
 		OGLvObject.cpp
 		OGLvPlanet.cpp
