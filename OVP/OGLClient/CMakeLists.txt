@@ -11,6 +11,7 @@ if(NOT WIN32)
 		OGLTexture.cpp
 		OGLShaderMgr.cpp
 		OGLMeshRegistry.cpp
+		OGLMaterial.cpp
 		OGLScene.cpp
 		OGLvObject.cpp
 		OGLvPlanet.cpp

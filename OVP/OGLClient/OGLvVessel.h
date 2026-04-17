@@ -60,6 +60,7 @@ private:
 	static GLuint s_pbrShader;        // PBR Cook-Torrance shader
 	static GLuint s_exhaustShader;
 	static GLuint s_exhaustVAO, s_exhaustVBO, s_exhaustEBO;
+	static GLuint s_materialUBO;      // bound to UBO::Material for both shaders
 	static OGLTexture *s_exhaustTexture;
 	static bool s_sharedInitialized;
 	static ShaderMgr *s_shaderMgr;

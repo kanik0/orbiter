@@ -10,6 +10,7 @@
 #include "OGLTexture.h"
 #include "OGLSurface.h"
 #include "OGLShaderMgr.h"
+#include "OGLMaterial.h"
 #include "OGLMeshRegistry.h"
 #include "OGLScene.h"
 #include "OGLPostProcess.h"
@@ -946,14 +947,17 @@ void OGLClient::clbkStoreMeshPersistent(MESHHANDLE hMesh, const char *fname)
 
 int OGLClient::clbkSetMeshMaterialEx(DEVMESHHANDLE hMesh, DWORD matidx, MatProp prp, const oapi::FVECTOR4 *in)
 {
-	// Extended material property setting — stub for now
-	return 2;
+	if (!in) return 2;
+	int rc = MaterialStore::Instance().Set(hMesh, matidx, prp, *in);
+	if (rc == 0)
+		MeshRegistry::Instance().InvalidateMesh((MESHHANDLE)hMesh);
+	return rc;
 }
 
 int OGLClient::clbkMeshMaterialEx(DEVMESHHANDLE hMesh, DWORD matidx, MatProp prp, oapi::FVECTOR4 *out)
 {
-	// Extended material property query — stub for now
-	return 2;
+	if (!out) return 2;
+	return MaterialStore::Instance().Get(hMesh, matidx, prp, *out);
 }
 
 // ============================================================================

@@ -5,6 +5,7 @@
 
 #include "OGLvVessel.h"
 #include "OGLShaderMgr.h"
+#include "OGLMaterial.h"
 #include "OGLMeshRegistry.h"
 #include "OGLTexture.h"
 #include "OGLSurface.h"
@@ -20,6 +21,7 @@ GLuint OGLvVessel::s_vesselShader = 0;
 GLuint OGLvVessel::s_pbrShader = 0;
 GLuint OGLvVessel::s_exhaustShader = 0;
 GLuint OGLvVessel::s_exhaustVAO = 0, OGLvVessel::s_exhaustVBO = 0, OGLvVessel::s_exhaustEBO = 0;
+GLuint OGLvVessel::s_materialUBO = 0;
 OGLTexture *OGLvVessel::s_exhaustTexture = nullptr;
 bool OGLvVessel::s_sharedInitialized = false;
 ShaderMgr *OGLvVessel::s_shaderMgr = nullptr;
@@ -29,9 +31,6 @@ static bool FileExists(const char *path) {
 	struct stat st;
 	return stat(path, &st) == 0;
 }
-
-template<typename T>
-static T clamp(T v, T lo, T hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
 CachedMesh::~CachedMesh() {
 	for (auto &g : groups) {
@@ -50,6 +49,10 @@ void OGLvVessel::InitShared(ShaderMgr *shaderMgr, const std::string &texturePath
 	s_vesselShader = shaderMgr->LoadProgram("vessel", "vessel.vert", "vessel.frag");
 	s_pbrShader = shaderMgr->LoadProgram("vessel_pbr", "vessel_pbr.vert", "vessel_pbr.frag");
 	s_exhaustShader = shaderMgr->LoadProgram("exhaust", "exhaust.vert", "exhaust.frag");
+
+	// The Material UBO is shared by both vessel programs — sized to match
+	// shaders/include/material.glsl.inc and bound to UBO::Material.
+	s_materialUBO = shaderMgr->CreateUBO(UBO::Material, sizeof(UBOMaterialData));
 
 	// Load exhaust texture
 	std::string path = texturePath + "Exhaust.dds";
@@ -83,10 +86,12 @@ void OGLvVessel::InitShared(ShaderMgr *shaderMgr, const std::string &texturePath
 void OGLvVessel::ReleaseShared()
 {
 	MeshRegistry::Instance().Clear();
+	MaterialStore::Instance().Clear();
 	s_fallbackMeshes.clear();
 	if (s_exhaustVAO) { glDeleteVertexArrays(1, &s_exhaustVAO); s_exhaustVAO = 0; }
 	if (s_exhaustVBO) { glDeleteBuffers(1, &s_exhaustVBO); s_exhaustVBO = 0; }
 	if (s_exhaustEBO) { glDeleteBuffers(1, &s_exhaustEBO); s_exhaustEBO = 0; }
+	if (s_materialUBO && s_shaderMgr) { s_shaderMgr->ReleaseUBO(s_materialUBO); s_materialUBO = 0; }
 	delete s_exhaustTexture; s_exhaustTexture = nullptr;
 	s_sharedInitialized = false;
 }
@@ -211,7 +216,6 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 		};
 		glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(activeShader, "uModel"), 1, GL_FALSE, model);
 
-		DWORD nMat = oapiMeshMaterialCount(hMesh);
 		DWORD nTex = oapiMeshTextureCount(hMesh);
 
 		for (DWORD g = 0; g < (DWORD)cached->groups.size(); g++) {
@@ -220,46 +224,19 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 
 			MESHGROUPEX *grp = oapiMeshGroupEx(hMesh, g);
 
-			// Set material uniforms
-			float diffuse[4] = {0.8f, 0.8f, 0.8f, 1.0f};
-			float emissive[3] = {0.0f, 0.0f, 0.0f};
-			float specular[4] = {0.3f, 0.3f, 0.3f, 20.0f};
-			float reflect[3] = {0.04f, 0.04f, 0.04f};
-			float roughness = 0.5f;
-			float metalness = 0.0f;
-
-			if (grp && grp->MtrlIdx > 0 && grp->MtrlIdx <= nMat) {
-				MATERIAL *mat = oapiMeshMaterial(hMesh, grp->MtrlIdx - 1);
-				if (mat) {
-					diffuse[0] = mat->diffuse.r; diffuse[1] = mat->diffuse.g;
-					diffuse[2] = mat->diffuse.b; diffuse[3] = mat->diffuse.a;
-					emissive[0] = mat->emissive.r; emissive[1] = mat->emissive.g;
-					emissive[2] = mat->emissive.b;
-					specular[0] = mat->specular.r; specular[1] = mat->specular.g;
-					specular[2] = mat->specular.b; specular[3] = mat->power;
-					// Convert specular power to roughness (approximate)
-					if (mat->power > 1.0f)
-						roughness = 1.0f - clamp((float)(log2(mat->power) / 12.0f), 0.0f, 1.0f);
-				}
-			}
-			glUniform4fv(s_shaderMgr->GetUniformLoc(activeShader, "uDiffuse"), 1, diffuse);
-			glUniform3fv(s_shaderMgr->GetUniformLoc(activeShader, "uEmissive"), 1, emissive);
-
-			if (activeShader == s_pbrShader) {
-				// PBR-specific uniforms
-				glUniform4fv(s_shaderMgr->GetUniformLoc(activeShader, "uSpecular"), 1, specular);
-				glUniform3fv(s_shaderMgr->GetUniformLoc(activeShader, "uReflect"), 1, reflect);
-				glUniform1f(s_shaderMgr->GetUniformLoc(activeShader, "uRoughness"), roughness);
-				glUniform1f(s_shaderMgr->GetUniformLoc(activeShader, "uMetalness"), metalness);
-				// No additional texture maps yet — set all to false
-				glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uHasNormalMap"), 0);
-				glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uHasSpecularMap"), 0);
-				glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uHasEmissiveMap"), 0);
-				glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uHasRoughnessMap"), 0);
-				glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uHasMetalnessMap"), 0);
-				glUniform1i(s_shaderMgr->GetUniformLoc(activeShader, "uHasEnvMap"), 0);
+			// Build the std140 Material block: defaults + Orbiter MESH
+			// material + any runtime override installed by vessel modules
+			// through clbkSetMeshMaterialEx.
+			UBOMaterialData matData;
+			BuildMaterialData(matData, hMesh, g);
+			if (grp && grp->MtrlIdx > 0) {
+				MaterialStore::Instance().Apply(
+					matData, (DEVMESHHANDLE)hMesh, grp->MtrlIdx - 1);
 			}
 
+			// Diffuse texture sampling is driven by matHasDiffuse inside the
+			// shader; the sampler itself still needs a traditional binding
+			// (GLSL 410 forbids opaque types in uniform blocks).
 			bool hasTexture = false;
 			if (grp && grp->TexIdx > 0 && grp->TexIdx <= nTex) {
 				SURFHANDLE hSurf = oapiGetTextureHandle(hMesh, grp->TexIdx);
@@ -276,9 +253,9 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 					}
 				}
 			}
-			GLint htLoc = s_shaderMgr->GetUniformLoc(activeShader,
-				activeShader == s_pbrShader ? "uHasDiffuseTex" : "uHasTexture");
-			glUniform1i(htLoc, hasTexture ? 1 : 0);
+			matData.hasDiffuse = hasTexture ? 1 : 0;
+
+			s_shaderMgr->UpdateUBO(s_materialUBO, sizeof(matData), &matData);
 
 			glBindVertexArray(cmg.vao);
 			glDrawElements(GL_TRIANGLES, cmg.indexCount, GL_UNSIGNED_INT, 0);
