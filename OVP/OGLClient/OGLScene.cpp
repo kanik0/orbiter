@@ -69,6 +69,7 @@ void OGLScene::PopulateObjects()
 		if (type == OBJTP_PLANET || type == OBJTP_STAR) {
 			OGLvPlanet *vp = new OGLvPlanet(hObj, m_shaderMgr);
 			vp->LoadTexture(m_texturePath);
+			vp->LoadCloudTexture(m_texturePath);
 			vp->InitTiles(m_texturePath);
 			m_planets.push_back(vp);
 		}
