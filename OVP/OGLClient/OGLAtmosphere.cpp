@@ -5,179 +5,132 @@
 
 #include "OGLAtmosphere.h"
 #include "OGLShaderMgr.h"
-#include <cstdio>
+
 #include <cmath>
-#include <vector>
+#include <cstdio>
 
 namespace ogl {
 
-static const int HAZE_NSEG = 64; // azimuthal segments
+// Earth baseline used to derive per-planet extinction. `color0` tints the
+// radiance; the physical Rayleigh coefficients stay constant per unit density.
+static constexpr float kEarthBetaR[3] = { 5.802e-6f, 13.558e-6f, 33.1e-6f };
+static constexpr float kEarthBetaM    = 3.996e-6f;
+static constexpr float kEarthScaleR   = 8500.0f;  // m
+static constexpr float kEarthScaleM   = 1200.0f;  // m
+static constexpr float kEarthAtmoAlt  = 84000.0f; // m
 
 OGLAtmosphere::OGLAtmosphere(OBJHANDLE hPlanet, ShaderMgr *shaderMgr)
 	: m_hPlanet(hPlanet), m_shaderMgr(shaderMgr), m_hasAtmo(false),
-	  m_atmoAlt(0), m_horizonAlt(0), m_skyColor{0,0,0}, m_hazeDensity(0), m_hazeExtent(0),
-	  m_hazeVAO(0), m_hazeVBO(0), m_hazeEBO(0), m_hazeIndexCount(0), m_hazeShader(0)
+	  m_atmoAlt(0), m_horizonAlt(0), m_skyColor{0, 0, 0},
+	  m_scaleR(kEarthScaleR), m_scaleM(kEarthScaleM),
+	  m_betaR{kEarthBetaR[0], kEarthBetaR[1], kEarthBetaR[2]},
+	  m_betaM(kEarthBetaM), m_mieG(0.76f),
+	  m_sunRadiance{20.0f, 20.0f, 20.0f}, m_exposure(1.0f),
+	  m_quadVAO(0), m_shader(0)
 {
 	m_hasAtmo = oapiPlanetHasAtmosphere(hPlanet);
 	if (!m_hasAtmo) return;
 
 	const ATMCONST *atm = oapiGetPlanetAtmConstants(hPlanet);
 	if (atm) {
-		m_atmoAlt = atm->altlimit;
+		m_atmoAlt    = atm->altlimit;
 		m_horizonAlt = atm->horizonalt;
-		m_skyColor = atm->color0;
+		m_skyColor   = atm->color0;
 	}
 
-	// Additional haze parameters from object params
-	const void *p;
-	p = oapiGetObjectParam(hPlanet, OBJPRM_PLANET_HAZEDENSITY);
-	m_hazeDensity = p ? *(const double*)p : 1.0;
-	p = oapiGetObjectParam(hPlanet, OBJPRM_PLANET_HAZEEXTENT);
-	m_hazeExtent = p ? *(const double*)p : 0.1;
+	// Scale heights scale with the atmosphere thickness; anchor to Earth so
+	// worlds with significantly thicker (Venus, Titan) or thinner (Mars)
+	// shells give plausible gradients without hand-tuning every body.
+	const float altRatio = float(std::max(m_atmoAlt, 1000.0)) / kEarthAtmoAlt;
+	m_scaleR = std::max(2000.0f, kEarthScaleR * altRatio);
+	m_scaleM = std::max(300.0f,  kEarthScaleM * altRatio);
 
-	char name[64];
+	// Tint the sun radiance by the module-provided sky colour so the dominant
+	// wavelengths match (Orbiter's color0 already encodes the observed hue).
+	// A neutral (1,1,1) sky leaves the default radiance untouched.
+	const float avgSky = float((m_skyColor.x + m_skyColor.y + m_skyColor.z) / 3.0);
+	if (avgSky > 1e-3f) {
+		m_sunRadiance[0] *= float(m_skyColor.x) / avgSky;
+		m_sunRadiance[1] *= float(m_skyColor.y) / avgSky;
+		m_sunRadiance[2] *= float(m_skyColor.z) / avgSky;
+	}
+
+	// Denser shells (Venus' 90-bar, Titan's 1.5-bar) scatter harder — scale
+	// the Mie coefficient, which dominates the near-horizon haze, by the
+	// thickness ratio.
+	m_betaM = kEarthBetaM * altRatio;
+
+	char name[64] = {0};
 	oapiGetObjectName(hPlanet, name, 64);
-	fprintf(stderr, "[OGLAtmosphere] %s: atmoAlt=%.0f horizonAlt=%.0f sky=(%.2f,%.2f,%.2f) haze=%.2f\n",
-		name, m_atmoAlt, m_horizonAlt, m_skyColor.x, m_skyColor.y, m_skyColor.z, m_hazeDensity);
+	fprintf(stderr,
+	        "[OGLAtmosphere] %s: altlimit=%.0fm scaleR=%.0fm scaleM=%.0fm "
+	        "betaR=(%.2e,%.2e,%.2e) betaM=%.2e sky=(%.2f,%.2f,%.2f)\n",
+	        name, m_atmoAlt, m_scaleR, m_scaleM,
+	        m_betaR[0], m_betaR[1], m_betaR[2], m_betaM,
+	        m_skyColor.x, m_skyColor.y, m_skyColor.z);
 
-	InitHazeRing();
+	m_shader = m_shaderMgr->LoadProgram("scatter", "scatter.vert", "scatter.frag");
+	glGenVertexArrays(1, &m_quadVAO);  // empty VAO — vertices come from gl_VertexID
 }
 
 OGLAtmosphere::~OGLAtmosphere()
 {
-	ReleaseHazeRing();
+	if (m_quadVAO) glDeleteVertexArrays(1, &m_quadVAO);
 }
 
-void OGLAtmosphere::InitHazeRing()
+void OGLAtmosphere::Render(const float *vp,
+                           const VECTOR3 &camPos, const VECTOR3 &sunPos,
+                           double planetRadius, const VECTOR3 &planetPos)
 {
-	m_hazeShader = m_shaderMgr->LoadProgram("haze", "haze.vert", "haze.frag");
+	if (!m_hasAtmo || !m_shader || !m_quadVAO || !vp) return;
 
-	// Build haze ring: 2 concentric rings of vertices
-	// Inner ring at horizon, outer ring slightly above
-	struct HVtx { float x, y, z, alpha; };
-	std::vector<HVtx> verts;
-	std::vector<unsigned int> indices;
-
-	for (int i = 0; i <= HAZE_NSEG; i++) {
-		float angle = (float)i / HAZE_NSEG * 2.0f * M_PI;
-		float ca = cosf(angle), sa = sinf(angle);
-
-		// Outer vertex (top of haze, alpha = 0)
-		verts.push_back({ca, 0.02f, sa, 0.0f});
-		// Inner vertex (at horizon, alpha = 1)
-		verts.push_back({ca, 0.0f, sa, 1.0f});
-	}
-
-	for (int i = 0; i < HAZE_NSEG; i++) {
-		int base = i * 2;
-		indices.push_back(base);
-		indices.push_back(base + 1);
-		indices.push_back(base + 2);
-		indices.push_back(base + 1);
-		indices.push_back(base + 3);
-		indices.push_back(base + 2);
-	}
-	m_hazeIndexCount = (int)indices.size();
-
-	glGenVertexArrays(1, &m_hazeVAO);
-	glGenBuffers(1, &m_hazeVBO);
-	glGenBuffers(1, &m_hazeEBO);
-	glBindVertexArray(m_hazeVAO);
-	glBindBuffer(GL_ARRAY_BUFFER, m_hazeVBO);
-	glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(HVtx), verts.data(), GL_STATIC_DRAW);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_hazeEBO);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
-	// location 0: position (vec3)
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(HVtx), (void*)0);
-	glEnableVertexAttribArray(0);
-	// location 1: alpha (float)
-	glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, sizeof(HVtx), (void*)(3 * sizeof(float)));
-	glEnableVertexAttribArray(1);
-	glBindVertexArray(0);
-}
-
-void OGLAtmosphere::ReleaseHazeRing()
-{
-	if (m_hazeVAO) { glDeleteVertexArrays(1, &m_hazeVAO); m_hazeVAO = 0; }
-	if (m_hazeVBO) { glDeleteBuffers(1, &m_hazeVBO); m_hazeVBO = 0; }
-	if (m_hazeEBO) { glDeleteBuffers(1, &m_hazeEBO); m_hazeEBO = 0; }
-}
-
-void OGLAtmosphere::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &sunPos,
-                            double planetRadius, const VECTOR3 &planetPos)
-{
-	if (!m_hasAtmo || !m_hazeShader || !m_hazeVAO) return;
-
-	double rx = planetPos.x - camPos.x;
-	double ry = planetPos.y - camPos.y;
-	double rz = planetPos.z - camPos.z;
-	double dist = sqrt(rx * rx + ry * ry + rz * rz);
-	double camAlt = dist - planetRadius;
-
-	// Only render haze when camera is within ~5x atmosphere altitude
-	if (camAlt > m_atmoAlt * 5.0 || camAlt < 0) return;
-
-	// Haze opacity depends on distance and altitude
-	double altFactor = 1.0 - camAlt / (m_atmoAlt * 3.0);
-	if (altFactor < 0) altFactor = 0;
-	float hazeAlpha = (float)(m_hazeDensity * altFactor);
-	if (hazeAlpha < 0.01f) return;
-
-	// Distance normalization (same scheme as planet rendering)
-	double normDist = 10.0;
-	double scale = normDist / dist;
-
-	// Haze ring positioned at planet horizon
-	double hazeRadius = planetRadius + m_horizonAlt;
-	float ns = (float)(hazeRadius * scale);
-	float tx = (float)(rx * scale), ty = (float)(ry * scale), tz = (float)(rz * scale);
-
-	// Model matrix: scale the ring to planet size, centered at planet pos
-	float model[16] = {
-		ns, 0,  0,  0,
-		0,  ns, 0,  0,
-		0,  0,  ns, 0,
-		tx, ty, tz, 1
+	// Camera position in the planet-local frame, in absolute metres. The
+	// scatter shader lives entirely in metres so it can compute exp(-h/H)
+	// without precision gymnastics.
+	const float camRel[3] = {
+		float(camPos.x - planetPos.x),
+		float(camPos.y - planetPos.y),
+		float(camPos.z - planetPos.z)
 	};
 
-	// Sun direction relative to planet for sky coloring
-	double sdx = sunPos.x - planetPos.x, sdy = sunPos.y - planetPos.y, sdz = sunPos.z - planetPos.z;
-	double sdist = sqrt(sdx * sdx + sdy * sdy + sdz * sdz);
-	if (sdist > 0) { sdx /= sdist; sdy /= sdist; sdz /= sdist; }
+	// Sun direction in the same frame — a world-frame unit vector is fine;
+	// Orbiter's world axes are invariant under the planet translation.
+	VECTOR3 sd = { sunPos.x - planetPos.x, sunPos.y - planetPos.y, sunPos.z - planetPos.z };
+	double sdLen = std::sqrt(sd.x * sd.x + sd.y * sd.y + sd.z * sd.z);
+	if (sdLen < 1e-6) return;
+	const float sunDir[3] = {
+		float(sd.x / sdLen), float(sd.y / sdLen), float(sd.z / sdLen)
+	};
 
-	// Camera direction from planet center
-	double cdx = -rx / dist, cdy = -ry / dist, cdz = -rz / dist;
-	// Sun angle at camera position (for sunset/sunrise coloring)
-	double sunAngle = sdx * cdx + sdy * cdy + sdz * cdz;
+	const float atmoRadius = float(planetRadius + m_atmoAlt);
+	const float planetR    = float(planetRadius);
 
-	// Sky color modulated by sun angle
-	float skyR = (float)m_skyColor.x, skyG = (float)m_skyColor.y, skyB = (float)m_skyColor.z;
-	if (sunAngle < 0) {
-		// Night side: darken
-		float nightFactor = (float)(1.0 + sunAngle * 3.0);
-		if (nightFactor < 0.05f) nightFactor = 0.05f;
-		skyR *= nightFactor; skyG *= nightFactor; skyB *= nightFactor;
-	} else if (sunAngle < 0.15) {
-		// Sunset/sunrise: warm colors
-		float t = (float)(sunAngle / 0.15);
-		skyR = skyR * t + 0.9f * (1 - t);
-		skyG = skyG * t + 0.4f * (1 - t);
-		skyB = skyB * t + 0.2f * (1 - t);
-	}
+	glUseProgram(m_shader);
+	glUniformMatrix4fv(m_shaderMgr->GetUniformLoc(m_shader, "uViewProj"),
+	                   1, GL_FALSE, vp);
+	glUniform3fv(m_shaderMgr->GetUniformLoc(m_shader, "uCamPosPlanet"), 1, camRel);
+	glUniform1f (m_shaderMgr->GetUniformLoc(m_shader, "uPlanetRadius"), planetR);
+	glUniform1f (m_shaderMgr->GetUniformLoc(m_shader, "uAtmoRadius"),   atmoRadius);
+	glUniform3fv(m_shaderMgr->GetUniformLoc(m_shader, "uSunDir"),       1, sunDir);
+	glUniform3fv(m_shaderMgr->GetUniformLoc(m_shader, "uSunRadiance"),  1, m_sunRadiance);
+	glUniform3fv(m_shaderMgr->GetUniformLoc(m_shader, "uBetaR"),        1, m_betaR);
+	glUniform1f (m_shaderMgr->GetUniformLoc(m_shader, "uBetaM"),        m_betaM);
+	glUniform1f (m_shaderMgr->GetUniformLoc(m_shader, "uScaleR"),       m_scaleR);
+	glUniform1f (m_shaderMgr->GetUniformLoc(m_shader, "uScaleM"),       m_scaleM);
+	glUniform1f (m_shaderMgr->GetUniformLoc(m_shader, "uMieG"),         m_mieG);
+	glUniform1f (m_shaderMgr->GetUniformLoc(m_shader, "uExposure"),     m_exposure);
 
-	glUseProgram(m_hazeShader);
-	glUniformMatrix4fv(m_shaderMgr->GetUniformLoc(m_hazeShader, "uViewProj"), 1, GL_FALSE, vp);
-	glUniformMatrix4fv(m_shaderMgr->GetUniformLoc(m_hazeShader, "uModel"), 1, GL_FALSE, model);
-	glUniform3f(m_shaderMgr->GetUniformLoc(m_hazeShader, "uHazeColor"), skyR, skyG, skyB);
-	glUniform1f(m_shaderMgr->GetUniformLoc(m_hazeShader, "uHazeAlpha"), hazeAlpha);
-
+	// Blend the atmosphere over whatever the planet surface wrote:
+	//   FragColor = (inscatter, alpha)
+	// src_alpha blending gives us: dst = src + dst * (1-alpha), which is the
+	// standard "sky-over-surface" compositing with alpha = 1 - transmittance.
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_CULL_FACE);
 
-	glBindVertexArray(m_hazeVAO);
-	glDrawElements(GL_TRIANGLES, m_hazeIndexCount, GL_UNSIGNED_INT, 0);
+	glBindVertexArray(m_quadVAO);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	glBindVertexArray(0);
 
 	glEnable(GL_DEPTH_TEST);
