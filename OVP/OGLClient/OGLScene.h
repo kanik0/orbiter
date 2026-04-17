@@ -57,6 +57,7 @@ private:
 	// Visual objects
 	std::vector<OGLvPlanet*> m_planets;
 	std::vector<OGLvVessel*> m_vessels;
+	std::vector<class OGLvBase*> m_bases;
 
 	// Sun screen position cached each frame for the post-process lens-flare
 	// pass. (-1..1) in NDC; visible=false when behind the camera.

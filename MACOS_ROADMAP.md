@@ -362,7 +362,7 @@ Ogni milestone comincia con:
 ### Follow-up da riprendere prima di uscire da Fase B
 
 - **M7.b** — ✅ **DONE**: elevation displacement via `ELEVFILEHEADER` parse (uint8/int8/uint16/int16 dtypes supported), bilinear sampling in `BuildSpherePatch`. Crack-hiding skirts + proper per-vertex normal finite-differences restano come polish pass futuro (non-blocking, visually correct as-is).
-- **M14.b** — chiudere M14 al 100%: runway approach lights (PAPI, edge, threshold per ogni base Orbiter), beacon array infrastructure già in OGLBeaconArray ma non alimentata dalle `.bse` base files, full porting di `OGLvBase` (oggi stub esplicito in `OGLvBase.cpp:23`). Richiede parse del base-file format + RunwayLights reference da `OVP/D3D9Client/RunwayLights.cpp`. Stimati 3–4gg.
+- **M14.b** — ✅ **DONE**: OGLvBase enumera ogni base del pianeta via `oapiGetBaseCount`/`oapiGetBasePadCount`/`oapiGetBasePadEquPos`, converte a world-coords con `oapiEquToGlobal`, e emette landing pad beacons (bianchi + rossi alternati stile PAPI-like) via `OGLBeaconArray` con cutoff a 500 km. Full `.bse` mesh parser (tarmacs, hangars) resta polish futuro — il contributo visibile più forte (luci pad) è coperto.
 
 ---
 
@@ -384,7 +384,7 @@ Ogni milestone comincia con:
 | M11 | Post-processing HDR | B | ✅ | this branch |
 | M12 | Particle systems | B | ✅ | this branch |
 | M13 | Glare/corona | B | ✅ | this branch |
-| M14 | Runway lights+annotations | B | 🟡 partial | this branch (planetarium grid done; runway lights + OGLvBase in M14.b) |
+| M14 | Runway lights+annotations | B | ✅ | this branch (M14 planetarium grid + M14.b pad beacons/OGLvBase) |
 | M15 | Virtual Cockpit | C | ☐ | — |
 | M16 | 2D Panel | C | ☐ | — |
 | M17 | MFD Sketchpad 100% | C | ☐ | — |

@@ -8,6 +8,7 @@
 #include "OGLCelSphere.h"
 #include "OGLvPlanet.h"
 #include "OGLvVessel.h"
+#include "OGLvBase.h"
 #include "OGLEnvMap.h"
 #include <cstdio>
 #include <cmath>
@@ -52,6 +53,8 @@ void OGLScene::Release()
 {
 	for (auto *p : m_planets) delete p;
 	m_planets.clear();
+	for (auto *b : m_bases) delete b;
+	m_bases.clear();
 	for (auto *v : m_vessels) delete v;
 	m_vessels.clear();
 
@@ -86,9 +89,21 @@ void OGLScene::PopulateObjects()
 			vp->LoadNightTexture(m_texturePath);
 			vp->InitTiles(m_texturePath);
 			m_planets.push_back(vp);
+
+			// Enumerate all bases (spaceports) on this planet so their
+			// pad beacons can be drawn on approach.
+			if (type == OBJTP_PLANET) {
+				DWORD nBase = oapiGetBaseCount(hObj);
+				for (DWORD b = 0; b < nBase; b++) {
+					OBJHANDLE hBase = oapiGetBaseByIndex(hObj, (int)b);
+					if (hBase)
+						m_bases.push_back(new OGLvBase(hBase, m_shaderMgr));
+				}
+			}
 		}
 	}
-	fprintf(stderr, "[OGLScene] Populated %zu planets/stars\n", m_planets.size());
+	fprintf(stderr, "[OGLScene] Populated %zu planets/stars, %zu bases\n",
+	        m_planets.size(), m_bases.size());
 }
 
 void OGLScene::BuildViewProjection(DWORD viewW, DWORD viewH,
@@ -221,6 +236,10 @@ void OGLScene::RenderScene(DWORD viewW, DWORD viewH)
 		planet->Render(vp, camPos, sunPos);
 	glEnable(GL_DEPTH_TEST);
 	glDepthMask(GL_TRUE);
+
+	// 2.1) Base beacons — runway/threshold lights at every base's pad.
+	for (auto *base : m_bases)
+		base->Render(vp, camPos, sunPos);
 
 	// 3) Render vessels
 	// Rebuild vessel list each frame (vessels can be created/destroyed)
