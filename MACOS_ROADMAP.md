@@ -364,6 +364,11 @@ Ogni milestone comincia con:
 - **M7.b** — ✅ **DONE**: elevation displacement via `ELEVFILEHEADER` parse (uint8/int8/uint16/int16 dtypes supported), bilinear sampling in `BuildSpherePatch`. Crack-hiding skirts + proper per-vertex normal finite-differences restano come polish pass futuro (non-blocking, visually correct as-is).
 - **M14.b** — ✅ **DONE**: OGLvBase enumera ogni base del pianeta via `oapiGetBaseCount`/`oapiGetBasePadCount`/`oapiGetBasePadEquPos`, converte a world-coords con `oapiEquToGlobal`, e emette landing pad beacons (bianchi + rossi alternati stile PAPI-like) via `OGLBeaconArray` con cutoff a 500 km. Full `.bse` mesh parser (tarmacs, hangars) resta polish futuro — il contributo visibile più forte (luci pad) è coperto.
 
+### Follow-up Fase C — polish non-bloccanti post-M15
+
+- **M15 — interactive verification**: smoke tests confermano zero-crash cross-scenario ma l'acceptance visiva del ciclo F1 → VC (mesh cockpit, look-around, MFD rendering, HUD overlay, area click response) richiede sessione desktop. Da sottoporre ad human-in-the-loop prima del tag release.
+- **M15 — Area compositing su texture compresse**: `clbkBlt` su `tgt` loaded da DDS compressa (DXT) potrebbe fallire FBO completeness check (`OGLSurface::EnsureFBO` su texture DXT). Se si manifesta in scenari reali: aggiungere path di "decompress-on-first-area-bind" che ricrea la texture come RGBA8 prima del primo blit. Non-blocking: strumentale solo se VC areas risultano nere in un vessel che usa esclusivamente DDS compresse per i mesh group con area targets.
+
 ---
 
 ## Stato avanzamento
@@ -385,7 +390,7 @@ Ogni milestone comincia con:
 | M12 | Particle systems | B | ✅ | this branch |
 | M13 | Glare/corona | B | ✅ | this branch |
 | M14 | Runway lights+annotations | B | ✅ | this branch (M14 planetarium grid + M14.b pad beacons/OGLvBase) |
-| M15 | Virtual Cockpit | C | ☐ | — |
+| M15 | Virtual Cockpit | C | ✅ | this branch (M15.a re-enable F1 + M15.b vismode/dual-pass + M15.c MFD texture compositing + M15.d HUD overlay/click zones) |
 | M16 | 2D Panel | C | ☐ | — |
 | M17 | MFD Sketchpad 100% | C | ☐ | — |
 | M18 | IAudioBackend + OpenAL | D | ☐ | — |
