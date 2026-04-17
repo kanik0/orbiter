@@ -13,6 +13,7 @@
 #include <mutex>
 #include <thread>
 #include <atomic>
+#include <cstdint>
 
 class ZTreeMgr;
 struct OGLTexture;
@@ -45,9 +46,15 @@ struct OGLTileData {
 	GLuint texId;
 	bool ownsTexture;
 
-	// Bounding sphere for frustum culling
+	// Bounding sphere on the unit sphere (centre is a direction, radius the
+	// tile's half-diagonal in the same unit system). Call-site multiplies
+	// by the planet radius when it needs the world-space magnitude.
 	float bsCenterX, bsCenterY, bsCenterZ;
 	float bsRadius;
+
+	// Frame-count of the most recent render use — the tile cache evicts the
+	// least-recently-rendered entries when the pool grows past its budget.
+	std::uint64_t lastUsedFrame;
 
 	// Quad-tree children (nullptr if not subdivided)
 	OGLTileData *child[4];
@@ -122,10 +129,38 @@ private:
 
 	void LoaderThreadFunc();
 
-	// LOD traversal
+	// Frame counter stamped on every touched tile (see OGLTileData::lastUsedFrame).
+	std::uint64_t m_frame;
+
+	// Traversal context captured once per Render() so ProcessNode doesn't
+	// have to re-derive horizon and frustum state for every node.
+	struct TraversalCtx {
+		VECTOR3 relCam;         // camera position in planet-local frame [m]
+		double  camDist;        // |relCam|
+		double  planetRadius;
+		double  horizonCos;     // cos(angle_to_horizon): planetRadius / camDist
+		double  tanAp;          // tan(camera aperture / 2)
+		// Frustum planes in the planet-local distance-normalised frame. Each
+		// plane is (nx, ny, nz, d) with the convention dot(n, p) + d > 0
+		// inside.
+		float   frustum[6][4];
+		double  normScale;      // normDist / camDist (matches surface pass)
+	};
+
+	// LOD traversal.
 	void ProcessNode(OGLTileData *tile, int lvl, int ilat, int ilng,
-	                 const VECTOR3 &camPos, double planetRadius,
-	                 double tanAp, std::vector<OGLTileData*> &renderList);
+	                 const TraversalCtx &ctx,
+	                 std::vector<OGLTileData*> &renderList);
+
+	// Cheap culling helpers — both work in the unit-sphere frame of the
+	// bounding sphere; the call site scales by planetRadius where needed.
+	bool IsBelowHorizon(const OGLTileData *tile, const TraversalCtx &ctx) const;
+	bool IsOutsideFrustum(const OGLTileData *tile, const TraversalCtx &ctx) const;
+
+	// Evict cold tiles when the live pool exceeds kTileCacheBudget. Called
+	// opportunistically at the end of Render().
+	void EvictColdTiles();
+	static constexpr std::size_t kTileCacheBudget = 512;
 
 	// Create a tile and its geometry for a given level/lat/lng
 	OGLTileData *CreateTile(int level, int ilat, int ilng, double planetRadius);

@@ -26,7 +26,7 @@ OGLTileData::OGLTileData()
 	  vao(0), vbo(0), ebo(0), indexCount(0), vertexCount(0),
 	  texId(0), ownsTexture(false),
 	  bsCenterX(0), bsCenterY(0), bsCenterZ(0), bsRadius(0),
-	  parent(nullptr)
+	  lastUsedFrame(0), parent(nullptr)
 {
 	child[0] = child[1] = child[2] = child[3] = nullptr;
 }
@@ -57,7 +57,7 @@ bool OGLTileData::HasChildren() const
 OGLTileMgr::OGLTileMgr(OBJHANDLE hPlanet, ShaderMgr *shaderMgr)
 	: m_hPlanet(hPlanet), m_shaderMgr(shaderMgr), m_surfShader(0),
 	  m_treeSurf(nullptr), m_treeMask(nullptr), m_treeElev(nullptr),
-	  m_loaderRunning(false)
+	  m_loaderRunning(false), m_frame(0)
 {
 }
 
@@ -119,8 +119,23 @@ void OGLTileMgr::LoaderThreadFunc()
 		{
 			std::lock_guard<std::mutex> lock(m_loadMutex);
 			if (!m_loadRequests.empty()) {
-				req = m_loadRequests.back();
-				m_loadRequests.pop_back();
+				// Priority dequeue: serve the coarsest-level tiles first so
+				// the planet's silhouette becomes visible as quickly as
+				// possible, then refine toward the camera. Ties are broken
+				// by insertion order (LIFO) which keeps cache coherency for
+				// siblings requested in the same frame.
+				auto best = m_loadRequests.end();
+				int bestLvl = 1 << 30;
+				for (auto it = m_loadRequests.begin(); it != m_loadRequests.end(); ++it) {
+					if (it->tile && it->tile->level < bestLvl) {
+						bestLvl = it->tile->level;
+						best = it;
+					}
+				}
+				if (best == m_loadRequests.end())
+					best = std::prev(m_loadRequests.end());
+				req = *best;
+				m_loadRequests.erase(best);
 				hasWork = true;
 			}
 		}
@@ -328,37 +343,94 @@ OGLTileData *OGLTileMgr::CreateTile(int level, int ilat, int ilng, double planet
 	return tile;
 }
 
+bool OGLTileMgr::IsBelowHorizon(const OGLTileData *tile, const TraversalCtx &ctx) const
+{
+	// A tile is safely below the horizon if its entire bounding sphere sits
+	// farther from the camera's look-away half-space than the planet's limb.
+	// In planet-local coordinates: project the tile centre onto the camera
+	// direction and compare with the horizon cosine.
+	double tcx = double(tile->bsCenterX) * ctx.planetRadius;
+	double tcy = double(tile->bsCenterY) * ctx.planetRadius;
+	double tcz = double(tile->bsCenterZ) * ctx.planetRadius;
+	double tc2 = tcx * tcx + tcy * tcy + tcz * tcz;
+	if (tc2 < 1e-6) return false;
+
+	// Cosine between (camera → planet centre) and (camera → tile centre).
+	double dx = ctx.relCam.x, dy = ctx.relCam.y, dz = ctx.relCam.z;
+	double camToTileDot = dx * tcx + dy * tcy + dz * tcz;  // not unit-normalised yet
+	double tcLen = std::sqrt(tc2);
+	double tileConeCos = camToTileDot / (ctx.camDist * tcLen + 1e-9);
+
+	// Allow a generous margin for the sphere radius — a tile whose centre
+	// is just past the horizon but whose geometry peeks over it must still
+	// render. Convert the bounding sphere radius into an angular slack.
+	double angularSlack = double(tile->bsRadius) * ctx.planetRadius / ctx.camDist;
+
+	// The dot-product's sign is flipped because relCam points *away* from
+	// the planet centre while the tile vector points *toward* the tile.
+	// We want: tile is below horizon ↔ the tile-to-camera angle exceeds
+	// the horizon angle. Equivalently: tileConeCos > -horizonCos + slack.
+	return tileConeCos > -ctx.horizonCos + angularSlack + 0.02;
+}
+
+bool OGLTileMgr::IsOutsideFrustum(const OGLTileData *tile, const TraversalCtx &ctx) const
+{
+	// Tile centre and radius expressed in the render-time distance-normalised
+	// frame: multiply by planetRadius to get planet-local metres, then by the
+	// same `normScale` the surface pass applies to the model matrix. This
+	// keeps the geometry in the same coordinate system as the frustum planes
+	// extracted from VP.
+	const double norm = ctx.planetRadius * ctx.normScale;
+	double cx = double(tile->bsCenterX) * norm;
+	double cy = double(tile->bsCenterY) * norm;
+	double cz = double(tile->bsCenterZ) * norm;
+	double r  = double(tile->bsRadius)  * norm;
+
+	// Apply the same translation the model matrix encodes — the tile centre
+	// in unit-sphere space is relative to the planet centre, whose rendered
+	// position is (nrx, nry, nrz). We decompose ctx.relCam back into that:
+	//   renderedPlanetPos = -(relCam * normScale)
+	double px = -ctx.relCam.x * ctx.normScale;
+	double py = -ctx.relCam.y * ctx.normScale;
+	double pz = -ctx.relCam.z * ctx.normScale;
+
+	cx += px; cy += py; cz += pz;
+
+	for (int i = 0; i < 6; i++) {
+		const float *p = ctx.frustum[i];
+		double d = double(p[0]) * cx + double(p[1]) * cy + double(p[2]) * cz + double(p[3]);
+		if (d < -r) return true;  // fully outside this plane
+	}
+	return false;
+}
+
 void OGLTileMgr::ProcessNode(OGLTileData *tile, int lvl, int ilat, int ilng,
-                              const VECTOR3 &camPos, double planetRadius,
-                              double tanAp, std::vector<OGLTileData*> &renderList)
+                              const TraversalCtx &ctx,
+                              std::vector<OGLTileData*> &renderList)
 {
 	if (!tile || tile->state == TileState::Invalid) return;
-	if (tile->state == TileState::InQueue || tile->state == TileState::Loading) {
-		// Tile is loading — render parent if available
+	if (tile->state == TileState::InQueue || tile->state == TileState::Loading)
 		return;
-	}
 
-	// Simple LOD: check angular size of tile vs screen
-	// Tile center in planet-local coordinates (unit sphere)
-	float cx = tile->bsCenterX, cy = tile->bsCenterY, cz = tile->bsCenterZ;
+	// Horizon + frustum culling — both use the bounding sphere which is
+	// populated on tile upload. Skip nodes outside the view; their children
+	// inherit the parent's verdict so we never recurse into hidden regions.
+	if (IsBelowHorizon(tile, ctx)) return;
+	if (IsOutsideFrustum(tile, ctx)) return;
 
-	// Transform to global (approximate — just multiply by planetRadius)
-	double tcx = cx * planetRadius;
-	double tcy = cy * planetRadius;
-	double tcz = cz * planetRadius;
+	// Angular-size LOD: subdivide while the tile subtends a meaningful
+	// fraction of the camera aperture.
+	const double tcx = double(tile->bsCenterX) * ctx.planetRadius;
+	const double tcy = double(tile->bsCenterY) * ctx.planetRadius;
+	const double tcz = double(tile->bsCenterZ) * ctx.planetRadius;
+	const double dx  = tcx - ctx.relCam.x;
+	const double dy  = tcy - ctx.relCam.y;
+	const double dz  = tcz - ctx.relCam.z;
+	const double dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+	const double angularSize = double(tile->bsRadius) * ctx.planetRadius / (dist + 1e-3);
+	const double threshold   = 0.3 * ctx.tanAp;
+	const bool   shouldSubdivide = (angularSize > threshold) && (lvl < 14);
 
-	// Distance from camera to tile center
-	double dx = tcx - camPos.x, dy = tcy - camPos.y, dz = tcz - camPos.z;
-	double dist = sqrt(dx * dx + dy * dy + dz * dz);
-
-	// Angular size of tile as seen from camera
-	double angularSize = tile->bsRadius * planetRadius / dist;
-
-	// LOD threshold: subdivide if tile subtends more than ~0.5 radians on screen
-	double threshold = 0.3 * tanAp;
-	bool shouldSubdivide = (angularSize > threshold) && (lvl < 14);
-
-	// Check if tile data is available in the archive
 	bool hasData = false;
 	if (m_treeSurf) {
 		DWORD idx = m_treeSurf->Idx(lvl, ilat, ilng);
@@ -366,30 +438,108 @@ void OGLTileMgr::ProcessNode(OGLTileData *tile, int lvl, int ilat, int ilng,
 	}
 
 	if (shouldSubdivide && hasData) {
-		// Try to subdivide
-		int nlat_child = ilat * 2;
-		int nlng_child = ilng * 2;
-
+		const int nlat_child = ilat * 2;
+		const int nlng_child = ilng * 2;
 		for (int c = 0; c < 4; c++) {
 			int clat = nlat_child + (c >> 1);
 			int clng = nlng_child + (c & 1);
 
 			if (!tile->child[c]) {
-				// Check if child data exists in archive
 				if (m_treeSurf) {
 					DWORD cidx = m_treeSurf->Idx(lvl + 1, clat, clng);
 					if (cidx != (DWORD)-1)
-						tile->child[c] = CreateTile(lvl + 1, clat, clng, planetRadius);
+						tile->child[c] = CreateTile(lvl + 1, clat, clng, ctx.planetRadius);
 				}
 			}
 
 			if (tile->child[c] && tile->child[c]->state == TileState::Active)
-				ProcessNode(tile->child[c], lvl + 1, clat, clng, camPos, planetRadius, tanAp, renderList);
+				ProcessNode(tile->child[c], lvl + 1, clat, clng, ctx, renderList);
 			else
-				renderList.push_back(tile); // fallback to parent
+				renderList.push_back(tile); // child missing/loading → use parent
 		}
 	} else {
 		renderList.push_back(tile);
+	}
+}
+
+void OGLTileMgr::EvictColdTiles()
+{
+	if (m_allTiles.size() <= kTileCacheBudget) return;
+
+	// Sort by lastUsedFrame (cold tiles first). Roots are pinned so the
+	// planet silhouette never evaporates under a long burn away from it.
+	std::vector<OGLTileData *> candidates;
+	candidates.reserve(m_allTiles.size());
+	for (auto *t : m_allTiles) {
+		bool isRoot = false;
+		for (auto *r : m_rootTiles) if (r == t) { isRoot = true; break; }
+		if (isRoot) continue;
+		if (t->state != TileState::Active) continue;
+		candidates.push_back(t);
+	}
+	std::sort(candidates.begin(), candidates.end(),
+	          [](const OGLTileData *a, const OGLTileData *b) {
+		          return a->lastUsedFrame < b->lastUsedFrame;
+	          });
+
+	const std::size_t keep = kTileCacheBudget * 3 / 4; // aim under budget
+	if (m_allTiles.size() <= keep) return;
+	const std::size_t toDrop = m_allTiles.size() - keep;
+
+	std::size_t dropped = 0;
+	for (OGLTileData *victim : candidates) {
+		if (dropped >= toDrop) break;
+
+		// Detach from parent so the quadtree no longer points at a dead node.
+		if (victim->parent) {
+			for (int c = 0; c < 4; c++)
+				if (victim->parent->child[c] == victim)
+					victim->parent->child[c] = nullptr;
+		}
+
+		auto it = std::find(m_allTiles.begin(), m_allTiles.end(), victim);
+		if (it != m_allTiles.end())
+			m_allTiles.erase(it);
+		delete victim;
+		++dropped;
+	}
+}
+
+// Extract six frustum planes from a column-major view-projection matrix,
+// using the standard Gribb-Hartmann decomposition (row4 ± row_i). Each plane
+// is returned as {nx, ny, nz, d} with the inside-positive convention.
+static void ExtractFrustumPlanes(const float *vp, float out[6][4])
+{
+	auto get = [&](int col, int row) { return vp[col * 4 + row]; };
+
+	// row_i is {get(0,i), get(1,i), get(2,i), get(3,i)}.
+	float r0[4] = { get(0,0), get(1,0), get(2,0), get(3,0) };
+	float r1[4] = { get(0,1), get(1,1), get(2,1), get(3,1) };
+	float r2[4] = { get(0,2), get(1,2), get(2,2), get(3,2) };
+	float r3[4] = { get(0,3), get(1,3), get(2,3), get(3,3) };
+
+	auto add = [](const float a[4], const float b[4], float o[4]) {
+		o[0]=a[0]+b[0]; o[1]=a[1]+b[1]; o[2]=a[2]+b[2]; o[3]=a[3]+b[3];
+	};
+	auto sub = [](const float a[4], const float b[4], float o[4]) {
+		o[0]=a[0]-b[0]; o[1]=a[1]-b[1]; o[2]=a[2]-b[2]; o[3]=a[3]-b[3];
+	};
+
+	add(r3, r0, out[0]); // left
+	sub(r3, r0, out[1]); // right
+	add(r3, r1, out[2]); // bottom
+	sub(r3, r1, out[3]); // top
+	add(r3, r2, out[4]); // near
+	sub(r3, r2, out[5]); // far
+
+	for (int i = 0; i < 6; i++) {
+		float nx = out[i][0], ny = out[i][1], nz = out[i][2];
+		float len = std::sqrt(nx * nx + ny * ny + nz * nz);
+		if (len > 1e-6f) {
+			float inv = 1.0f / len;
+			out[i][0] *= inv; out[i][1] *= inv;
+			out[i][2] *= inv; out[i][3] *= inv;
+		}
 	}
 }
 
@@ -397,6 +547,8 @@ void OGLTileMgr::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
                           double planetRadius, const MATRIX3 &planetRot)
 {
 	if (!m_surfShader) return;
+
+	++m_frame;
 
 	// Process completed async loads
 	ProcessLoadQueue();
@@ -410,35 +562,45 @@ void OGLTileMgr::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 		}
 	}
 
-	// Camera position relative to planet center (in planet coordinates)
+	// Camera position relative to planet center (in planet coordinates).
 	VECTOR3 planetPos;
 	oapiGetGlobalPos(m_hPlanet, &planetPos);
 	VECTOR3 relCam = { camPos.x - planetPos.x, camPos.y - planetPos.y, camPos.z - planetPos.z };
-
-	double fov = oapiCameraAperture() * 2.0;
-	if (fov <= 0) fov = 50.0 * M_PI / 180.0;
-	double tanAp = tan(fov * 0.5);
-
-	// Build render list via LOD traversal
-	std::vector<OGLTileData*> renderList;
-	for (auto *root : m_rootTiles) {
-		if (root->state == TileState::Active)
-			ProcessNode(root, root->level, root->ilat, root->ilng, relCam, planetRadius, tanAp, renderList);
-	}
-
-	if (renderList.empty()) return;
-
-	// Remove duplicates
-	std::sort(renderList.begin(), renderList.end());
-	renderList.erase(std::unique(renderList.begin(), renderList.end()), renderList.end());
-
-	// Distance normalization (same as OGLvPlanet)
 	double rx = planetPos.x - camPos.x, ry = planetPos.y - camPos.y, rz = planetPos.z - camPos.z;
-	double dist = sqrt(rx * rx + ry * ry + rz * rz);
+	double dist = std::sqrt(rx * rx + ry * ry + rz * rz);
 	double normDist = 10.0;
 	double scale = normDist / dist;
 	float nrx = (float)(rx * scale), nry = (float)(ry * scale), nrz = (float)(rz * scale);
-	float ns = (float)(planetRadius * scale);
+	float ns  = (float)(planetRadius * scale);
+
+	double fov = oapiCameraAperture() * 2.0;
+	if (fov <= 0) fov = 50.0 * M_PI / 180.0;
+
+	// Build traversal context once per frame.
+	TraversalCtx ctx;
+	ctx.relCam       = relCam;
+	ctx.camDist      = std::max(dist, planetRadius + 1.0);
+	ctx.planetRadius = planetRadius;
+	ctx.horizonCos   = planetRadius / ctx.camDist;
+	ctx.tanAp        = std::tan(fov * 0.5);
+	ctx.normScale    = scale;
+	ExtractFrustumPlanes(vp, ctx.frustum);
+
+	// Build render list via LOD traversal.
+	std::vector<OGLTileData*> renderList;
+	for (auto *root : m_rootTiles) {
+		if (root->state == TileState::Active)
+			ProcessNode(root, root->level, root->ilat, root->ilng, ctx, renderList);
+	}
+
+	if (renderList.empty()) {
+		EvictColdTiles();
+		return;
+	}
+
+	// Remove duplicates.
+	std::sort(renderList.begin(), renderList.end());
+	renderList.erase(std::unique(renderList.begin(), renderList.end()), renderList.end());
 
 	// Sun direction
 	double sdx = sunPos.x - planetPos.x, sdy = sunPos.y - planetPos.y, sdz = sunPos.z - planetPos.z;
@@ -462,6 +624,8 @@ void OGLTileMgr::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 	for (auto *tile : renderList) {
 		if (!tile->vao || tile->indexCount == 0) continue;
 
+		tile->lastUsedFrame = m_frame;
+
 		if (tile->texId) {
 			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, tile->texId);
@@ -478,6 +642,8 @@ void OGLTileMgr::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 	glBindVertexArray(0);
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glUseProgram(0);
+
+	EvictColdTiles();
 }
 
 } // namespace ogl
