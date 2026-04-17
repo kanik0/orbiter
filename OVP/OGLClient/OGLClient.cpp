@@ -220,6 +220,12 @@ HWND OGLClient::clbkCreateRenderWindow()
 	// log makes it obvious which programs, files and UBO blocks are live.
 	m_shaderMgr->LogStatus();
 
+	// M1 self-test: round-trips an RGBA8 render target and verifies that
+	// FBO bind / clear / readback / unbind all work on the current GL
+	// context. Gated by OGL_M1_SELFTEST=1 so it stays out of production.
+	if (const char *v = std::getenv("OGL_M1_SELFTEST"); v && v[0] == '1')
+		RunM1SelfTest();
+
 	fprintf(stderr, "[OGLClient] Scene initialized\n");
 	return (HWND)m_sdlWindow;
 }
@@ -388,20 +394,27 @@ void OGLClient::ReleaseBlitResources()
 	m_panel2dShader = 0;
 }
 
-// Core blit helper: renders a textured quad from src rect to tgt rect via FBO
+// Core blit helper: renders a textured quad from src rect to tgt rect.
+// When `tgt` is null the quad is drawn into the default framebuffer
+// (backbuffer) at its current viewport — this is what scripts and MFD
+// plugins rely on when they pass NULL for the target surface.
 void OGLClient::BlitQuad(OGLSurface *tgt, DWORD tgtx, DWORD tgty, DWORD tgtw, DWORD tgth,
                           OGLSurface *src, DWORD srcx, DWORD srcy, DWORD srcw, DWORD srch,
                           DWORD flag) const
 {
-	if (!m_blitShader || !m_blitVAO || !src || !tgt) return;
+	if (!m_blitShader || !m_blitVAO || !src) return;
 
 	// Compute source UV coords
 	float sw = (float)src->GetWidth(), sh = (float)src->GetHeight();
 	float u0 = (float)srcx / sw, v0 = (float)srcy / sh;
 	float u1 = (float)(srcx + srcw) / sw, v1 = (float)(srcy + srch) / sh;
 
-	// Compute target NDC coords within the FBO viewport
-	float tw = (float)tgt->GetWidth(), th = (float)tgt->GetHeight();
+	// Target extent is either the surface's own size or the backbuffer viewport.
+	const float tw = tgt ? (float)tgt->GetWidth()  : (float)m_viewW;
+	const float th = tgt ? (float)tgt->GetHeight() : (float)m_viewH;
+	if (tw <= 0.0f || th <= 0.0f) return;
+
+	// Compute target NDC coords within the render-target viewport.
 	float x0 = (float)tgtx / tw * 2.0f - 1.0f;
 	float y0 = 1.0f - (float)(tgty + tgth) / th * 2.0f; // flip y for OpenGL
 	float x1 = (float)(tgtx + tgtw) / tw * 2.0f - 1.0f;
@@ -414,8 +427,19 @@ void OGLClient::BlitQuad(OGLSurface *tgt, DWORD tgtx, DWORD tgty, DWORD tgtw, DW
 		x1, y1, u1, v0,
 	};
 
-	// Bind target FBO
-	tgt->BindFBO();
+	// Bind target. For a surface target use BindFBO() (which also handles MSAA
+	// + mipmap regen in UnbindFBO); for the backbuffer, bind FBO 0 manually
+	// and remember to restore the caller's state when we're done.
+	GLint bbFBO = 0;
+	GLint bbVp[4] = { 0, 0, 0, 0 };
+	if (tgt) {
+		tgt->BindFBO();
+	} else {
+		glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &bbFBO);
+		glGetIntegerv(GL_VIEWPORT, bbVp);
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glViewport(0, 0, (GLsizei)m_viewW, (GLsizei)m_viewH);
+	}
 
 	glUseProgram(m_blitShader);
 	glBindVertexArray(m_blitVAO);
@@ -450,7 +474,12 @@ void OGLClient::BlitQuad(OGLSurface *tgt, DWORD tgtx, DWORD tgty, DWORD tgtw, DW
 	glBindVertexArray(0);
 	glUseProgram(0);
 
-	tgt->UnbindFBO();
+	if (tgt) {
+		tgt->UnbindFBO();
+	} else {
+		glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)bbFBO);
+		glViewport(bbVp[0], bbVp[1], bbVp[2], bbVp[3]);
+	}
 }
 
 // ============================================================================
@@ -461,8 +490,7 @@ bool OGLClient::clbkBlt(SURFHANDLE tgt, DWORD tgtx, DWORD tgty, SURFHANDLE src, 
 {
 	if (!src) return false;
 	OGLSurface *srcS = (OGLSurface*)src;
-	OGLSurface *tgtS = tgt ? (OGLSurface*)tgt : nullptr;
-	if (!tgtS) return false; // TODO: blit to backbuffer when tgt==NULL
+	OGLSurface *tgtS = (OGLSurface*)tgt; // tgt==NULL → backbuffer (handled by BlitQuad)
 	BlitQuad(tgtS, tgtx, tgty, srcS->GetWidth(), srcS->GetHeight(),
 	         srcS, 0, 0, srcS->GetWidth(), srcS->GetHeight(), flag);
 	return true;
@@ -473,8 +501,7 @@ bool OGLClient::clbkBlt(SURFHANDLE tgt, DWORD tgtx, DWORD tgty, SURFHANDLE src,
 {
 	if (!src) return false;
 	OGLSurface *srcS = (OGLSurface*)src;
-	OGLSurface *tgtS = tgt ? (OGLSurface*)tgt : nullptr;
-	if (!tgtS) return false;
+	OGLSurface *tgtS = (OGLSurface*)tgt;
 	BlitQuad(tgtS, tgtx, tgty, w, h, srcS, srcx, srcy, w, h, flag);
 	return true;
 }
@@ -485,8 +512,7 @@ bool OGLClient::clbkScaleBlt(SURFHANDLE tgt, DWORD tgtx, DWORD tgty, DWORD tgtw,
 {
 	if (!src) return false;
 	OGLSurface *srcS = (OGLSurface*)src;
-	OGLSurface *tgtS = tgt ? (OGLSurface*)tgt : nullptr;
-	if (!tgtS) return false;
+	OGLSurface *tgtS = (OGLSurface*)tgt;
 	BlitQuad(tgtS, tgtx, tgty, tgtw, tgth, srcS, srcx, srcy, srcw, srch, flag);
 	return true;
 }
@@ -611,6 +637,53 @@ void OGLClient::clbkRender2DPanel(SURFHANDLE *hSurf, MESHHANDLE hMesh, MATRIX3 *
 	glEnable(GL_DEPTH_TEST);
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glUseProgram(0);
+}
+
+// ============================================================================
+// M1 self-test — RGBA8 RT round-trip (create/clear/readback/unbind)
+// ============================================================================
+
+void OGLClient::RunM1SelfTest()
+{
+	constexpr int W = 256, H = 256;
+	OGLSurface *surf = new OGLSurface();
+	if (!surf->CreateEx(W, H, OAPISURFACE_RENDERTARGET | OAPISURFACE_MIPMAPS, 0, false)) {
+		fprintf(stderr, "[OGLClient] M1 self-test: CreateEx FAILED\n");
+		surf->Release();
+		return;
+	}
+
+	GLuint fbo = surf->EnsureFBO();
+	if (!fbo) {
+		fprintf(stderr, "[OGLClient] M1 self-test: EnsureFBO FAILED\n");
+		surf->Release();
+		return;
+	}
+
+	// Known clear colour.
+	constexpr float rF = 0.25f, gF = 0.50f, bF = 0.75f, aF = 1.00f;
+	unsigned char rgba[4] = { 0, 0, 0, 0 };
+
+	{
+		FBOBinder guard(fbo, W, H);
+		glClearColor(rF, gF, bF, aF);
+		glClear(GL_COLOR_BUFFER_BIT);
+		glReadPixels(W / 2, H / 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+	}
+
+	auto near8 = [](unsigned char got, float wantF) {
+		int want = (int)(wantF * 255.0f + 0.5f);
+		return std::abs((int)got - want) <= 2;
+	};
+	bool ok = near8(rgba[0], rF) && near8(rgba[1], gF) &&
+	          near8(rgba[2], bF) && near8(rgba[3], aF);
+
+	fprintf(stderr,
+	        "[OGLClient] M1 self-test: fill=(%.2f,%.2f,%.2f,%.2f) readback=(0x%02x,0x%02x,0x%02x,0x%02x) %s\n",
+	        rF, gF, bF, aF, rgba[0], rgba[1], rgba[2], rgba[3],
+	        ok ? "PASS" : "FAIL");
+
+	surf->Release();
 }
 
 // ============================================================================

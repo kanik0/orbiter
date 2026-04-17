@@ -366,7 +366,7 @@ Ogni milestone comincia con:
 | # | Milestone | Fase | Stato | PR / Commit |
 |---|---|---|---|---|
 | M0 | Shader sourcing + hot-reload | A | ✅ | this branch |
-| M1 | Framebuffer + RT API | A | ☐ | — |
+| M1 | Framebuffer + RT API | A | ✅ | this branch |
 | M2 | Mesh GPU cache | A | ☐ | — |
 | M3 | Material system UBO | A | ☐ | — |
 | M4 | Rayleigh+Mie scattering | B | ☐ | — |
