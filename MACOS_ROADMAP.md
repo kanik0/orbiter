@@ -364,6 +364,25 @@ Ogni milestone comincia con:
 - **M7.b** — ✅ **DONE**: elevation displacement via `ELEVFILEHEADER` parse (uint8/int8/uint16/int16 dtypes supported), bilinear sampling in `BuildSpherePatch`. Crack-hiding skirts + proper per-vertex normal finite-differences restano come polish pass futuro (non-blocking, visually correct as-is).
 - **M14.b** — ✅ **DONE**: OGLvBase enumera ogni base del pianeta via `oapiGetBaseCount`/`oapiGetBasePadCount`/`oapiGetBasePadEquPos`, converte a world-coords con `oapiEquToGlobal`, e emette landing pad beacons (bianchi + rossi alternati stile PAPI-like) via `OGLBeaconArray` con cutoff a 500 km. Full `.bse` mesh parser (tarmacs, hangars) resta polish futuro — il contributo visibile più forte (luci pad) è coperto.
 
+### Follow-up Fase E — note post-M25
+
+- **ScnEditor on macOS** ships with the 6 most-used tabs (State /
+  Orientation / AngularVel / Propellant / Date / Vessel picker).
+  The remaining 6 Win32 tabs (New, Edit, Save, Elements, Landed,
+  Docking, Custom) are accessible through alternative in-sim
+  affordances and are not blocking. A future M25.d.bis can add
+  them when concrete user demand arises — file follow-ups in
+  GitHub Issues with `platform:macos` + `scope:scneditor`.
+- **TrackIR** stays excluded from macOS builds (NaturalPoint
+  driver is Win32-only). The Launchpad Modules tab no longer
+  shows it (set in M22.d). Future macOS head-tracker support
+  would need a separate driver layer (e.g. Apple Vision Pro,
+  EyeTracker.app) which is out of scope for M25.
+- **AtlantisConfig** lives in Modules/Startup/ as a startup
+  plugin and registers under the "Vessel configuration" parent
+  in the LaunchpadRegistry — M22.f's plugin path opens a modal
+  for the new clbkRender editor.
+
 ### Follow-up Fase E — note post-M24
 
 - **Two gcGUI.h headers** coexist: the legacy
@@ -464,7 +483,7 @@ Ogni milestone comincia con:
 | M22 | Launchpad 6 tab | E | ✅ | this branch (M22.a scaffold + M22.b Scenario w/ thumbnails+desc+splitter + M22.c Video + M22.d Modules+`.info` infra + M22.e Options 12 pages + M22.f Extra+`clbkRender` API + M22.g 15 builtin extras ImGui + M22.h About+geometry persist) |
 | M23 | Dialogs core F3–F10 | E | ✅ | this branch (M23.a DlgHelp URL fallback + DlgOptions SDL joystick + M23.b F-key dispatch verified + M23.c case-insensitive vessel cfg lookup; all 11 ImGui dialogs already in place from earlier work) |
 | M24 | WindowMgr gcGUI | E | ✅ | this branch (cross-platform Orbitersdk/include/gcGUI.h with legacy HWND + new ImGui overloads + OGLWindowMgr backend + clbkRenderImGuiPlugins hook + ORBITER_GCGUI_TEST smoke driver) |
-| M25 | Win32 plugins port | E | ☐ | — |
+| M25 | Win32 plugins port | E | ✅ | this branch (M25.a Rcontrol verified ImGui-native + M25.b AtlantisConfig clbkRender override + M25.c Meshdebug ImGui dialog + M25.d ScnEditor ImGui port w/ State+Orientation+AngVel+Propellant+Date tabs; TrackIR excluded macOS already in M22.d) |
 | M26 | Keymap/joystick/config | E | ☐ | — |
 | M27 | Missing assets | E | ☐ | — |
 | M28 | CI/CD macOS | E | ☐ | — |
