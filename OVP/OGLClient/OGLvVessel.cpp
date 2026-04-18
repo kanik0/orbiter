@@ -12,6 +12,7 @@
 #include "OGLTexture.h"
 #include "OGLSurface.h"
 #include "VesselAPI.h"
+#include "GraphicsAPI.h"
 #include <cstdio>
 #include <cmath>
 #include <sys/stat.h>
@@ -30,11 +31,36 @@ OGLTexture *OGLvVessel::s_exhaustTexture = nullptr;
 bool OGLvVessel::s_sharedInitialized = false;
 ShaderMgr *OGLvVessel::s_shaderMgr = nullptr;
 OGLEnvMap *OGLvVessel::s_envMap = nullptr;
+oapi::GraphicsClient *OGLvVessel::s_gc = nullptr;
 std::map<std::string, MESHHANDLE> OGLvVessel::s_fallbackMeshes;
 
 static bool FileExists(const char *path) {
 	struct stat st;
 	return stat(path, &st) == 0;
+}
+
+// Port of D3D9Client vVessel::Render mesh-visibility filter (VVessel.cpp:739-757).
+// Returns true when the mesh should be drawn in the current pass.
+// `internalpass` distinguishes the external/VC pass; `bCockpit` is true when the
+// focus vessel is in internal view; `bVC` when cockpit mode is COCKPIT_VIRTUAL.
+static bool ShouldRenderMesh(WORD vismode, bool internalpass, bool bCockpit, bool bVC)
+{
+	if (vismode == 0) return false;                           // MESHVIS_NEVER
+
+	if (!internalpass) {
+		if (vismode == MESHVIS_VC) return false;              // pure-VC mesh never external
+		if (!(vismode & MESHVIS_EXTPASS) && bCockpit) return false;
+	}
+
+	if (bCockpit) {
+		if (internalpass && (vismode & MESHVIS_EXTPASS)) return false;
+		if (!(vismode & MESHVIS_COCKPIT)) {
+			if (!bVC || !(vismode & MESHVIS_VC)) return false;
+		}
+	} else {
+		if (!(vismode & MESHVIS_EXTERNAL)) return false;
+	}
+	return true;
 }
 
 CachedMesh::~CachedMesh() {
@@ -278,6 +304,53 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 	GLuint activeShader = s_pbrShader ? s_pbrShader : s_vesselShader;
 	const bool pbrActive = (activeShader == s_pbrShader);
 
+	// Cockpit-view state: F1 toggles camera internal/external; when internal
+	// and this vessel is the focus we run a second pass with internalpass=true
+	// so MESHVIS_VC/MESHVIS_COCKPIT meshes can draw. Planetarium/env/shadow
+	// cameras never enter this path because they're not the "main" view.
+	const bool bCockpit = (oapiCameraInternal() && (m_hObj == oapiGetFocusObject()));
+	const bool bVC      = (bCockpit && (oapiCockpitMode() == COCKPIT_VIRTUAL));
+	const int  nPasses  = bCockpit ? 2 : 1;
+
+	// Cache VC MFD surface bindings for this frame. For each registered MFD
+	// the client returns a SURFHANDLE holding the painted display and a spec
+	// identifying the mesh/group it should replace. When we hit (m, g) that
+	// matches, we bind the MFD surface instead of the group's base texture —
+	// same approach as D3D9Client's mesh->SetMFDScreenId(g, 1+mfd) plumbing.
+	struct MFDBinding { DWORD nmesh, ngroup; OGLSurface *surf; };
+	MFDBinding mfdBindings[MAXMFD];
+	int numMFDBindings = 0;
+	if (bVC && s_gc) {
+		for (int i = 0; i < MAXMFD; i++) {
+			const VCMFDSPEC *spec = nullptr;
+			SURFHANDLE s = s_gc->GetVCMFDSurface(i, &spec);
+			if (s && spec) {
+				mfdBindings[numMFDBindings].nmesh  = spec->nmesh;
+				mfdBindings[numMFDBindings].ngroup = spec->ngroup;
+				mfdBindings[numMFDBindings].surf   = (OGLSurface*)s;
+				numMFDBindings++;
+			}
+		}
+	}
+
+	// Cache the VC HUD binding. Unlike MFDs the HUD is an additive overlay:
+	// the group draws once with its base texture (window glass), then we
+	// re-draw the same geometry with the HUD surface and an additive blend
+	// so the transparent sketchpad background leaves the glass visible and
+	// only the painted strokes add colour — equivalent to the 0x100 screen
+	// type D3D9Client tags its HUD group with (VVessel.cpp:802-806).
+	DWORD hudMesh = (DWORD)-1, hudGroup = (DWORD)-1;
+	OGLSurface *hudSurf = nullptr;
+	if (bVC && s_gc) {
+		const VCHUDSPEC *hudspec = nullptr;
+		SURFHANDLE s = s_gc->GetVCHUDSurface(&hudspec);
+		if (s && hudspec) {
+			hudMesh  = hudspec->nmesh;
+			hudGroup = hudspec->ngroup;
+			hudSurf  = (OGLSurface*)s;
+		}
+	}
+
 	// ----- Shadow pre-pass (PBR path only) ----------------------------------
 	// Render the vessel's meshes into the shared shadow depth map from the
 	// sun's point of view. Both passes work in the distance-normalised frame
@@ -298,6 +371,13 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 
 		DWORD nMeshShadow = vessel->GetMeshCount();
 		for (DWORD m = 0; m < nMeshShadow; m++) {
+			// Sun's POV is always external — filter out VC/cockpit-only meshes
+			// so we don't pay shadow cost for geometry that's never lit (and
+			// avoid self-shadowing artefacts from interior panels).
+			WORD vismode = vessel->GetMeshVisibilityMode(m);
+			if (!ShouldRenderMesh(vismode, /*internalpass=*/false, /*bCockpit=*/false, /*bVC=*/false))
+				continue;
+
 			MESHHANDLE hMesh = vessel->GetMeshTemplate(m);
 			if (!hMesh) {
 				const char *className = vessel->GetClassName();
@@ -371,7 +451,18 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 	}
 
 	DWORD nMesh = vessel->GetMeshCount();
+	// Pass 0: external (hull, EXTPASS bits even while in cockpit view).
+	// Pass 1: internal/VC — only runs when the focus vessel is in internal
+	// view. Both passes share the same shader state; depth buffer is kept
+	// across passes so any EXTPASS geometry (hull seen through windows)
+	// occludes VC interior correctly through the usual z-test.
+	for (int pass = 0; pass < nPasses; pass++) {
+		const bool internalpass = (pass == 1);
+
 	for (DWORD m = 0; m < nMesh; m++) {
+		WORD vismode = vessel->GetMeshVisibilityMode(m);
+		if (!ShouldRenderMesh(vismode, internalpass, bCockpit, bVC)) continue;
+
 		MESHHANDLE hMesh = vessel->GetMeshTemplate(m);
 		if (!hMesh) {
 			const char *className = vessel->GetClassName();
@@ -430,7 +521,26 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 			// shader; the sampler itself still needs a traditional binding
 			// (GLSL 410 forbids opaque types in uniform blocks).
 			bool hasTexture = false;
-			if (grp && grp->TexIdx > 0 && grp->TexIdx <= nTex) {
+			OGLSurface *texOverride = nullptr;
+			if (internalpass && bVC) {
+				for (int k = 0; k < numMFDBindings; k++) {
+					if (mfdBindings[k].nmesh == m && mfdBindings[k].ngroup == g) {
+						texOverride = mfdBindings[k].surf;
+						break;
+					}
+				}
+			}
+			if (texOverride) {
+				GLuint texId = texOverride->GetTexture();
+				if (texId) {
+					glActiveTexture(GL_TEXTURE0);
+					glBindTexture(GL_TEXTURE_2D, texId);
+					GLint texLoc = s_shaderMgr->GetUniformLoc(activeShader,
+						activeShader == s_pbrShader ? "uDiffuseTex" : "uTexture");
+					glUniform1i(texLoc, 0);
+					hasTexture = true;
+				}
+			} else if (grp && grp->TexIdx > 0 && grp->TexIdx <= nTex) {
 				SURFHANDLE hSurf = oapiGetTextureHandle(hMesh, grp->TexIdx);
 				if (hSurf) {
 					OGLSurface *surf = (OGLSurface*)hSurf;
@@ -453,8 +563,39 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 
 			glBindVertexArray(cmg.vao);
 			glDrawElements(GL_TRIANGLES, cmg.indexCount, GL_UNSIGNED_INT, 0);
+
+			// VC HUD overlay: re-draw the matching group additively with the
+			// HUD surface on top. The sketchpad background is transparent so
+			// only stroked pixels contribute; the underlying window glass
+			// (just drawn above) stays visible.
+			if (internalpass && bVC && hudSurf && m == hudMesh && g == hudGroup) {
+				GLuint hudTexId = hudSurf->GetTexture();
+				if (hudTexId) {
+					glActiveTexture(GL_TEXTURE0);
+					glBindTexture(GL_TEXTURE_2D, hudTexId);
+					GLint texLoc = s_shaderMgr->GetUniformLoc(activeShader,
+						activeShader == s_pbrShader ? "uDiffuseTex" : "uTexture");
+					glUniform1i(texLoc, 0);
+
+					// Emissive-only material so the HUD strokes aren't
+					// modulated by diffuse lighting — HUD should read the
+					// same at any cockpit orientation.
+					UBOMaterialData hudMat = matData;
+					hudMat.hasDiffuse = 1;
+					hudMat.hasEnvMap  = 0;
+					s_shaderMgr->UpdateUBO(s_materialUBO, sizeof(hudMat), &hudMat);
+
+					glEnable(GL_BLEND);
+					glBlendFunc(GL_SRC_ALPHA, GL_ONE);  // additive, alpha-weighted
+					glDepthMask(GL_FALSE);
+					glDrawElements(GL_TRIANGLES, cmg.indexCount, GL_UNSIGNED_INT, 0);
+					glDepthMask(GL_TRUE);
+					glDisable(GL_BLEND);
+				}
+			}
 		}
 	}
+	} // end pass loop
 	glBindVertexArray(0);
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glUseProgram(0);

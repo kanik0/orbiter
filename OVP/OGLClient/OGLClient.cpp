@@ -13,6 +13,8 @@
 #include "OGLMaterial.h"
 #include "OGLMeshRegistry.h"
 #include "OGLScene.h"
+#include "OGLvVessel.h"
+#include "OGLSketchpad.h"
 #include "OGLPostProcess.h"
 #include "OGLParticle.h"
 #include "OGLAnnotation.h"
@@ -42,11 +44,6 @@ namespace ogl {
 static bool FileExists(const char *path) {
 	struct stat st;
 	return stat(path, &st) == 0;
-}
-
-// Helper: convert Orbiter 0xBBGGRR colour to ImGui 0xAABBGGRR (alpha = 0xFF)
-static ImU32 OrbiterColToImU32(DWORD col) {
-	return IM_COL32(col & 0xFF, (col >> 8) & 0xFF, (col >> 16) & 0xFF, 0xFF);
 }
 
 // ============================================================================
@@ -231,6 +228,10 @@ HWND OGLClient::clbkCreateRenderWindow()
 	// Initialize scene
 	m_scene = new OGLScene(m_shaderMgr);
 	m_scene->Init(m_texturePath);
+
+	// Wire the vessel renderer up to this client so the VC pass can reach
+	// GetVCMFDSurface / GetVCHUDSurface through the virtual interface.
+	ogl::OGLvVessel::SetGraphicsClient(this);
 
 	// Initialize blit/panel resources
 	InitBlitResources();
@@ -610,11 +611,29 @@ void OGLClient::clbkRender2DPanel(SURFHANDLE *hSurf, MESHHANDLE hMesh, MATRIX3 *
 		MESHGROUPEX *grp = oapiMeshGroupEx(hMesh, g);
 		if (!grp || !grp->nVtx || !grp->nIdx) continue;
 
-		// Bind the texture for this group
+		// UsrFlag bit 2 is Orbiter's "skip this group in the 2D panel pass"
+		// marker — typically used for groups that belong to a different
+		// panel orientation or are geometry placeholders. Matches D3D9Client
+		// (D3D9Client.cpp:1963).
+		if (grp->UsrFlag & 2) continue;
+
+		// Resolve the group's texture. Three cases, matching D3D9's ordering:
+		//   1. TexIdx is in [TEXIDX_MFD0, TEXIDX_MFD0+MAXMFD) → the group is
+		//      an MFD display slot; bind the MFD's painted surface. Without
+		//      this, MFD panels render as uninitialised/garbage indexes.
+		//   2. hSurf provided → lookup into the caller's texture array.
+		//   3. hSurf null → fall back to the mesh's own texture list, with
+		//      oapiGetTextureHandle's 1-based indexing.
 		DWORD texIdx = grp->TexIdx;
 		SURFHANDLE hTex = nullptr;
-		if (texIdx != (DWORD)-1 && hSurf)
+		if (texIdx >= TEXIDX_MFD0 && texIdx < TEXIDX_MFD0 + MAXMFD) {
+			int mfdidx = (int)(texIdx - TEXIDX_MFD0);
+			hTex = GetMFDSurface(mfdidx);
+		} else if (hSurf && texIdx != (DWORD)-1) {
 			hTex = hSurf[texIdx];
+		} else if (texIdx != (DWORD)-1) {
+			hTex = oapiGetTextureHandle(hMesh, texIdx + 1);
+		}
 
 		if (hTex) {
 			OGLSurface *texSurf = (OGLSurface*)hTex;
@@ -1000,195 +1019,11 @@ bool OGLClient::clbkUseLaunchpadVideoTab() const
 }
 
 // ============================================================================
-// OGL Font / Pen / Brush / Sketchpad — ImGui-backed 2D drawing
+// OGL Font / Pen / Brush / Sketchpad — see OGLSketchpad.{h,cpp}
 // ============================================================================
-
-class OGLFont : public oapi::Font {
-public:
-	ImFont *imFont;
-	float  fontSize;
-	OGLFont(int height, bool prop, const char *face, FontStyle style, int orientation)
-		: oapi::Font(height, prop, face, style, orientation),
-		  imFont(nullptr), fontSize((float)(height < 0 ? -height : height))
-	{
-		ImGuiIO &io = ImGui::GetIO();
-		if (!io.Fonts || io.Fonts->Fonts.Size == 0) return;
-		if (!prop || (face && (strcmp(face, "Fixed") == 0 || strcmp(face, "Courier") == 0 ||
-		              strcmp(face, "Courier New") == 0))) {
-			if (io.Fonts->Fonts.Size > 2) imFont = io.Fonts->Fonts[2];
-			else imFont = io.Fonts->Fonts[0];
-		} else {
-			imFont = io.Fonts->Fonts[0];
-		}
-	}
-};
-
-class OGLPen : public oapi::Pen {
-public:
-	int    style;
-	int    width;
-	ImU32  color;
-	OGLPen(int s, int w, DWORD col) : oapi::Pen(s, w, col), style(s), width(w), color(OrbiterColToImU32(col)) {}
-};
-
-class OGLBrush : public oapi::Brush {
-public:
-	ImU32 color;
-	OGLBrush(DWORD col) : oapi::Brush(col), color(OrbiterColToImU32(col)) {}
-};
-
-class OGLSketchpad : public oapi::Sketchpad {
-public:
-	OGLSketchpad(SURFHANDLE surf, DWORD w, DWORD h)
-		: oapi::Sketchpad(surf), m_dl(nullptr), m_font(nullptr), m_pen(nullptr), m_brush(nullptr),
-		  m_textCol(IM_COL32(255,255,255,255)), m_bgCol(IM_COL32(0,0,0,255)),
-		  m_bkMode(BK_TRANSPARENT), m_tah(LEFT), m_tav(TOP), m_cx(0), m_cy(0),
-		  m_ox(0), m_oy(0), m_viewW(w), m_viewH(h)
-	{
-		m_dl = ImGui::GetForegroundDrawList();
-	}
-
-	oapi::Font *SetFont(oapi::Font *font) override {
-		oapi::Font *prev = m_font; m_font = font; return prev;
-	}
-	oapi::Pen *SetPen(oapi::Pen *pen) override {
-		oapi::Pen *prev = m_pen; m_pen = pen; return prev;
-	}
-	oapi::Brush *SetBrush(oapi::Brush *brush) override {
-		oapi::Brush *prev = m_brush; m_brush = brush; return prev;
-	}
-
-	void SetTextAlign(TAlign_horizontal tah = LEFT, TAlign_vertical tav = TOP) override {
-		m_tah = tah; m_tav = tav;
-	}
-	DWORD SetTextColor(DWORD col) override {
-		DWORD prev = ImGuiColToOrbiter(m_textCol);
-		m_textCol = OrbiterColToImU32(col);
-		return prev;
-	}
-	DWORD SetBackgroundColor(DWORD col) override {
-		DWORD prev = ImGuiColToOrbiter(m_bgCol);
-		m_bgCol = OrbiterColToImU32(col);
-		return prev;
-	}
-	void SetBackgroundMode(BkgMode mode) override { m_bkMode = mode; }
-	void SetOrigin(int x, int y) override { m_ox = x; m_oy = y; }
-	void GetOrigin(int *x, int *y) const override { *x = m_ox; *y = m_oy; }
-
-	DWORD GetCharSize() override {
-		OGLFont *f = static_cast<OGLFont*>(m_font);
-		float sz = f ? f->fontSize : 14.0f;
-		return MAKELONG((int)(sz * 0.6f), (int)sz);
-	}
-
-	DWORD GetTextWidth(const char *str, int len = 0) override {
-		OGLFont *f = static_cast<OGLFont*>(m_font);
-		ImFont *imf = f ? f->imFont : ImGui::GetFont();
-		float sz = f ? f->fontSize : 14.0f;
-		if (!str) return 0;
-		std::string s = (len > 0) ? std::string(str, len) : std::string(str);
-		ImVec2 tsz = imf->CalcTextSizeA(sz, FLT_MAX, 0, s.c_str());
-		return (DWORD)tsz.x;
-	}
-
-	bool Text(int x, int y, const char *str, int len) override {
-		if (!m_dl || !str) return false;
-		OGLFont *f = static_cast<OGLFont*>(m_font);
-		ImFont *imf = f ? f->imFont : ImGui::GetFont();
-		float sz = f ? f->fontSize : 14.0f;
-		std::string s = (len > 0) ? std::string(str, len) : std::string(str);
-		ImVec2 tsz = imf->CalcTextSizeA(sz, FLT_MAX, 0, s.c_str());
-		float dx = (float)(x + m_ox), dy = (float)(y + m_oy);
-		if (m_tah == CENTER) dx -= tsz.x * 0.5f;
-		else if (m_tah == RIGHT) dx -= tsz.x;
-		if (m_tav == BASELINE) dy -= sz * 0.8f;
-		else if (m_tav == BOTTOM) dy -= tsz.y;
-		if (m_bkMode == BK_OPAQUE)
-			m_dl->AddRectFilled(ImVec2(dx, dy), ImVec2(dx + tsz.x, dy + tsz.y), m_bgCol);
-		m_dl->AddText(imf, sz, ImVec2(dx, dy), m_textCol, s.c_str());
-		return true;
-	}
-
-	void MoveTo(int x, int y) override { m_cx = x + m_ox; m_cy = y + m_oy; }
-
-	void LineTo(int x, int y) override {
-		int nx = x + m_ox, ny = y + m_oy;
-		OGLPen *p = static_cast<OGLPen*>(m_pen);
-		if (m_dl && p && p->style != 0)
-			m_dl->AddLine(ImVec2((float)m_cx, (float)m_cy), ImVec2((float)nx, (float)ny),
-			              p->color, (float)std::max(1, p->width));
-		m_cx = nx; m_cy = ny;
-	}
-
-	void Line(int x0, int y0, int x1, int y1) override {
-		OGLPen *p = static_cast<OGLPen*>(m_pen);
-		if (m_dl && p && p->style != 0)
-			m_dl->AddLine(ImVec2((float)(x0+m_ox), (float)(y0+m_oy)),
-			              ImVec2((float)(x1+m_ox), (float)(y1+m_oy)),
-			              p->color, (float)std::max(1, p->width));
-	}
-
-	void Rectangle(int x0, int y0, int x1, int y1) override {
-		if (!m_dl) return;
-		ImVec2 a((float)(x0+m_ox), (float)(y0+m_oy)), b((float)(x1+m_ox), (float)(y1+m_oy));
-		OGLBrush *br = static_cast<OGLBrush*>(m_brush);
-		if (br) m_dl->AddRectFilled(a, b, br->color);
-		OGLPen *p = static_cast<OGLPen*>(m_pen);
-		if (p && p->style != 0) m_dl->AddRect(a, b, p->color, 0, 0, (float)std::max(1, p->width));
-	}
-
-	void Ellipse(int x0, int y0, int x1, int y1) override {
-		if (!m_dl) return;
-		float cx = (x0 + x1) * 0.5f + m_ox, cy = (y0 + y1) * 0.5f + m_oy;
-		float rx = (x1 - x0) * 0.5f, ry = (y1 - y0) * 0.5f;
-		float r = (rx + ry) * 0.5f;
-		OGLBrush *br = static_cast<OGLBrush*>(m_brush);
-		if (br) m_dl->AddCircleFilled(ImVec2(cx, cy), r, br->color);
-		OGLPen *p = static_cast<OGLPen*>(m_pen);
-		if (p && p->style != 0) m_dl->AddCircle(ImVec2(cx, cy), r, p->color, 0, (float)std::max(1, p->width));
-	}
-
-	void Polygon(const oapi::IVECTOR2 *pt, int npt) override {
-		if (!m_dl || npt < 3) return;
-		std::vector<ImVec2> pts(npt);
-		for (int i = 0; i < npt; i++) pts[i] = ImVec2((float)(pt[i].x+m_ox), (float)(pt[i].y+m_oy));
-		OGLBrush *br = static_cast<OGLBrush*>(m_brush);
-		if (br) m_dl->AddConvexPolyFilled(pts.data(), npt, br->color);
-		OGLPen *p = static_cast<OGLPen*>(m_pen);
-		if (p && p->style != 0) m_dl->AddPolyline(pts.data(), npt, p->color, ImDrawFlags_Closed, (float)std::max(1, p->width));
-	}
-
-	void Polyline(const oapi::IVECTOR2 *pt, int npt) override {
-		if (!m_dl || npt < 2) return;
-		OGLPen *p = static_cast<OGLPen*>(m_pen);
-		if (!p || p->style == 0) return;
-		std::vector<ImVec2> pts(npt);
-		for (int i = 0; i < npt; i++) pts[i] = ImVec2((float)(pt[i].x+m_ox), (float)(pt[i].y+m_oy));
-		m_dl->AddPolyline(pts.data(), npt, p->color, 0, (float)std::max(1, p->width));
-	}
-
-	void Pixel(int x, int y, DWORD col) override {
-		if (m_dl) m_dl->AddRectFilled(ImVec2((float)(x+m_ox), (float)(y+m_oy)),
-		                               ImVec2((float)(x+m_ox+1), (float)(y+m_oy+1)),
-		                               OrbiterColToImU32(col));
-	}
-
-private:
-	static DWORD ImGuiColToOrbiter(ImU32 c) {
-		return (c & 0xFF) | ((c >> 8) & 0xFF) << 8 | ((c >> 16) & 0xFF) << 16;
-	}
-	ImDrawList *m_dl;
-	oapi::Font *m_font;
-	oapi::Pen  *m_pen;
-	oapi::Brush *m_brush;
-	ImU32 m_textCol, m_bgCol;
-	BkgMode m_bkMode;
-	TAlign_horizontal m_tah;
-	TAlign_vertical m_tav;
-	int m_cx, m_cy;
-	int m_ox, m_oy;
-	DWORD m_viewW, m_viewH;
-};
+// The concrete classes live in OGLSketchpad.cpp so every MFD draw hits the
+// bound surface's FBO via a dedicated 2D shader. OGLClient just forwards
+// the clbk factory methods.
 
 // --- clbk implementations ---
 
@@ -1218,10 +1053,17 @@ oapi::Brush *OGLClient::clbkCreateBrush(DWORD col) const {
 void OGLClient::clbkReleaseBrush(oapi::Brush *brush) const { delete brush; }
 
 oapi::Sketchpad *OGLClient::clbkGetSketchpad(SURFHANDLE surf) {
+	if (!surf) return nullptr;
 	if (!m_imguiInitialized) return nullptr;
 	if (!ImGui::GetCurrentContext()) return nullptr;
 	if (!ImGui::GetIO().Fonts || !ImGui::GetIO().Fonts->IsBuilt()) return nullptr;
-	return new OGLSketchpad(surf, m_viewW, m_viewH);
+	// Target surface must be an FBO-backed render target; texture-only
+	// surfaces can't accept draw commands. Returning nullptr here matches
+	// the oapi contract: callers must handle the missing sketchpad.
+	OGLSurface *s = (OGLSurface*)surf;
+	if (!s->EnsureFBO()) return nullptr;
+	OGLSketchpad::InitShared(m_shaderMgr);
+	return new OGLSketchpad(surf, m_shaderMgr);
 }
 
 void OGLClient::clbkReleaseSketchpad(oapi::Sketchpad *sp) { delete sp; }
