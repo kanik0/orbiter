@@ -98,6 +98,19 @@ void OGLEnvMap::BakeCapture(const VECTOR3 &sunDir)
 	const float spaceAmbient[3] = { 0.005f, 0.006f, 0.010f };
 	const float sunColor[3]     = { 1.0f, 0.97f, 0.92f };
 
+	// Save the currently-bound FBO so we don't clobber a surrounding
+	// pass. Notably, OGLPostProcess::BeginScene binds an HDR scene FBO
+	// before OGLScene::RenderScene — which in turn triggers the lazy
+	// env-map bake on first frame. Previously this routine hard-coded
+	// glBindFramebuffer(0) on exit, leaving the rest of the scene pass
+	// writing to the default framebuffer rather than the HDR FBO, so
+	// the M11 composite later tone-mapped an empty texture and blacked
+	// out the image.
+	GLint prevFBO = 0;
+	GLint prevViewport[4] = { 0, 0, 0, 0 };
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prevFBO);
+	glGetIntegerv(GL_VIEWPORT, prevViewport);
+
 	glBindFramebuffer(GL_FRAMEBUFFER, m_captureFBO);
 	glUseProgram(m_captureShader);
 	glUniform3fv(m_shaderMgr->GetUniformLoc(m_captureShader, "uSunDir"),       1, sd);
@@ -125,12 +138,21 @@ void OGLEnvMap::BakeCapture(const VECTOR3 &sunDir)
 	glBindVertexArray(0);
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_CULL_FACE);
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	// Restore the caller's FBO + viewport (see note at top of function).
+	glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prevFBO);
+	glViewport(prevViewport[0], prevViewport[1],
+	           prevViewport[2], prevViewport[3]);
 	glUseProgram(0);
 }
 
 void OGLEnvMap::BakePrefilter()
 {
+	// Save previous FBO + viewport (same rationale as BakeCapture).
+	GLint prevFBO = 0;
+	GLint prevViewport[4] = { 0, 0, 0, 0 };
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prevFBO);
+	glGetIntegerv(GL_VIEWPORT, prevViewport);
+
 	glBindFramebuffer(GL_FRAMEBUFFER, m_prefilterFBO);
 	glUseProgram(m_prefilterShader);
 
@@ -172,7 +194,10 @@ void OGLEnvMap::BakePrefilter()
 	glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_CULL_FACE);
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	// Restore the caller's FBO + viewport (see note at top of BakeCapture).
+	glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)prevFBO);
+	glViewport(prevViewport[0], prevViewport[1],
+	           prevViewport[2], prevViewport[3]);
 	glUseProgram(0);
 }
 

@@ -40,17 +40,55 @@ vec3 tonemapACES(vec3 hdr) {
     return clamp(ACESOutputMat * v, 0.0, 1.0);
 }
 
+// uIsHDR=1 applies the full HDR ACES pipeline; 0 skips ACES and simply
+// gamma-corrects the already-LDR scene. The macOS OpenGL 4.1-via-Metal
+// backend can't write to GL_RGBA16F colour attachments reliably, so the
+// scene FBO is forced to GL_RGBA8 (linear) and the shader must not push
+// the small input values through the ACES RRT/ODT curve — its output
+// matrix has negative coefficients that clamp dark pixels to pure zero.
+uniform int uIsHDR;
+
 void main() {
-    vec3 hdr = texture(uScene, vUV).rgb;
+    // macOS RGBA8 scene FBO: radiance values land in 0.02–0.1 range, far
+    // too dim to display after gamma without an exposure boost. Applied
+    // inline here because the separate `uExposure` uniform (set via
+    // glUniform1f in OGLPostProcess::EndScene) was not taking effect on
+    // Apple Silicon GL — either ShaderMgr::GetUniformLoc returns a stale
+    // handle after the bloom / lens-flare programs run, or the compositor
+    // program loses its uniform state between RefreshOnHotReload and the
+    // actual DrawQuad. Hardcoding the gain here bypasses the uniform
+    // plumbing entirely so the bright highlights (sun, city lights) and
+    // the dim atmospheric body surface land in the visible curve.
+    const float kMacosLdrExposure = 8.0;
+
+    vec3 scene = texture(uScene, vUV).rgb;
     if (uBloomIntensity > 0.0) {
-        hdr += texture(uBloom, vUV).rgb * uBloomIntensity;
+        scene += texture(uBloom, vUV).rgb * uBloomIntensity;
     }
 
-    hdr *= uExposure;
+    vec3 mapped;
+    if (uIsHDR != 0) {
+        // HDR path: ACES filmic tone map preserves highlight roll-off
+        // for sun discs with values >> 1.0. On HDR the caller's
+        // uExposure is the right control.
+        scene *= uExposure;
+        mapped = tonemapACES(scene);
+    } else {
+        // LDR path (macOS default — see OGLPostProcess::Init note): the
+        // scene attachment is already sRGB-ish 0..1 from GL_RGBA8, so
+        // clamp any bloom overshoot and let gamma2.2 handle the display
+        // encoding. No ACES: its ODT output matrix has negative terms
+        // that clamp dark pixels to pure zero.
+        //
+        // The hardcoded kMacosLdrExposure gain compensates for the tight
+        // RGBA8 dynamic range: scene values typically land in 0.02–0.1,
+        // which would gamma-encode to near-black without pre-scaling.
+        scene *= kMacosLdrExposure;
+        mapped = clamp(scene, 0.0, 1.0);
+    }
 
-    vec3 mapped = tonemapACES(hdr);
-
-    // Output to sRGB via gamma 2.2 (linear → sRGB framebuffer).
+    // sRGB encoding via gamma 2.2. Input is assumed linear; output
+    // matches what the backbuffer expects for sRGB-display-mapped pixels.
     mapped = pow(mapped, vec3(1.0 / 2.2));
 
     FragColor = vec4(mapped, 1.0);
