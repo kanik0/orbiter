@@ -4,11 +4,16 @@
 #include "Util.h"
 #ifdef _WIN32
 #include <shlobj.h>
+#else
+#include <dirent.h>
+#include <sys/stat.h>
 #endif
 #include <sstream>
 #include <iomanip>
 #include <unordered_map>
 #include <algorithm>
+#include <fstream>
+#include <cstring>
 #ifndef _WIN32
 #include "resource_stub.h"
 #endif
@@ -64,6 +69,74 @@ bool iequal(const std::string& s1, const std::string& s2)
 			return false;
 	}
 	return true;
+}
+
+bool OpenFileIgnoreCase(std::ifstream &f, const char *path,
+	std::ios_base::openmode mode)
+{
+#ifdef _WIN32
+	f.open(path, mode);
+	return f.good();
+#else
+	// Fast path: exact match.
+	f.open(path, mode);
+	if (f.good()) return true;
+	f.clear();
+
+	// Split into directory + filename, then scan the directory for a
+	// case-insensitive match. Tolerates Win32-style "Vessels\\Foo.cfg"
+	// — the loop walks each path component independently so a
+	// case-mismatch in any segment is recovered.
+	std::string p = path;
+	for (auto &c : p) if (c == '\\') c = '/';
+
+	// Walk the path one segment at a time, resolving each to its
+	// canonical (case-corrected) form on disk.
+	std::string resolved;
+	if (!p.empty() && p.front() == '/') resolved = "/";
+	std::string remainder = p;
+	if (!resolved.empty()) remainder.erase(0, 1);
+
+	while (!remainder.empty()) {
+		size_t slash = remainder.find('/');
+		std::string seg = (slash == std::string::npos) ? remainder
+			: remainder.substr(0, slash);
+		std::string rest = (slash == std::string::npos) ? std::string()
+			: remainder.substr(slash + 1);
+
+		// Try the literal name first within the resolved directory.
+		std::string trial = resolved.empty() ? seg : resolved + seg;
+		struct stat st;
+		if (stat(trial.c_str(), &st) == 0) {
+			resolved = trial;
+		} else {
+			// Case-insensitive scan of the parent directory.
+			std::string parent = resolved.empty() ? "." : resolved;
+			if (!parent.empty() && parent.back() == '/')
+				parent.pop_back();
+			DIR *d = opendir(parent.empty() ? "/" : parent.c_str());
+			if (!d) return false;
+			std::string match;
+			struct dirent *e;
+			while ((e = readdir(d)) != nullptr) {
+				if (strcasecmp(e->d_name, seg.c_str()) == 0) {
+					match = e->d_name;
+					break;
+				}
+			}
+			closedir(d);
+			if (match.empty()) return false;
+			resolved = (resolved.empty() ? match : resolved + match);
+		}
+		// Append the trailing slash so the next loop iteration can
+		// concat the next segment cleanly.
+		if (!rest.empty()) resolved += '/';
+		remainder = rest;
+	}
+
+	f.open(resolved.c_str(), mode);
+	return f.good();
+#endif
 }
 
 

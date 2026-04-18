@@ -35,6 +35,15 @@ bool MakePath (const char *fname);
 // case-insensitive comparison of std::strings
 bool iequal(const std::string& s1, const std::string& s2);
 
+// Open a file via std::ifstream, falling back to a case-insensitive
+// directory scan when the requested name does not match exactly. Lets
+// macOS / Linux builds tolerate the case mismatches Win32 hides via its
+// case-insensitive filesystem (e.g. cfg files shipped as
+// "Deltaglider.cfg" but referenced from scenarios as "DeltaGlider"). On
+// Windows this is a no-op pass-through to ifstream::open.
+bool OpenFileIgnoreCase(std::ifstream &f, const char *path,
+	std::ios_base::openmode mode = std::ios_base::in);
+
 // conversion between Vector and VECTOR3 structures
 
 inline Vector MakeVector (const VECTOR3 &v)

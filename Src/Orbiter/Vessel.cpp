@@ -242,20 +242,19 @@ bool Vessel::OpenConfigFile (ifstream &cfgfile) const
 	strcpy (cbuf, "Vessels/");
 #endif
 	strcat (cbuf, classname ? classname : name.c_str());
-	// first search in $CONFIGDIR\Vessels
-	cfgfile.open (g_pOrbiter->ConfigPath (cbuf));
-	if (cfgfile.good()) return true;
-	else cfgfile.clear();
+	// first search in $CONFIGDIR\Vessels (case-insensitive on POSIX so
+	// macOS / Linux tolerate case mismatches between the ship "Module"
+	// scenario field and the on-disk cfg filename — Win32 hides this
+	// natively via its case-insensitive filesystem).
+	if (OpenFileIgnoreCase(cfgfile, g_pOrbiter->ConfigPath(cbuf)))
+		return true;
+	cfgfile.clear();
 	// next search in $CONFIGDIR
-	cfgfile.open (g_pOrbiter->ConfigPath (cbuf+8));
-	if (cfgfile.good()) return true;
-	else {
-		cfgfile.clear();
-		LOGOUT_ERR_FILENOTFOUND_MSG(g_pOrbiter->ConfigPath(cbuf + 8), "No vessel class configuration file found for: %s", classname ? classname : name.c_str());
-		//LogOut (">>> ERROR: No vessel class configuration file found for:");
-		//LOGOUT_ERR(classname ? classname : name);
-		return false;
-	}
+	if (OpenFileIgnoreCase(cfgfile, g_pOrbiter->ConfigPath(cbuf + 8)))
+		return true;
+	cfgfile.clear();
+	LOGOUT_ERR_FILENOTFOUND_MSG(g_pOrbiter->ConfigPath(cbuf + 8), "No vessel class configuration file found for: %s", classname ? classname : name.c_str());
+	return false;
 }
 
 // ==============================================================
