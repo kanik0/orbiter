@@ -64,6 +64,7 @@
 #include "OGLClient.h"
 #include "OGLLaunchpad.h"
 #include "BuiltinLaunchpadItems.h"
+#include "UserPaths.h"
 #include "imgui.h"
 #include "backends/imgui_impl_sdl2.h"
 #include "backends/imgui_impl_opengl3.h"
@@ -223,8 +224,18 @@ INT WINAPI WinMain (HINSTANCE hInstance, HINSTANCE, LPSTR strCmdLine, INT nCmdSh
 	// Parse command line
 	orbiter::CommandLine::Parse(g_pOrbiter, strCmdLine);
 
-	// Initialise the log
+	// Initialise the log. On macOS the .app bundle install dir is
+	// read-only for non-admin users, so route Orbiter.log to a
+	// per-user location under ~/Library/Logs/Orbiter/.
+#ifdef __APPLE__
+	{
+		std::string lp = orbiter::GetUserLogPath();
+		INITLOG(lp.empty() ? "Orbiter.log" : lp.c_str(),
+			g_pOrbiter->Cfg()->CfgCmdlinePrm.bAppendLog);
+	}
+#else
 	INITLOG("Orbiter.log", g_pOrbiter->Cfg()->CfgCmdlinePrm.bAppendLog); // init log file
+#endif
 #ifdef ISBETA
 	LOGOUT("Build %s BETA [v.%06d]", __DATE__, GetVersion());
 #else
@@ -330,8 +341,13 @@ int main (int argc, char *argv[])
 	orbiter::CommandLine::Parse(g_pOrbiter, cmdlineBuf);
 	delete[] cmdlineBuf;
 
-	// Initialise the log
-	INITLOG("Orbiter.log", false);  // Force non-append for debugging
+	// Initialise the log. On macOS use the user-writable
+	// ~/Library/Logs/Orbiter/ location so it survives a read-only
+	// .app bundle install.
+	{
+		std::string lp = orbiter::GetUserLogPath();
+		INITLOG(lp.empty() ? "Orbiter.log" : lp.c_str(), false);
+	}
 #ifdef ISBETA
 	LOGOUT("Build %s BETA [v.%06d]", __DATE__, g_pOrbiter->GetVersion());
 #else
@@ -522,9 +538,34 @@ HRESULT Orbiter::Create (HINSTANCE hInstance)
 
 	HRESULT hr;
 
-	// parameter manager - parses from master config file
+	// parameter manager - parses from master config file. On macOS
+	// prefer the user override (~/Library/Application Support/Orbiter/
+	// Orbiter.cfg) when present so personal settings survive .app
+	// re-installs; fall back to the bundled MasterConfigFile in the
+	// install dir.
 	hInst = hInstance;
+#ifdef __APPLE__
+	{
+		std::string up = orbiter::ResolveUserConfig(MasterConfigFile);
+		bool ok = false;
+		if (!up.empty()) {
+			std::ifstream probe(up.c_str());
+			if (probe.good()) ok = pConfig->Load(up.c_str());
+		}
+		if (!ok) pConfig->Load(MasterConfigFile);
+		// Re-target the master cfg to the user override location even
+		// on a first run so subsequent pConfig->Write() lands in a
+		// writable directory (the .app bundle install dir is read-only
+		// for non-admin users).
+		if (!up.empty()) {
+			delete[] pConfig->Root;
+			pConfig->Root = new char[up.size() + 1];
+			std::strcpy(pConfig->Root, up.c_str());
+		}
+	}
+#else
 	pConfig->Load(MasterConfigFile);
+#endif
 	strcpy (cfgpath, pConfig->CfgDirPrm.ConfigDir);   cfglen = strlen (cfgpath);
 
 #ifdef _WIN32

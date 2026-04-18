@@ -106,6 +106,8 @@ set(common_src
 	# Built-in Extra-tab items, ImGui-based (compiled-out on Windows
 	# where TabExtra.cpp owns the equivalent Win32 dialog flow).
 	BuiltinLaunchpadItems.cpp
+	# User-writable paths (~/Library/Application Support, ~/Library/Logs)
+	UserPaths.cpp
 )
 
 # Platform-specific sources
