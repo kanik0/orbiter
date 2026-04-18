@@ -30,6 +30,16 @@ set_target_properties(AscentMFD
 	FOLDER Modules
 )
 
+# On macOS / Linux the sample MFD references oapi* symbols (oapiGetMass,
+# oapiRegisterMFDMode, GraphMFD::SetAutoRange, ...) that live in the Orbiter
+# main executable, not in libOrbitersdk.a. Resolve them at runtime via
+# dynamic lookup — same trick used by the vessel SHARED libraries.
+if(APPLE OR UNIX)
+	set_target_properties(AscentMFD PROPERTIES
+		LINK_FLAGS "-undefined dynamic_lookup"
+	)
+endif()
+
 install(TARGETS AscentMFD
 	LIBRARY	
 	DESTINATION ${ORBITER_INSTALL_PLUGIN_DIR}

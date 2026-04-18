@@ -947,7 +947,11 @@ bool CELBODY2::LoadAtmosphereModule (const char *fname)
 {
 	char path[256], name[256];
 	oapiGetObjectName (hBody, name, 256);
+#ifdef _WIN32
 	sprintf (path, "Modules\\Celbody\\%s\\Atmosphere", name);
+#else
+	sprintf (path, "Modules/Celbody/%s/Atmosphere", name);
+#endif
 	if (!(hAtmModule = g_pOrbiter->LoadModule (path, fname))) return false;
 	ATMOSPHERE *(*func)(CELBODY2*) = (ATMOSPHERE*(*)(CELBODY2*))GetProcAddress (hAtmModule, "CreateAtmosphere");
 	if (!func) {

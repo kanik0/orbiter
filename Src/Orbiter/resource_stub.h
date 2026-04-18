@@ -193,8 +193,19 @@ inline HANDLE LoadImage(HINSTANCE, const char*, UINT, int, int, UINT) { return n
 
 // Process stubs
 inline HANDLE GetCurrentProcess() { return nullptr; }
-inline DWORD GetModuleFileName(HMODULE, char*, DWORD) { return 0; }
-inline BOOL GetModuleFileNameExA(HANDLE, HMODULE, char*, DWORD) { return FALSE; }
+// Win32's GetModuleFileName fills the output buffer with the module's file
+// path. The POSIX stub can't recover the real path (caller doesn't pass a
+// dlopen handle), but it MUST null-terminate the buffer: callers like
+// OrbiterAPI.cpp:InitLib print "Module %s" from uninitialised stack memory
+// otherwise, producing garbage log lines such as "Module 0C�k ...".
+inline DWORD GetModuleFileName(HMODULE, char* buf, DWORD sz) {
+	if (buf && sz > 0) buf[0] = '\0';
+	return 0;
+}
+inline BOOL GetModuleFileNameExA(HANDLE, HMODULE, char* buf, DWORD sz) {
+	if (buf && sz > 0) buf[0] = '\0';
+	return FALSE;
+}
 inline BOOL EnumProcessModules(HANDLE, HMODULE*, DWORD, DWORD*) { return FALSE; }
 
 // Memory / Module info stubs
