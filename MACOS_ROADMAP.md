@@ -364,6 +364,27 @@ Ogni milestone comincia con:
 - **M7.b** — ✅ **DONE**: elevation displacement via `ELEVFILEHEADER` parse (uint8/int8/uint16/int16 dtypes supported), bilinear sampling in `BuildSpherePatch`. Crack-hiding skirts + proper per-vertex normal finite-differences restano come polish pass futuro (non-blocking, visually correct as-is).
 - **M14.b** — ✅ **DONE**: OGLvBase enumera ogni base del pianeta via `oapiGetBaseCount`/`oapiGetBasePadCount`/`oapiGetBasePadEquPos`, converte a world-coords con `oapiEquToGlobal`, e emette landing pad beacons (bianchi + rossi alternati stile PAPI-like) via `OGLBeaconArray` con cutoff a 500 km. Full `.bse` mesh parser (tarmacs, hangars) resta polish futuro — il contributo visibile più forte (luci pad) è coperto.
 
+### Follow-up Fase E — note post-M28
+
+- **Notarization secrets** are not committed to the repo. The
+  release pipeline runs in unsigned-DMG mode unless an org admin
+  defines `APPLE_CODESIGN_IDENTITY` and `APPLE_NOTARIZATION_KEYCHAIN_PROFILE`
+  as repository secrets and exposes them to the
+  reusable-build-macos workflow via env (one-line addition to the
+  release job). Without notarization the user must run
+  `xattr -dr com.apple.quarantine /Applications/Orbiter.app` once
+  after first install.
+- **DMG size** is dominated by Textures (~400 MiB) and Scenarios
+  (~30 MiB). Trimming to a "lite" .dmg without the planet
+  bitmaps would require a separate post-install asset downloader
+  (M27.b's Earth pipeline already pioneers the pattern). Not
+  blocking for the first release tag.
+- **Smoke test scope**: the GitHub runner has no display, so the
+  CI smoke test only verifies the Launchpad initialisation path
+  (8 s timeout, grep for fatal output). Full scenario rendering
+  parity is the M30 harness's responsibility, gated by SSIM
+  thresholds against pre-recorded reference frames.
+
 ### Follow-up Fase E — note post-M27
 
 - **architext.regular.ttf is a substitute**. The original
@@ -532,6 +553,6 @@ Ogni milestone comincia con:
 | M25 | Win32 plugins port | E | ✅ | this branch (M25.a Rcontrol verified ImGui-native + M25.b AtlantisConfig clbkRender override + M25.c Meshdebug ImGui dialog + M25.d ScnEditor ImGui port w/ State+Orientation+AngVel+Propellant+Date tabs; TrackIR excluded macOS already in M22.d) |
 | M26 | Keymap/joystick/config | E | ✅ | this branch (M26.a UserPaths.{h,cpp} → ~/Library/Application Support/Orbiter/Orbiter.cfg + ~/Library/Logs/Orbiter/Orbiter.log + M26.b Wine detection already gated + M26.c OGLKeymapEditor visual keyboard + M26.d OGLJoystickCalibration live SDL axis monitor) |
 | M27 | Missing assets | E | ✅ | this branch (M27.a cmake/macos_assets.cmake fetches fa-solid-900 + Lekton-Bold + ArchitectsDaughter→architext.regular under SIL OFL with pinned SHA-256; M27.b cmake/download_earth_lod8.py opt-in via ORBITER_FETCH_EARTH_BLUEMARBLE → Wikimedia Commons mirror, tile-pyramid step documented as manual offline pipeline) |
-| M28 | CI/CD macOS | E | ☐ | — |
+| M28 | CI/CD macOS | E | ✅ | this branch (cmake/codesign.cmake + Orbiter.entitlements.plist + macos-bundle-distributable + macos-codesign + macos-dmg targets; .github/workflows/reusable-build-macos.yml + on-push-macos.yml + pr-build-macos.yml + extended release.yml with macOS DMG job) |
 | M29 | Force feedback | E | ☐ | — |
 | M30 | Parity test harness | E | ☐ | — |
