@@ -391,6 +391,11 @@ private:
 
 #ifndef _WIN32
 	orbiter::SDLPlatform *m_pSDL;  // SDL2 platform layer (macOS/Linux)
+	// HapticFX edge-detection state (touchdown rising edge needs the
+	// previous-frame contact bit; engine-ignite needs the previous
+	// main-thrust level).
+	bool m_haptPrevContact = false;
+	double m_haptPrevMain = 0.0;
 #endif
 
 	// render parameters (only used if graphics client is present)

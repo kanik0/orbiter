@@ -61,6 +61,7 @@
 #include "imgui_impl_win32.h"
 #else
 #include "SDLPlatform.h"
+#include "HapticFX.h"
 #include "OGLClient.h"
 #include "OGLLaunchpad.h"
 #include "BuiltinLaunchpadItems.h"
@@ -2208,6 +2209,47 @@ void Orbiter::EndTimeStep (bool running)
 	// Update visual states
 	if (gclient) gclient->clbkUpdate (bRunning);
 	g_bForceUpdate = false;                        // clear flag
+
+#ifndef _WIN32
+	// macOS / Linux: drive gamepad rumble from focus-vessel events.
+	// We sample the focus interface every frame and emit transient
+	// effects on rising edges (touchdown, engine ignition) plus a
+	// sustained channel for atmospheric buffeting. The HapticFX
+	// implementation is a no-op when no controller is attached.
+	if (running && m_pSDL && m_pSDL->GetHaptic() && g_focusobj) {
+		orbiter::HapticFX *fx = m_pSDL->GetHaptic();
+		// Touchdown rising edge.
+		bool contact = g_focusobj->bSurfaceContact;
+		if (contact && !m_haptPrevContact) {
+			// Scale by recent vertical speed (approximated via
+			// frame-to-frame altitude delta if needed; here we
+			// just emit a moderate bump because we don't track
+			// altitude history). Vessels with non-trivial
+			// touchdown elasticity feel the difference more.
+			fx->Touchdown(0.7f);
+		}
+		m_haptPrevContact = contact;
+
+		// Engine ignite rising edge (main thrust 0..1).
+		double mainLvl = g_focusobj->GetThrusterGroupLevel(THGROUP_MAIN);
+		if (mainLvl > 0.10 && m_haptPrevMain <= 0.05) {
+			fx->EngineIgnite((float)mainLvl);
+		}
+		m_haptPrevMain = mainLvl;
+
+		// Atmospheric buffeting — driven by dynamic pressure.
+		// Scaled so the channel saturates at 1 above ~50 kPa
+		// (re-entry), idles below ~5 kPa. DynPressure() returns
+		// false when the vessel is in vacuum.
+		double dynp = 0.0;
+		float buffet = 0.0f;
+		if (g_focusobj->DynPressure(dynp) && dynp > 5000.0)
+			buffet = (float)std::min(1.0, (dynp - 5000.0) / 45000.0);
+		fx->AtmosphericBuffet(buffet);
+
+		fx->Tick(td.SimDT);
+	}
+#endif
 
 	// check for termination of demo mode
 	if (SessionLimitReached())

@@ -108,6 +108,10 @@ set(common_src
 	BuiltinLaunchpadItems.cpp
 	# User-writable paths (~/Library/Application Support, ~/Library/Logs)
 	UserPaths.cpp
+	# Gamepad force-feedback / rumble (SDL_GameController-based on
+	# macOS / Linux, no-op stub on Win32 where DirectInput already
+	# exposes IDirectInputDevice8::SetEffect natively).
+	HapticFX.cpp
 )
 
 # Platform-specific sources

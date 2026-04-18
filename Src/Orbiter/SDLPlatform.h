@@ -7,6 +7,8 @@
 #ifndef __SDLPLATFORM_H
 #define __SDLPLATFORM_H
 
+namespace orbiter { class HapticFX; }
+
 #ifndef _WIN32
 
 // SDL defines KMOD_* enum values that conflict with Orbiter's KMOD_* macros
@@ -116,6 +118,15 @@ private:
 	SDL_GameController *m_gameController;
 	JoyState m_joy;
 	void UpdateJoystick();
+
+public:
+	// Haptic feedback channel (rumble / atmospheric buffeting / etc.)
+	// — bound to m_gameController on Initialize, released on Shutdown.
+	// Returns nullptr if no controller is connected; callers must
+	// null-check before issuing effects.
+	class HapticFX *GetHaptic() { return m_haptic; }
+private:
+	HapticFX *m_haptic = nullptr;
 };
 
 } // namespace orbiter

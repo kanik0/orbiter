@@ -6,6 +6,7 @@
 #ifndef _WIN32
 
 #include "SDLPlatform.h"
+#include "HapticFX.h"
 #include "Orbiter.h"
 #include "Log.h"
 #include "imgui.h"
@@ -307,12 +308,28 @@ bool SDLPlatform::Initialize(int width, int height)
 		}
 	}
 
+	// Bind the haptic channel to the open controller (if any). The
+	// HapticFX wrapper tolerates a null binding so headless / no-pad
+	// runners stay quiet.
+	m_haptic = new HapticFX();
+	m_haptic->Bind(m_gameController);
+	if (m_gameController && SDL_GameControllerHasRumble(m_gameController)) {
+		fprintf(stderr, "[SDLPlatform] Haptic rumble available on %s\n",
+			SDL_GameControllerName(m_gameController));
+	}
+
 	m_initialized = true;
 	return true;
 }
 
 void SDLPlatform::Shutdown()
 {
+	if (m_haptic) {
+		m_haptic->Stop();
+		m_haptic->Bind(nullptr);
+		delete m_haptic;
+		m_haptic = nullptr;
+	}
 	if (m_gameController) {
 		SDL_GameControllerClose(m_gameController);
 		m_gameController = nullptr;
