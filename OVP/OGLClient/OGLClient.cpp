@@ -615,11 +615,29 @@ void OGLClient::clbkRender2DPanel(SURFHANDLE *hSurf, MESHHANDLE hMesh, MATRIX3 *
 		MESHGROUPEX *grp = oapiMeshGroupEx(hMesh, g);
 		if (!grp || !grp->nVtx || !grp->nIdx) continue;
 
-		// Bind the texture for this group
+		// UsrFlag bit 2 is Orbiter's "skip this group in the 2D panel pass"
+		// marker — typically used for groups that belong to a different
+		// panel orientation or are geometry placeholders. Matches D3D9Client
+		// (D3D9Client.cpp:1963).
+		if (grp->UsrFlag & 2) continue;
+
+		// Resolve the group's texture. Three cases, matching D3D9's ordering:
+		//   1. TexIdx is in [TEXIDX_MFD0, TEXIDX_MFD0+MAXMFD) → the group is
+		//      an MFD display slot; bind the MFD's painted surface. Without
+		//      this, MFD panels render as uninitialised/garbage indexes.
+		//   2. hSurf provided → lookup into the caller's texture array.
+		//   3. hSurf null → fall back to the mesh's own texture list, with
+		//      oapiGetTextureHandle's 1-based indexing.
 		DWORD texIdx = grp->TexIdx;
 		SURFHANDLE hTex = nullptr;
-		if (texIdx != (DWORD)-1 && hSurf)
+		if (texIdx >= TEXIDX_MFD0 && texIdx < TEXIDX_MFD0 + MAXMFD) {
+			int mfdidx = (int)(texIdx - TEXIDX_MFD0);
+			hTex = GetMFDSurface(mfdidx);
+		} else if (hSurf && texIdx != (DWORD)-1) {
 			hTex = hSurf[texIdx];
+		} else if (texIdx != (DWORD)-1) {
+			hTex = oapiGetTextureHandle(hMesh, texIdx + 1);
+		}
 
 		if (hTex) {
 			OGLSurface *texSurf = (OGLSurface*)hTex;
