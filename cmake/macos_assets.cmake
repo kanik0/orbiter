@@ -79,3 +79,37 @@ install(DIRECTORY ${_orbiter_macos_fonts_dir}/
 	DESTINATION ${ORBITER_INSTALL_ROOT_DIR}/Fonts
 	FILES_MATCHING PATTERN "*.ttf"
 )
+
+# ---------------------------------------------------------------------
+# Optional: NASA Blue Marble 2002 mosaic (~530 MiB PNG).
+#
+# Off by default because (a) the upstream download adds wall-clock
+# time to a fresh configure and (b) the OGL planet renderer's
+# tile-pyramid step (DXT5 + quad-tree split) is a separate offline
+# pipeline — see cmake/download_earth_lod8.py for the manual procedure.
+# When ON, the script fetches the source mosaic into Textures/ so the
+# subsequent tiling step can pick it up.
+
+option(ORBITER_FETCH_EARTH_BLUEMARBLE
+	"Download the NASA Blue Marble Earth mosaic into Textures/" OFF)
+
+if(ORBITER_FETCH_EARTH_BLUEMARBLE)
+	find_package(Python3 COMPONENTS Interpreter QUIET)
+	if(NOT Python3_FOUND)
+		message(WARNING "ORBITER_FETCH_EARTH_BLUEMARBLE=ON but no python3 "
+			"interpreter found — skipping Earth mosaic download.")
+	else()
+		set(_eb_out "${CMAKE_BINARY_DIR}/Textures/EarthBlueMarble.png")
+		message(STATUS "Fetching NASA Blue Marble mosaic → ${_eb_out}")
+		execute_process(
+			COMMAND ${Python3_EXECUTABLE}
+				${CMAKE_SOURCE_DIR}/cmake/download_earth_lod8.py
+				--out ${_eb_out}
+			RESULT_VARIABLE _eb_rc)
+		if(NOT _eb_rc EQUAL 0)
+			message(WARNING "Blue Marble download failed (rc=${_eb_rc}); "
+				"see configure log for details. The build continues — "
+				"Earth will fall back to the bundled EarthM.bmp.")
+		endif()
+	endif()
+endif()
