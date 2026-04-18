@@ -103,6 +103,9 @@ set(common_src
 	# Cross-platform default vtable for the LaunchpadItem API
 	LaunchpadItem.cpp
 	LaunchpadRegistry.cpp
+	# Built-in Extra-tab items, ImGui-based (compiled-out on Windows
+	# where TabExtra.cpp owns the equivalent Win32 dialog flow).
+	BuiltinLaunchpadItems.cpp
 )
 
 # Platform-specific sources

@@ -63,6 +63,7 @@
 #include "SDLPlatform.h"
 #include "OGLClient.h"
 #include "OGLLaunchpad.h"
+#include "BuiltinLaunchpadItems.h"
 #include "imgui.h"
 #include "backends/imgui_impl_sdl2.h"
 #include "backends/imgui_impl_opengl3.h"
@@ -1243,6 +1244,12 @@ INT Orbiter::Run ()
 
 	// If no scenario specified on command line, show ImGui Launchpad
 	if (pConfig->CfgCmdlinePrm.LaunchScenario.empty() && m_pSDL) {
+		// Populate the LaunchpadRegistry with the built-in Extra items
+		// (Physics / Instruments / Debug containers + their leaves) so
+		// the Extra tab matches the Win32 default. Plugin-registered
+		// items (oapiRegisterLaunchpadItem) appear alongside.
+		orbiter::RegisterBuiltinLaunchpadItems(pConfig);
+
 		ogl::OGLLaunchpad launchpadUI;
 		launchpadUI.Bind(pConfig);
 		char cwd[1024];
