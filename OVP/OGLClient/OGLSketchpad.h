@@ -19,6 +19,8 @@
 #include "DrawAPI.h"
 #include "OrbiterAPI.h"
 #include <OpenGL/gl3.h>
+#include <array>
+#include <vector>
 
 struct ImFont;
 
@@ -134,6 +136,39 @@ public:
 	void TextEx(float x, float y, const char *str,
 	            float scale = 1.0f, float angle = 0.0f) override;
 
+	// -- Transform state --
+	void SetWorldTransform(const oapi::FMATRIX4 *pWT = nullptr) override;
+	void SetWorldTransform2D(float scale = 1.0f, float rot = 0.0f,
+	                         const oapi::IVECTOR2 *ctr = nullptr,
+	                         const oapi::IVECTOR2 *trl = nullptr) override;
+	oapi::FMATRIX4 GetWorldTransform() const override;
+	void PushWorldTransform() override;
+	void PopWorldTransform() override;
+
+	// -- View / projection --
+	void SetViewMatrix(const oapi::FMATRIX4 *pV = nullptr) override;
+	void SetProjectionMatrix(const oapi::FMATRIX4 *pP = nullptr) override;
+	const oapi::FMATRIX4 *ViewMatrix() const override;
+	const oapi::FMATRIX4 *ProjectionMatrix() const override;
+	const oapi::FMATRIX4 *GetViewProjectionMatrix() const override;
+	void SetViewMode(SkpView mode = ORTHO) override;
+
+	// -- Clipping / surface metrics --
+	void ClipRect(const LPRECT pClip = nullptr) override;
+	void Clipper(int idx, const VECTOR3 *pPos = nullptr,
+	             double cos_angle = 0.0, double dist = 0.0) override;
+	void SetClipDistance(float _near, float _far) override;
+	void GetRenderSurfaceSize(LPSIZE size) override;
+
+	// -- Mesh + world-facing primitives --
+	int  DrawMeshGroup(const MESHHANDLE hMesh, DWORD grp,
+	                   MeshFlags flags = MeshFlags::SMOOTH_SHADE,
+	                   const SURFHANDLE hTex = nullptr) override;
+	void DrawPoly(const HPOLY hPoly, DWORD flags = 0) override;
+	void SetWorldBillboard(const oapi::FVECTOR3 &wpos, float scl = 1.0f,
+	                       bool bFixed = true,
+	                       const oapi::FVECTOR3 *index = nullptr) override;
+
 	// -- Shared GL resource lifecycle --
 	static void InitShared(ShaderMgr *sm);
 	static void ReleaseShared();
@@ -195,6 +230,11 @@ private:
 	static GLint  s_locNoise;
 	static GLint  s_locColor2;
 	static GLint  s_locColorKey;
+	static GLint  s_locWorld;
+	static GLint  s_locViewProj;
+	static GLint  s_locViewMode;
+	static GLint  s_locClipperDir;
+	static GLint  s_locClipperCosDist;
 	static bool   s_sharedInitialized;
 
 	// Colour-transform state. Defaults are identity so a Sketchpad that
@@ -223,6 +263,30 @@ private:
 	// alpha=0 byte of every input colour is rewritten to 255 — matches
 	// the legacy D3D9 "alpha 0 means opaque" default.
 	bool m_colourCompat;
+
+	// Transform + view/projection state. Identity by default so ORTHO
+	// pixel-space mode reproduces pre-M17.d behaviour exactly.
+	float m_world[16];
+	float m_view[16];
+	float m_proj[16];
+	float m_viewProj[16];    // view * proj, recomputed on any Set*Matrix
+	int   m_viewMode;        // ORTHO = 0, USER = 1
+
+	// Shadow pointers for ViewMatrix()/ProjectionMatrix() getters whose
+	// lifetime must outlive a single call.
+	oapi::FMATRIX4 m_viewShadow, m_projShadow, m_viewProjShadow;
+
+	// World-transform stack for PushWorldTransform/PopWorldTransform.
+	// Small reserved capacity covers the usual one-two deep usage.
+	std::vector<std::array<float, 16>> m_worldStack;
+
+	// Two Clipper slots (world-space cone).
+	float m_clipperDir[2][4];          // xyz = unit direction, w = enable
+	float m_clipperCosDist[2][2];      // x = cos(angle), y = near-distance
+
+	// Near/far clip planes for SetClipDistance. Only meaningful in USER
+	// view mode — default values match the D3D9 defaults.
+	float m_clipNear, m_clipFar;
 };
 
 } // namespace ogl

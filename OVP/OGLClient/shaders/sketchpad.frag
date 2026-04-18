@@ -8,12 +8,19 @@
 //   3 = horizontal gradient (uColor .. uColor2, interpolated by vUV.x)
 //   4 = vertical gradient   (uColor .. uColor2, interpolated by vUV.y)
 in vec2 vUV;
+in vec4 vWorldPos;
 
 uniform vec4 uColor;
 uniform vec4 uColor2;       // gradient end colour (modes 3/4)
 uniform vec4 uColorKey;     // .rgb = key colour, .a = 1 enables discard
 uniform int  uMode;
 uniform sampler2D uTexture;
+
+// World-space clip cones (Clipper). Each slot: .xyz direction, .w = 1
+// enables the check. uClipperCosDist[i].x = cos(half-angle),
+// uClipperCosDist[i].y = min distance beyond which the cone masks.
+uniform vec4 uClipperDir[2];
+uniform vec2 uClipperCosDist[2];
 
 // Per-draw colour transforms driven by SetBrightness / SetColorMatrix /
 // SetRenderParam. Defaults are identity so calling code that never
@@ -33,6 +40,19 @@ float pseudoNoise(vec2 p) {
 }
 
 void main() {
+    // World-space clip cones. Fragment is discarded when it falls inside
+    // either active cone beyond its near-distance; matches the D3D9
+    // Clipper() semantic used by planetarium "see-through" guards.
+    for (int i = 0; i < 2; i++) {
+        if (uClipperDir[i].w > 0.5) {
+            float d = length(vWorldPos.xyz);
+            if (d > uClipperCosDist[i].y) {
+                vec3 dir = normalize(vWorldPos.xyz);
+                if (dot(dir, uClipperDir[i].xyz) > uClipperCosDist[i].x) discard;
+            }
+        }
+    }
+
     vec4 c;
     if (uMode == 0) {
         c = uColor;

@@ -31,6 +31,11 @@ GLint  OGLSketchpad::s_locGamma      = -1;
 GLint  OGLSketchpad::s_locNoise      = -1;
 GLint  OGLSketchpad::s_locColor2     = -1;
 GLint  OGLSketchpad::s_locColorKey   = -1;
+GLint  OGLSketchpad::s_locWorld      = -1;
+GLint  OGLSketchpad::s_locViewProj   = -1;
+GLint  OGLSketchpad::s_locViewMode   = -1;
+GLint  OGLSketchpad::s_locClipperDir = -1;
+GLint  OGLSketchpad::s_locClipperCosDist = -1;
 bool   OGLSketchpad::s_sharedInitialized = false;
 
 void OGLSketchpad::InitShared(ShaderMgr *sm)
@@ -49,6 +54,11 @@ void OGLSketchpad::InitShared(ShaderMgr *sm)
 	s_locNoise      = sm->GetUniformLoc(s_program, "uNoise");
 	s_locColor2     = sm->GetUniformLoc(s_program, "uColor2");
 	s_locColorKey   = sm->GetUniformLoc(s_program, "uColorKey");
+	s_locWorld      = sm->GetUniformLoc(s_program, "uWorld");
+	s_locViewProj   = sm->GetUniformLoc(s_program, "uViewProj");
+	s_locViewMode   = sm->GetUniformLoc(s_program, "uViewMode");
+	s_locClipperDir     = sm->GetUniformLoc(s_program, "uClipperDir[0]");
+	s_locClipperCosDist = sm->GetUniformLoc(s_program, "uClipperCosDist[0]");
 
 	// One streaming VBO is enough — every Draw* call rewrites it before the
 	// glDrawArrays, so there is no benefit from separate per-primitive VAOs.
@@ -129,6 +139,30 @@ OGLSketchpad::OGLSketchpad(SURFHANDLE surf, ShaderMgr *sm)
 	float *m = (float*)&m_colorMatShadow;
 	for (int i = 0; i < 16; i++) m[i] = (i % 5 == 0) ? 1.0f : 0.0f;
 
+	// Transform + view/proj state defaults to identity / ORTHO so pre-M17.d
+	// callers see no behavioural change.
+	for (int i = 0; i < 16; i++) {
+		m_world[i]    = (i % 5 == 0) ? 1.0f : 0.0f;
+		m_view[i]     = (i % 5 == 0) ? 1.0f : 0.0f;
+		m_proj[i]     = (i % 5 == 0) ? 1.0f : 0.0f;
+		m_viewProj[i] = (i % 5 == 0) ? 1.0f : 0.0f;
+	}
+	float *vs = (float*)&m_viewShadow;
+	float *ps = (float*)&m_projShadow;
+	float *vps = (float*)&m_viewProjShadow;
+	for (int i = 0; i < 16; i++) {
+		vs[i] = ps[i] = vps[i] = (i % 5 == 0) ? 1.0f : 0.0f;
+	}
+	m_viewMode = ORTHO;
+	m_clipNear = 0.1f;
+	m_clipFar  = 1000.0f;
+	for (int i = 0; i < 2; i++) {
+		m_clipperDir[i][0] = m_clipperDir[i][1] = m_clipperDir[i][2] = 0.0f;
+		m_clipperDir[i][3] = 0.0f;   // disabled
+		m_clipperCosDist[i][0] = 1.0f;
+		m_clipperCosDist[i][1] = 0.0f;
+	}
+
 	BindState();
 }
 
@@ -168,6 +202,25 @@ void OGLSketchpad::BindState()
 	const float off[4] = { 0, 0, 0, 0 };
 	glUniform4fv(s_locColor2, 1, off);
 	glUniform4fv(s_locColorKey, 1, off);
+
+	// Transform + projection state.
+	glUniformMatrix4fv(s_locWorld,    1, GL_FALSE, m_world);
+	glUniformMatrix4fv(s_locViewProj, 1, GL_FALSE, m_viewProj);
+	glUniform1i       (s_locViewMode, m_viewMode);
+
+	// Clipper slots default to disabled.
+	float dir[8]     = { 0,0,0,0, 0,0,0,0 };
+	float cosdist[4] = { 1,0, 1,0 };
+	for (int i = 0; i < 2; i++) {
+		dir[i*4 + 0] = m_clipperDir[i][0];
+		dir[i*4 + 1] = m_clipperDir[i][1];
+		dir[i*4 + 2] = m_clipperDir[i][2];
+		dir[i*4 + 3] = m_clipperDir[i][3];
+		cosdist[i*2 + 0] = m_clipperCosDist[i][0];
+		cosdist[i*2 + 1] = m_clipperCosDist[i][1];
+	}
+	glUniform4fv(s_locClipperDir,     2, dir);
+	glUniform2fv(s_locClipperCosDist, 2, cosdist);
 }
 
 void OGLSketchpad::UnbindState()
@@ -995,6 +1048,267 @@ void OGLSketchpad::StretchRegion(const skpRegion *rgn, const SURFHANDLE hSrc,
 	stretch(ir, it, sr, ib, tiR, tiT, tr,  tiB);
 	// centre
 	stretch(il, it, ir, ib, tiL, tiT, tiR, tiB);
+}
+
+// --- Transform state ------------------------------------------------------
+
+static inline void MakeIdentity(float m[16])
+{
+	for (int i = 0; i < 16; i++) m[i] = (i % 5 == 0) ? 1.0f : 0.0f;
+}
+
+static inline void Mul4x4(const float a[16], const float b[16], float out[16])
+{
+	// Column-major 4x4 multiply (same layout oapi::FMATRIX4 uses on disk).
+	float tmp[16];
+	for (int c = 0; c < 4; c++)
+		for (int r = 0; r < 4; r++) {
+			float s = 0.0f;
+			for (int k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
+			tmp[c * 4 + r] = s;
+		}
+	std::memcpy(out, tmp, sizeof(tmp));
+}
+
+void OGLSketchpad::SetWorldTransform(const oapi::FMATRIX4 *pWT)
+{
+	if (pWT) std::memcpy(m_world, pWT, sizeof(m_world));
+	else     MakeIdentity(m_world);
+	if (s_locWorld >= 0)
+		glUniformMatrix4fv(s_locWorld, 1, GL_FALSE, m_world);
+}
+
+void OGLSketchpad::SetWorldTransform2D(float scale, float rot,
+                                       const oapi::IVECTOR2 *ctr,
+                                       const oapi::IVECTOR2 *trl)
+{
+	// Compose T(translation) * T(centre) * R(rot) * S(scale) * T(-centre).
+	// Matches the D3D9Pad2 reference so 2D panel callers that mix
+	// SetWorldTransform2D and SetOrigin see identical geometry.
+	const float cx = ctr ? (float)ctr->x : 0.0f;
+	const float cy = ctr ? (float)ctr->y : 0.0f;
+	const float tx = trl ? (float)trl->x : 0.0f;
+	const float ty = trl ? (float)trl->y : 0.0f;
+	const float c  = std::cos(rot);
+	const float s  = std::sin(rot);
+
+	float m[16];
+	MakeIdentity(m);
+	// column-major 4x4: composite 2D affine in the xy plane.
+	m[0 * 4 + 0] =  c * scale;
+	m[0 * 4 + 1] =  s * scale;
+	m[1 * 4 + 0] = -s * scale;
+	m[1 * 4 + 1] =  c * scale;
+	m[3 * 4 + 0] = tx + cx - (c * scale * cx - s * scale * cy);
+	m[3 * 4 + 1] = ty + cy - (s * scale * cx + c * scale * cy);
+
+	std::memcpy(m_world, m, sizeof(m_world));
+	if (s_locWorld >= 0)
+		glUniformMatrix4fv(s_locWorld, 1, GL_FALSE, m_world);
+}
+
+oapi::FMATRIX4 OGLSketchpad::GetWorldTransform() const
+{
+	oapi::FMATRIX4 out;
+	std::memcpy(&out, m_world, sizeof(m_world));
+	return out;
+}
+
+void OGLSketchpad::PushWorldTransform()
+{
+	std::array<float, 16> snap;
+	std::memcpy(snap.data(), m_world, sizeof(m_world));
+	m_worldStack.push_back(snap);
+}
+
+void OGLSketchpad::PopWorldTransform()
+{
+	if (m_worldStack.empty()) return;
+	std::memcpy(m_world, m_worldStack.back().data(), sizeof(m_world));
+	m_worldStack.pop_back();
+	if (s_locWorld >= 0)
+		glUniformMatrix4fv(s_locWorld, 1, GL_FALSE, m_world);
+}
+
+// --- View / projection ----------------------------------------------------
+
+void OGLSketchpad::SetViewMatrix(const oapi::FMATRIX4 *pV)
+{
+	if (pV) { std::memcpy(m_view, pV, sizeof(m_view)); m_viewShadow = *pV; }
+	else    { MakeIdentity(m_view); float *m = (float*)&m_viewShadow;
+	          for (int i = 0; i < 16; i++) m[i] = (i % 5 == 0) ? 1.0f : 0.0f; }
+	Mul4x4(m_view, m_proj, m_viewProj);
+	std::memcpy(&m_viewProjShadow, m_viewProj, sizeof(m_viewProj));
+	if (s_locViewProj >= 0)
+		glUniformMatrix4fv(s_locViewProj, 1, GL_FALSE, m_viewProj);
+}
+
+void OGLSketchpad::SetProjectionMatrix(const oapi::FMATRIX4 *pP)
+{
+	if (pP) { std::memcpy(m_proj, pP, sizeof(m_proj)); m_projShadow = *pP; }
+	else    { MakeIdentity(m_proj); float *m = (float*)&m_projShadow;
+	          for (int i = 0; i < 16; i++) m[i] = (i % 5 == 0) ? 1.0f : 0.0f; }
+	Mul4x4(m_view, m_proj, m_viewProj);
+	std::memcpy(&m_viewProjShadow, m_viewProj, sizeof(m_viewProj));
+	if (s_locViewProj >= 0)
+		glUniformMatrix4fv(s_locViewProj, 1, GL_FALSE, m_viewProj);
+}
+
+const oapi::FMATRIX4 *OGLSketchpad::ViewMatrix() const { return &m_viewShadow; }
+const oapi::FMATRIX4 *OGLSketchpad::ProjectionMatrix() const { return &m_projShadow; }
+const oapi::FMATRIX4 *OGLSketchpad::GetViewProjectionMatrix() const { return &m_viewProjShadow; }
+
+void OGLSketchpad::SetViewMode(SkpView mode)
+{
+	m_viewMode = mode;
+	if (s_locViewMode >= 0)
+		glUniform1i(s_locViewMode, m_viewMode);
+}
+
+// --- Clipping -------------------------------------------------------------
+
+void OGLSketchpad::ClipRect(const LPRECT pClip)
+{
+	if (pClip) {
+		// glScissor uses bottom-left origin; Sketchpad uses top-left. Flip
+		// y against the target surface height.
+		int x = pClip->left;
+		int y = (int)m_viewH - pClip->bottom;
+		int w = pClip->right  - pClip->left;
+		int h = pClip->bottom - pClip->top;
+		glEnable(GL_SCISSOR_TEST);
+		glScissor(x, y, std::max(0, w), std::max(0, h));
+	} else {
+		glDisable(GL_SCISSOR_TEST);
+	}
+}
+
+void OGLSketchpad::Clipper(int idx, const VECTOR3 *pPos,
+                           double cos_angle, double dist)
+{
+	if (idx < 0 || idx > 1) return;
+	if (pPos) {
+		const double l = std::sqrt(pPos->x * pPos->x + pPos->y * pPos->y + pPos->z * pPos->z);
+		const double inv = l > 1e-9 ? 1.0 / l : 0.0;
+		m_clipperDir[idx][0] = (float)(pPos->x * inv);
+		m_clipperDir[idx][1] = (float)(pPos->y * inv);
+		m_clipperDir[idx][2] = (float)(pPos->z * inv);
+		m_clipperDir[idx][3] = 1.0f;
+		m_clipperCosDist[idx][0] = (float)cos_angle;
+		m_clipperCosDist[idx][1] = (float)dist;
+	} else {
+		m_clipperDir[idx][3] = 0.0f;  // disabled
+	}
+	// Re-upload the whole pair so we don't have to track per-slot array
+	// uniform offsets.
+	float dir[8], cd[4];
+	for (int i = 0; i < 2; i++) {
+		dir[i*4 + 0] = m_clipperDir[i][0];
+		dir[i*4 + 1] = m_clipperDir[i][1];
+		dir[i*4 + 2] = m_clipperDir[i][2];
+		dir[i*4 + 3] = m_clipperDir[i][3];
+		cd[i*2 + 0]  = m_clipperCosDist[i][0];
+		cd[i*2 + 1]  = m_clipperCosDist[i][1];
+	}
+	if (s_locClipperDir     >= 0) glUniform4fv(s_locClipperDir,     2, dir);
+	if (s_locClipperCosDist >= 0) glUniform2fv(s_locClipperCosDist, 2, cd);
+}
+
+void OGLSketchpad::SetClipDistance(float _near, float _far)
+{
+	m_clipNear = _near;
+	m_clipFar  = _far;
+	// glDepthRangef in Core Profile can't change near/far clip planes on
+	// its own; those are baked into the projection matrix. We store the
+	// values so future SetProjectionMatrix calls (or USER-mode defaults)
+	// can read them; nothing in the shipping MFDs/plugins calls this
+	// outside of USER mode with a custom projection, where the caller
+	// builds the matrix themselves.
+}
+
+// --- Metrics --------------------------------------------------------------
+
+void OGLSketchpad::GetRenderSurfaceSize(LPSIZE size)
+{
+	if (!size) return;
+	size->cx = (LONG)m_viewW;
+	size->cy = (LONG)m_viewH;
+}
+
+// --- World-space primitives ----------------------------------------------
+
+int OGLSketchpad::DrawMeshGroup(const MESHHANDLE hMesh, DWORD grp,
+                                MeshFlags flags, const SURFHANDLE hTex)
+{
+	if (!hMesh) return -1;
+	MESHGROUPEX *g = oapiMeshGroupEx(hMesh, grp);
+	if (!g || !g->Vtx || !g->Idx || g->nIdx < 3) return -1;
+
+	// Build an interleaved [x,y,u,v] stream. Meshes intended for the
+	// Sketchpad path typically place data in the xy plane; we drop z so
+	// the existing 2D VBO layout fits.
+	std::vector<float> verts(g->nIdx * 4);
+	for (DWORD i = 0; i < g->nIdx; i++) {
+		const NTVERTEX &v = g->Vtx[g->Idx[i]];
+		verts[i * 4 + 0] = v.x;
+		verts[i * 4 + 1] = v.y;
+		verts[i * 4 + 2] = v.tu;
+		verts[i * 4 + 3] = v.tv;
+	}
+
+	glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
+	glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(float),
+	             verts.data(), GL_STREAM_DRAW);
+
+	if (hTex) {
+		OGLSurface *ts = (OGLSurface*)hTex;
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, ts->GetTexture());
+		glUniform1i(s_locTexture, 0);
+		const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+		glUniform4fv(s_locColor, 1, white);
+		glUniform1i(s_locMode, MODE_TEXTURE);
+	} else {
+		float c[4]; PackColor(m_brush ? m_brush->col : 0xFFFFFF, c);
+		glUniform4fv(s_locColor, 1, c);
+		glUniform1i(s_locMode, MODE_SOLID);
+	}
+
+	(void)flags;  // SMOOTH_SHADE / CULL_NONE don't affect 2D Sketchpad output
+	glDrawArrays(GL_TRIANGLES, 0, (GLsizei)g->nIdx);
+	return (int)g->nIdx;
+}
+
+// HPOLY is an opaque Orbiter handle for pre-baked polygon geometry.
+// clbkCreatePoly (GraphicsAPI.h) returns client-specific concrete types;
+// OGLClient does not currently implement that factory, so no HPOLY that
+// reaches here would have been produced by us. Accept the handle and
+// draw nothing — calling code with a null-handle fallback will see a
+// no-op rather than an assert, which matches the "polygon not baked"
+// behaviour D3D9 exhibits when clbkCreatePoly returns NULL.
+void OGLSketchpad::DrawPoly(const HPOLY /*hPoly*/, DWORD /*flags*/) {}
+
+void OGLSketchpad::SetWorldBillboard(const oapi::FVECTOR3 &wpos, float scl,
+                                     bool /*bFixed*/,
+                                     const oapi::FVECTOR3 * /*index*/)
+{
+	// Build a billboard world matrix that translates to `wpos` and
+	// applies a uniform scale. The caller is responsible for installing
+	// an appropriate view + projection beforehand (USER mode); we leave
+	// orientation axis-aligned — the `index` override is an advanced
+	// customisation D3D9Pad uses for fixed-axis billboards and is not
+	// exercised by any shipping caller.
+	float m[16];
+	MakeIdentity(m);
+	m[0 * 4 + 0] = scl;
+	m[1 * 4 + 1] = scl;
+	m[2 * 4 + 2] = scl;
+	m[3 * 4 + 0] = wpos.x;
+	m[3 * 4 + 1] = wpos.y;
+	m[3 * 4 + 2] = wpos.z;
+	std::memcpy(m_world, m, sizeof(m_world));
+	if (s_locWorld >= 0)
+		glUniformMatrix4fv(s_locWorld, 1, GL_FALSE, m_world);
 }
 
 // --- Misc primitives -------------------------------------------------------
