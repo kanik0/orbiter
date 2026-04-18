@@ -89,6 +89,14 @@ public:
 	void Polyline(const oapi::IVECTOR2 *pt, int npt) override;
 	void Pixel(int x, int y, DWORD col) override;
 
+	// -- Colour transforms --
+	void      SetBrightness(const oapi::FVECTOR4 *pBrightness = nullptr) override;
+	void      SetColorMatrix(const oapi::FMATRIX4 *pMatrix = nullptr) override;
+	const oapi::FMATRIX4 *GetColorMatrix() override;
+	void      SetRenderParam(RenderParam param,
+	                         const oapi::FVECTOR4 *data = nullptr) override;
+	oapi::FVECTOR4 GetRenderParam(RenderParam param) override;
+
 	// -- Shared GL resource lifecycle --
 	static void InitShared(ShaderMgr *sm);
 	static void ReleaseShared();
@@ -142,7 +150,22 @@ private:
 	static GLint  s_locColor;
 	static GLint  s_locMode;
 	static GLint  s_locTexture;
+	static GLint  s_locBrightness;
+	static GLint  s_locColorMat;
+	static GLint  s_locGamma;
+	static GLint  s_locNoise;
 	static bool   s_sharedInitialized;
+
+	// Colour-transform state. Defaults are identity so a Sketchpad that
+	// never calls Set* paints the same as before M17.b.
+	float m_brightness[4];  // multiplicative rgba
+	float m_colorMat[16];   // row-major 4x4
+	float m_gamma[4];       // rgb = 1/gamma exponent
+	float m_noise[4];       // rgb tint, a blend (0 = off)
+
+	// Shadow of the last SetColorMatrix call so GetColorMatrix() can
+	// return a pointer with the same lifetime as the Sketchpad.
+	oapi::FMATRIX4 m_colorMatShadow;
 };
 
 } // namespace ogl

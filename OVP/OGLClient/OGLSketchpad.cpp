@@ -25,6 +25,10 @@ GLint  OGLSketchpad::s_locViewport = -1;
 GLint  OGLSketchpad::s_locColor    = -1;
 GLint  OGLSketchpad::s_locMode     = -1;
 GLint  OGLSketchpad::s_locTexture  = -1;
+GLint  OGLSketchpad::s_locBrightness = -1;
+GLint  OGLSketchpad::s_locColorMat   = -1;
+GLint  OGLSketchpad::s_locGamma      = -1;
+GLint  OGLSketchpad::s_locNoise      = -1;
 bool   OGLSketchpad::s_sharedInitialized = false;
 
 void OGLSketchpad::InitShared(ShaderMgr *sm)
@@ -33,10 +37,14 @@ void OGLSketchpad::InitShared(ShaderMgr *sm)
 	s_sharedInitialized = true;
 
 	s_program = sm->LoadProgram("sketchpad", "sketchpad.vert", "sketchpad.frag");
-	s_locViewport = sm->GetUniformLoc(s_program, "uViewport");
-	s_locColor    = sm->GetUniformLoc(s_program, "uColor");
-	s_locMode     = sm->GetUniformLoc(s_program, "uMode");
-	s_locTexture  = sm->GetUniformLoc(s_program, "uTexture");
+	s_locViewport   = sm->GetUniformLoc(s_program, "uViewport");
+	s_locColor      = sm->GetUniformLoc(s_program, "uColor");
+	s_locMode       = sm->GetUniformLoc(s_program, "uMode");
+	s_locTexture    = sm->GetUniformLoc(s_program, "uTexture");
+	s_locBrightness = sm->GetUniformLoc(s_program, "uBrightness");
+	s_locColorMat   = sm->GetUniformLoc(s_program, "uColorMat");
+	s_locGamma      = sm->GetUniformLoc(s_program, "uGamma");
+	s_locNoise      = sm->GetUniformLoc(s_program, "uNoise");
 
 	// One streaming VBO is enough — every Draw* call rewrites it before the
 	// glDrawArrays, so there is no benefit from separate per-primitive VAOs.
@@ -102,6 +110,18 @@ OGLSketchpad::OGLSketchpad(SURFHANDLE surf, ShaderMgr *sm)
 		m_viewW = m_surf->GetWidth();
 		m_viewH = m_surf->GetHeight();
 	}
+
+	// Identity colour transforms — no visible effect until SetBrightness /
+	// SetColorMatrix / SetRenderParam installs non-default values.
+	m_brightness[0] = m_brightness[1] = m_brightness[2] = m_brightness[3] = 1.0f;
+	for (int i = 0; i < 16; i++) m_colorMat[i] = (i % 5 == 0) ? 1.0f : 0.0f;
+	m_gamma[0] = m_gamma[1] = m_gamma[2] = 1.0f; m_gamma[3] = 0.0f;
+	m_noise[0] = m_noise[1] = m_noise[2] = m_noise[3] = 0.0f;
+	// Shadow starts as identity so a GetColorMatrix before any Set returns
+	// a valid pointer rather than undefined memory.
+	float *m = (float*)&m_colorMatShadow;
+	for (int i = 0; i < 16; i++) m[i] = (i % 5 == 0) ? 1.0f : 0.0f;
+
 	BindState();
 }
 
@@ -129,6 +149,10 @@ void OGLSketchpad::BindState()
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	glUniform2f(s_locViewport, (float)m_viewW, (float)m_viewH);
+	glUniform4fv(s_locBrightness, 1, m_brightness);
+	glUniformMatrix4fv(s_locColorMat, 1, GL_FALSE, m_colorMat);
+	glUniform4fv(s_locGamma, 1, m_gamma);
+	glUniform4fv(s_locNoise, 1, m_noise);
 }
 
 void OGLSketchpad::UnbindState()
@@ -541,6 +565,95 @@ void OGLSketchpad::Pixel(int x, int y, DWORD col)
 		px,        py + 1.0f,
 	};
 	DrawSolidTriangles(tri, 6, col);
+}
+
+// --- Colour transforms -----------------------------------------------------
+
+void OGLSketchpad::SetBrightness(const oapi::FVECTOR4 *pBrightness)
+{
+	if (pBrightness) {
+		m_brightness[0] = pBrightness->x;
+		m_brightness[1] = pBrightness->y;
+		m_brightness[2] = pBrightness->z;
+		m_brightness[3] = pBrightness->w;
+	} else {
+		m_brightness[0] = m_brightness[1] = m_brightness[2] = m_brightness[3] = 1.0f;
+	}
+	if (s_locBrightness >= 0)
+		glUniform4fv(s_locBrightness, 1, m_brightness);
+}
+
+void OGLSketchpad::SetColorMatrix(const oapi::FMATRIX4 *pMatrix)
+{
+	if (pMatrix) {
+		std::memcpy(m_colorMat, pMatrix, sizeof(m_colorMat));
+		m_colorMatShadow = *pMatrix;
+	} else {
+		for (int i = 0; i < 16; i++) m_colorMat[i] = (i % 5 == 0) ? 1.0f : 0.0f;
+		float *m = (float*)&m_colorMatShadow;
+		for (int i = 0; i < 16; i++) m[i] = (i % 5 == 0) ? 1.0f : 0.0f;
+	}
+	if (s_locColorMat >= 0)
+		glUniformMatrix4fv(s_locColorMat, 1, GL_FALSE, m_colorMat);
+}
+
+const oapi::FMATRIX4 *OGLSketchpad::GetColorMatrix()
+{
+	return &m_colorMatShadow;
+}
+
+void OGLSketchpad::SetRenderParam(RenderParam param, const oapi::FVECTOR4 *data)
+{
+	// The oapi::FVECTOR4 layout matches GLSL's vec4; we can forward the
+	// scalars straight through. `data == nullptr` resets that parameter's
+	// effect to the identity.
+	switch (param) {
+	case PRM_GAMMA: {
+		if (data) {
+			// Orbiter passes the gamma exponent in .rgb; shader applies
+			// pow(color, 1/gamma). Invert here so the shader does a plain
+			// pow() per fragment.
+			m_gamma[0] = data->x > 1e-6f ? 1.0f / data->x : 1.0f;
+			m_gamma[1] = data->y > 1e-6f ? 1.0f / data->y : 1.0f;
+			m_gamma[2] = data->z > 1e-6f ? 1.0f / data->z : 1.0f;
+			m_gamma[3] = 0.0f;
+		} else {
+			m_gamma[0] = m_gamma[1] = m_gamma[2] = 1.0f; m_gamma[3] = 0.0f;
+		}
+		if (s_locGamma >= 0)
+			glUniform4fv(s_locGamma, 1, m_gamma);
+		break;
+	}
+	case PRM_NOISE: {
+		if (data) {
+			m_noise[0] = data->x;
+			m_noise[1] = data->y;
+			m_noise[2] = data->z;
+			m_noise[3] = data->w;
+		} else {
+			m_noise[0] = m_noise[1] = m_noise[2] = m_noise[3] = 0.0f;
+		}
+		if (s_locNoise >= 0)
+			glUniform4fv(s_locNoise, 1, m_noise);
+		break;
+	}
+	}
+}
+
+oapi::FVECTOR4 OGLSketchpad::GetRenderParam(RenderParam param)
+{
+	switch (param) {
+	case PRM_GAMMA: {
+		// Shader stores 1/gamma; invert back for the caller.
+		float gx = m_gamma[0] > 1e-6f ? 1.0f / m_gamma[0] : 1.0f;
+		float gy = m_gamma[1] > 1e-6f ? 1.0f / m_gamma[1] : 1.0f;
+		float gz = m_gamma[2] > 1e-6f ? 1.0f / m_gamma[2] : 1.0f;
+		return oapi::FVECTOR4(gx, gy, gz, 0.0f);
+	}
+	case PRM_NOISE:
+		return oapi::FVECTOR4(m_noise[0], m_noise[1], m_noise[2], m_noise[3]);
+	}
+	return oapi::FVECTOR4(0, 0, 0, 0);
 }
 
 } // namespace ogl
