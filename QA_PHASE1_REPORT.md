@@ -7,25 +7,31 @@
 
 ---
 
-## TL;DR
+## TL;DR (post-estensione Fasi A-D)
 
-- **Build:** ✅ configure + full build puliti, 62 dylib reali + 11 plugin + DMG 157 MB.
-- **Parity statica (Section B):** 4/5 coppie file ≥ 95% parity; 1/5 (ScnEditor) a 50% **per design** (roadmap M25.d).
-- **Smoke test runtime:** 14/14 scenari `Scenarios/Demo/*.scn` rendono frame 60 e catturano PNG 178-185 KB, **0 TERMIN/critical/fatal**.
-- **Tests (ctest):** 1 PASS (`rendering_parity` 45.88 s), 1 FAIL (`Lua.Interpreter` exe non presente — gating Win32-only plausibile ma non verificato).
-- **DMG:** 157 MB, `hdiutil verify` clean, ad-hoc signed (no notarization env).
+- **Build:** ✅ configure + full build puliti, 62 dylib + 12 plugin (**inclusa `libXRSound.dylib` 1.1 MB**) + DMG 157 MB.
+- **Parity statica (Fase E, 5 coppie):** 4/5 ≥95%; 1/5 (ScnEditor) 50% per design (M25.d).
+- **Parity statica (Fasi A-D, 6 coppie OGLClient ↔ D3D9Client):** tutte ≥95%, gap minori su blit copy modes + color-key strategy + point sprite rendering.
+- **Smoke test runtime:** 14/14 scenari `Scenarios/Demo/*.scn` catturano PNG 178-185 KB, **0 TERMIN/critical/fatal**.
+- **ctest:** 1 PASS (`rendering_parity`), 1 FAIL (`Lua.Interpreter` exe missing, Win32-gating plausibile), **1 silenziosamente non registrato** (`xrsound_openal_smoke`, vedi §N.4).
+- **XRSound runtime:** `xrsound_openal_smoke` eseguito manualmente → EXIT 0 clean, ma **ctest non lo registra** per ordine `enable_testing()` vs `add_subdirectory(Sound)` nel top-level CMakeLists.txt.
+- **DMG:** 157 MB, `hdiutil verify` clean.
 
 ### ⚠️ Finding critici (violano "zero-stubs policy")
 
-| # | severity | finding | blocker PR? |
-|---|---|---|---|
-| 1 | **high** | `libLuaInline.dylib` non trovato a runtime → scripting Lua rotto in ogni scenario | no (degradato, non crash) |
-| 2 | **high** | 8 Celbody dylib sono symlink a Win32 PE32 → `dlopen` fallisce ripetutamente | no (degradato, non crash) |
-| 3 | **medium** | Module-load log stampa nomi corrotti (`Module p��o ...`) | no (cosmetico) |
-| 4 | **medium** | `DlgOptions` macOS: mancano pagine `DrawVisual` / `DrawPhysics` (TODO commentato) | no (degradato) |
-| 5 | **low** | `oapiClearSurfaceColourKey` no-op su macOS con `// TODO` | no (silent no-op) |
+| # | severity | finding | fase | blocker PR? |
+|---|---|---|---|---|
+| 1 | **critical** | `CELBODY2::LoadAtmosphereModule` usa `Modules\\Celbody\\%s\\Atmosphere` senza `#ifdef _WIN32` → path con `\\` su macOS, tutti i plugin atmosphere (`VenusAtm2006`, `EarthAtmJ71G`, `EarthAtmNRLMSISE00`, `MarsAtm2006`) falliscono load | A-D | **forse** (scenari con atmosfera usano fallback hard-coded) |
+| 2 | **critical** | `libXRSound.dylib` non costruito da `cmake --build --parallel 8` default (solo `--target XRSound_dll` esplicito) → **audio silent-broken** al primo build clean | D | **probabile** (deploy rotto) |
+| 3 | **high** | `libLuaInline.dylib` non trovato a runtime — `CMAKE_LIBRARY_OUTPUT_DIRECTORY` missing → scripting Lua rotto | E | no |
+| 4 | **high** | 8 Celbody dylib sono symlink a Win32 PE32 → `dlopen` fallisce | E (M22 follow-up) | no |
+| 5 | **high** | `xrsound_openal_smoke` ctest non registrato — `enable_testing()` chiamato dopo `add_subdirectory(Sound)` | D/E | no (test non blocca build) |
+| 6 | **medium** | Module-load log stampa garbage (`Module 0C�k ...`) — `GetModuleFileName` stub non popola buffer | E | no (cosmetico) |
+| 7 | **medium** | `DlgOptions` in-sim: manca DrawVisual + DrawPhysics (TODO commentato) | E | no |
+| 8 | **low** | `oapiClearSurfaceColourKey` no-op su macOS con `// TODO` | E | no |
+| 9 | **low** | `OpenFileIgnoreCase` esteso solo a `Vessel::OpenConfigFile` — mesh/texture/base/scenario loaders potenzialmente case-sensitive | E | no |
 
-Dettagli sotto.
+Dettagli §C e §N.
 
 ---
 
@@ -332,3 +338,295 @@ Oltre ai 3 finding critici della §C (LuaInline, Celbody Win32 DLL symlink, log 
 ---
 
 *Report generato autonomamente in Phase 1. Branch: `qa/phase1-audit`. Commit: TBD.*
+
+---
+
+# Sezioni estese (Fasi A-D) — M0-M21
+
+## Sezione K — Grep esteso Fasi A-D
+
+Scope: **90 file `.cpp/.h`** modificati/aggiunti da commit M0 (5bed81ee) fino a M21 (bcd146c7), esclusi vendored (stb_image, stb_image_write, dr_wav, dr_mp3, stb_vorbis, Extern/, nlohmann).
+
+### K.1 — TODO/FIXME/XXX/STUB/HACK in OGLClient core
+
+Solo `stb_image.h` (vendored, fuori scope) ha hit. **Tutto il codice OGLClient proprietario è pulito** — OGLClient.cpp, OGLScene, OGLvVessel, OGLvPlanet, OGLvBase, OGLSketchpad, OGLParticle, OGLShadowMap, OGLEnvMap, OGLCelSphere, OGLShaderMgr, OGLTile, OGLSurface, OGLTexture, OGLMaterial, OGLMeshRegistry, OGLPostProcess, OGLAtmosphere, OGLBeaconArray: **0 TODO/FIXME/XXX non-vendored.** ✅
+
+### K.2 — TODO in XRSound
+
+Occorrenze reali (escluso `external/dr_*` vendored):
+
+| file:line | nota |
+|---|---|
+| Sound/XRSound/src/XRSoundConfigFileParser.cpp:115,120 | TODO pre-existing — nulla a che vedere con il port macOS |
+| Sound/XRSound/src/VesselXRSoundEngine.cpp:716 | TODO pre-existing — "arbitary vessel payload bay" |
+| Sound/XRSound/src/VesselXRSoundEngine.h:69 | TODO pre-existing — debug #ifdef |
+| Sound/XRSound/src/XRSoundEngine.cpp:34 | TODO pre-existing — 3D sounds flag |
+| Sound/XRSound/src/XRSound.cpp:14,22 | TODO pre-existing — warning log |
+| Sound/XRSound/src/SoundPreSteps.cpp:406 | TODO pre-existing — RCS sustain scaling |
+| Sound/XRSound/src/XRSoundEngine10.h:38 | `// {XXX} UPDATE THIS FOR THE CURRENT BUILD VERSION` — marker pre-existing |
+
+**Nessun TODO introdotto dal porting macOS.** ✅
+
+### K.3 — Win32 APIs non gated
+
+In **OGLClient:** 0 hits di `LoadLibrary/GetProcAddress/HKEY/RegOpen`. Completamente POSIX-native. ✅
+
+In **XRSound** `XRSoundImpl.cpp:49-53` usa `GetModuleHandle` + `GetProcAddress` dentro `#ifdef _WIN32`, con branch macOS che usa `dlsym(RTLD_DEFAULT, "GetXRSoundEngineInstance")`. ✅
+
+### K.4 — `assert(false)` / `abort()` / `NotImplemented`
+
+OGLClient e XRSound: 0 hits. ✅
+
+### K.5 — `#ifdef _WIN32` conteggio OGLClient
+
+60 `#ifdef _WIN32/#ifndef _WIN32/#if defined(_WIN32)` guards across 54 files nella dir OGLClient. Pattern tipico cross-platform OK.
+
+### K.6 — BUG SCOPERTO: Celbody Atmosphere path hardcoded Win32
+
+**`Src/Orbiter/Celbody.cpp:950`:**
+```cpp
+bool CELBODY2::LoadAtmosphereModule (const char *fname) {
+    char path[256], name[256];
+    oapiGetObjectName (hBody, name, 256);
+    sprintf (path, "Modules\\Celbody\\%s\\Atmosphere", name);  // ⚠️ BACKSLASHES!
+    if (!(hAtmModule = g_pOrbiter->LoadModule (path, fname))) return false;
+    ...
+}
+```
+
+Nessun `#ifdef _WIN32` attorno. Risultato a runtime su macOS:
+```
+Could not find a module named VenusAtm2006. Tried Modules\Celbody\Venus\Atmosphere/VenusAtm2006 and Modules\Celbody\Venus\Atmosphere/VenusAtm2006/VenusAtm2006.dylib.
+```
+Path misto backslash + slash → `fs::exists` → false.
+
+**Impact:** TUTTI i plugin atmosphere (VenusAtm2006, EarthAtmJ71G, EarthAtmNRLMSISE00, MarsAtm2006) falliscono. `libVenusAtm2006.dylib` etc sono costruiti in `Modules/` ma nessuno scenario può caricarli. Scenari atmospheric rientro, ascent profile, aerobraking si appoggiano al fallback legacy dentro Orbiter core (probabilmente ISA atmosphere standard hard-coded) → audio calcoli dinamica atmosferica approssimati.
+
+**Severity: critical** — violazione zero-stubs + funzionalità fisica degradata in modalità silent.
+
+---
+
+## Sezione L — Cross-reference Fasi A-D (OGLClient ↔ D3D9Client, 6 coppie)
+
+### L.1 — Coppia A: Entry / Init (`D3D9Client.cpp` ↔ `OGLClient.cpp`)
+
+| Win32 feature | macOS counterpart | status | note |
+|---|---|---|---|
+| `clbkInitialise` | `clbkInitialise` | ✅ | scene + shaders + ImGui bootstrap |
+| `clbkCreateRenderWindow` (HWND/D3D) | `clbkCreateRenderWindow` (SDL2) | ✅ | contesti OpenGL 4.1 core |
+| `clbkRenderScene` | `clbkRenderScene` → OGLScene | ✅ | |
+| `clbkPreOpenPopup` | override presente | ✅ | ImGui frame boundary |
+| `clbkUseStencilDepthBuffer` | presente | ⚠️ | gate condizionale per flag RENDER3D only — D3D9 lo applica più largamente |
+| M30.a screenshot/`clbkSaveScreenshot` | `glReadPixels` + stb_image_write | ✅ | latch single-shot OK |
+
+### L.2 — Coppia B: Surface/Texture (`D3D9Surface.cpp` ↔ `OGLSurface.cpp`)
+
+| Win32 feature | macOS counterpart | status | note |
+|---|---|---|---|
+| `clbkCreateSurface` | `OGLSurface::Create` | ✅ | texture + FBO |
+| `clbkCreateTexture` | `OGLTexture::LoadDDS` | ✅ | |
+| `clbkReleaseSurface` | destructor glDelete* | ✅ | |
+| `clbkBlt` family | `OGLSurface::BlitFrom` | ⚠️ | D3D9 copymode enum più ricco (ADD, COLORKEY, SUB); OGL sottoinsieme via GL_COPY |
+| `clbkFillSurface` | FBO bind + glClear | ✅ | |
+| FBO completeness | `glCheckFramebufferStatus` | ✅ | MSAA + non-MSAA |
+| Color-key (chroma) | `m_hasColorKey` + shader discard | ⚠️ | D3D9 usa texture op; OGL usa fragment shader discard (comportamento equivalente, complessità diversa) |
+
+### L.3 — Coppia C: Scene & advanced (`Scene.cpp` ↔ `OGLScene.cpp` + `OGLvVessel/Planet/Base.cpp`)
+
+| Win32 feature (D3D9) | macOS counterpart | status |
+|---|---|---|
+| PBR vessel (M8) | `OGLvVessel::s_pbrShader` + `vessel_pbr.frag` | ✅ |
+| IBL env cubemap (M9) | `OGLEnvMap` + `ibl.glsl.inc` | ✅ |
+| Self-shadow mapping (M10) | `OGLShadowMap` + `shadow.glsl` | ✅ |
+| HDR post-proc (M11) | `OGLPostProcess::Tonemap` | ✅ |
+| Particle life curve (M12) | `MapLevel` + `LifeCurve` | ✅ |
+| Solar corona (M13) | `corona.vert/frag` | ✅ |
+| Star twinkle (M13) | star shader brightness mod | ✅ |
+| Planetarium grid (M14) | `OGLCelSphere::m_gridShader` | ✅ |
+| VC dual-pass (M15) | `ShouldRenderMesh()` + MESHVIS_* flags | ✅ |
+| 2D panel (M16) | `panel2d.frag` + Sketchpad | ✅ |
+
+### L.4 — Coppia D: Sketchpad (`D3D9Pad.cpp` ↔ `OGLSketchpad.cpp`)
+
+| Win32 feature | macOS counterpart | status |
+|---|---|---|
+| Line/Rect/Ellipse/Polygon | vertex buffer streaming | ✅ |
+| Text/TextBox | ImGui font atlas | ✅ |
+| MoveTo/LineTo | path command buffer | ✅ |
+| SetFont/SetPen/SetBrush | state machine | ✅ |
+| Blit (brect/srect/copymode) | `DrawBltGroup` | ⚠️ sottoinsieme copymode |
+| SetBrightness/ColorMatrix | shader uniforms | ✅ |
+| Transform stack Push/Pop | GL matrix sim | ✅ |
+| Clip region | `glScissor` + clipper planes | ✅ |
+
+### L.5 — Coppia E: Particle (`Particle.cpp` ↔ `OGLParticle.cpp`)
+
+| Win32 | macOS | status |
+|---|---|---|
+| Stream spec + lifecycle | `PARTICLESTREAMSPEC` | ✅ |
+| Life curve | `LifeCurve(t)` | ✅ |
+| Level→alpha LEVELMAP | tutti i modi (FLAT/SQRT/PLIN/PSQRT) | ✅ |
+| Smoke dissipation | atmospheric drag integration | ✅ |
+| Exhaust bicolor | dual-texture blend `exhaust.frag` | ✅ |
+| Reentry thermal | additive blend + emissive | ✅ |
+
+### L.6 — Coppia F: CelSphere + ShaderMgr (`CelSphere.cpp` + `ShaderMgr.cpp` ↔ `OGLCelSphere.cpp` + `OGLShaderMgr.cpp`)
+
+| Win32 | macOS | status |
+|---|---|---|
+| Star field VAO 4000 | `star.vert/frag` | ✅ |
+| Solar corona billboard | `corona.vert/frag` | ✅ |
+| Round point sprites | `gl_PointSize` + GL_POINT_SMOOTH fallback | ⚠️ D3D9 point rendering vs GL multisampled differ slightly |
+| Planetarium grid RA/Dec + Alt/Az | `grid.vert/frag` | ✅ |
+| Shader hot-reload (M0) | `ShaderMgr::m_hotReloadEnabled` (debug) | ✅ |
+| UBO binding (Camera/Light/Material/Scatter/Time) | `RegisterUBOBinding()` | ✅ |
+| `.glsl.inc` include resolution | recursive dependency tracking | ✅ |
+
+### L.7 — Note gap residui Fasi A-D
+
+- **Blit copymode subset** (L.2, L.4): D3D9 espone operazioni aggiuntive (ADD, SUB, COLORKEY). OGL ha il subset base. Scenari che usano ADD per overlay HUD trasparenti possono mostrare differenze minori.
+- **Color-key via shader discard** invece di texture op: comportamento funzionalmente equivalente ma può interagire diversamente con MSAA (edge pixels). Da verificare a occhio in Fase 2 su panel 2D con chroma-keyed UI elements.
+- **Point sprite rendering** (L.6): GL point rendering + multisampling produce bordi leggermente diversi da D3D9 point sprites. Impatto solo su starfield estreme-zoom.
+
+Nessun gap blocca scenari Demo (smoke 14/14 pass).
+
+---
+
+## Sezione M — Audit follow-up Fasi A-D
+
+### M.1 — "Follow-up da riprendere prima di uscire da Fase B" (roadmap:362-365)
+
+| note | status | evidenza |
+|---|---|---|
+| **M7.b** elevation displacement | ✅ DONE (marcato in roadmap) | `OGLTile.cpp` ha BuildSpherePatch con ELEVFILEHEADER parse |
+| **M14.b** OGLvBase full | ✅ DONE (marcato in roadmap) | `OGLvBase.cpp` + `OGLBeaconArray.cpp` presenti, pad beacons a 500 km cutoff |
+| Crack-hiding skirts + per-vertex normal (polish M7.b) | ✅ still open (non-blocking) | — |
+| Full `.bse` mesh parser tarmacs/hangars (polish M14.b) | ✅ still open (non-blocking) | — |
+
+### M.2 — "Follow-up Fase C — polish non-bloccanti post-M15" (roadmap:560-564)
+
+| note | status |
+|---|---|
+| **M15** — interactive VC acceptance (F1 → mesh cockpit, look-around, MFD rendering, HUD overlay, area click response) | ⏳ **Fase 2 manuale** (richiede sessione desktop) |
+| **M15** — Area compositing su DDS compresse (FBO completeness check) | ✅ still open (non-blocking, condizionato a VC areas nere) |
+| **M17** — Interactive MFD acceptance (Orbit trace, Map coastline, HSI, Docking xhair, Surface altimetry, Atm-autopilot HUD) | ⏳ **Fase 2 manuale** |
+| M17.a line widths >1 su Apple M-series (triangle-quads fallback) | ✅ still open | |
+| M17.b text baseline / fixed vs prop fonts / `CalcWordWrapPosition` | ✅ still open | |
+| M17.c LuaMFD `SetBrightness` / `SetRenderParam(PRM_GAMMA)` | ✅ still open | |
+| M17.d ScnEditor `DrawMeshGroup` 3D mini-globes | ✅ still open | |
+
+**Nota:** i follow-up Fase C sono **tutti human-in-the-loop** → delegati a Fase 2.
+
+### M.3 — Fase A e Fase D: nessuna sezione follow-up
+
+La roadmap non ha sezioni "Follow-up Fase A" o "Follow-up Fase D" esplicite. Motivo plausibile: M0-M3 (Fase A, fondamenta grafiche) e M18-M21 (Fase D, audio) si sono concluse senza polish items dichiarati. La mia analisi statica in §K conferma:
+- Zero TODO residui in OGLClient core (M0-M3 clean)
+- Zero TODO residui introdotti dal porting XRSound (M18-M21 clean — i TODO esistenti sono XRSound upstream)
+
+Ma il porting XRSound ha introdotto due bug runtime non annotati (vedi §N.2 + §N.4).
+
+---
+
+## Sezione N — Findings runtime Fasi A-D
+
+### N.1 — XRSound runtime path `libXRSound.dylib` costruzione non di default
+
+Osservato: `cmake --build out/build/macos-arm64-debug --parallel 8` con config `-DORBITER_BUILD_XRSOUND=ON` produce:
+- ✅ `Orbitersdk/XRSound/libXRSound.a` (static SDK lib)
+- ✅ `Sound/XRSound/libXRSound_backend_openal.a` (static backend)
+- ❌ `Modules/Plugin/libXRSound.dylib` (shared plugin — link step **skippato**)
+
+Solo dopo `cmake --build --target XRSound_dll` esplicito si ottiene il `.dylib` (1.1 MB, link con `/opt/homebrew/opt/openal-soft/lib/libopenal.1.dylib`).
+
+**Conseguenza:** un utente che fa build clean + usa Orbiter senza invocare il target specifico ha audio silenzioso senza errore. Non c'è un `add_dependencies(Orbiter XRSound_dll)` o un `add_dependencies(all XRSound_dll)` che forzi la costruzione.
+
+**Fix proposto:** in `Sound/XRSound/src/CMakeLists.txt` aggiungere:
+```cmake
+add_dependencies(${OrbiterTgt} XRSound_dll)
+```
+oppure marcarlo `ALL` target.
+
+### N.2 — XRSound ctest test non registrato
+
+`Sound/XRSound/CMakeLists_OpenAL.cmake:67-77` dichiara:
+```cmake
+include(CTest)
+if(BUILD_TESTING)
+    add_test(NAME xrsound_openal_smoke COMMAND xrsound_openal_smoke ...)
+endif()
+```
+
+Ma `CMakeLists.txt` top-level chiama `enable_testing()` a **linea 428**, DOPO `add_subdirectory(Sound)` a linea 367. Quindi quando `CMakeLists_OpenAL.cmake` viene processato, `enable_testing` non è ancora stato invocato → `add_test` viene ignorato. `ctest -N` mostra solo Lua.Interpreter + rendering_parity.
+
+Verifica manuale: `./Sound/xrsound_openal_smoke` da build root → EXIT 0 clean, log:
+```
+[OpenAL] OpenAL (OpenAL Community / OpenAL Soft)
+[smoke] driver = OpenAL (OpenAL Community / OpenAL Soft)
+```
+
+**Fix proposto:** spostare `enable_testing()` in testa a `CMakeLists.txt` (prima di qualsiasi `add_subdirectory`).
+
+### N.3 — Celbody atmosphere loading (riassunto K.6)
+
+Già coperto in §K.6. Fix = `#ifdef _WIN32` + path `/`-separated + `"lib%s.dylib"` convention.
+
+### N.4 — `xrsound_openal_smoke` path resolution
+
+Eseguito da working-dir `worktree-root`: fallisce a caricare WAV (`Unsupported / missing file 'XRSound/Default/Docking Radar Beep.wav'` — path relativo alla cwd, non al binary).
+
+Eseguito da `build-root` (dove esistono gli asset): clean EXIT 0.
+
+`add_test` usa `WORKING_DIRECTORY ${CMAKE_BINARY_DIR}` — quindi se il test venisse registrato correttamente (fix §N.2), funzionerebbe. Non è un bug nuovo, ma accoppia con §N.2 — validare dopo il fix.
+
+---
+
+# Triage finale — Pre-Fase 2
+
+## BLOCCANTI: fix prima di Fase 2 (tot. stimato: 1-2 ore)
+
+| # | finding | fix | file:line | effort |
+|---|---|---|---|---|
+| **B1** | XRSound non linka in default build (§N.1) | `add_dependencies(${OrbiterTgt} XRSound_dll)` | `Sound/XRSound/src/CMakeLists.txt` (in coda) | 2 min |
+| **B2** | XRSound ctest non registrato (§N.2) | move `enable_testing()` in testa a top-level CMakeLists | `CMakeLists.txt:427-428` → spostare prima di linea 367 | 5 min |
+| **B3** | Celbody atmosphere path `\\` hardcoded (§K.6) | `#ifdef _WIN32 / #else sprintf(path, "Modules/Celbody/%s/Atmosphere", name)` + convention `lib%s.dylib` | `Src/Orbiter/Celbody.cpp:950` | 10 min |
+| **B4** | LuaInline dylib location (§C.1) | aggiungi `set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${ORBITER_BINARY_ROOT_DIR})` | `Src/Module/LuaScript/LuaInline/CMakeLists.txt:5` | 2 min |
+| **B5** | Module-load log garbage (§C.3) | popola `mname[0]='\0'` nel stub di `GetModuleFileName` oppure uso `dladdr()` | `Src/Orbiter/resource_stub.h:196` | 5 min |
+
+**Giustificazione:** B1/B2 abilitano audio-testing in Fase 2. B3 sblocca scenari atmospheric (rientro). B4 sblocca scripting (LuaConsole/ScriptMFD/TransX MFD testabili). B5 ripulisce i log per poter vedere altri errori durante Fase 2.
+
+Dopo i 5 fix il build dovrebbe avere 0 errori critici e audit ripetibile.
+
+## DIFFERIBILI: aprire issue GitHub e rimandare
+
+Queste sono tutte **non-bloccanti per la funzionalità core** e si possono gestire in iterazioni successive.
+
+| # | finding | label proposto | priority |
+|---|---|---|---|
+| **I1** | 8 Celbody modules (Ariel, Deimos, Miranda, Oberon, Phobos, Titania, Triton, Umbriel) symlink a Win32 PE32 (§C.2) | `platform:macos`, `scope:celbody`, `priority:high` | high |
+| **I2** | `DlgOptions` in-sim manca DrawVisual + DrawPhysics (§A.1 A) | `platform:macos`, `scope:dialogs`, `priority:medium` | medium |
+| **I3** | `oapiClearSurfaceColourKey` no-op macOS (§A.1) | `platform:macos`, `scope:api`, `priority:low` | low |
+| **I4** | `OpenFileIgnoreCase` non esteso a mesh/texture/base/scenario loaders (§G, M23 followup) | `platform:macos`, `scope:filesystem`, `priority:medium` | medium |
+| **I5** | DMG size 157 MB vs expected 430 MB (§E) | `platform:macos`, `scope:packaging`, `priority:low` | low |
+| **I6** | `ctest Lua.Interpreter` Not Run — eseguibile missing, gating incerto (§D) | `build:tests`, `priority:low` | low |
+| **I7** | Baselines rendering_parity 0-byte placeholder (§G M30) | `platform:macos`, `scope:testing`, `priority:medium` | medium |
+| **I8** | SDL_Haptic fallback per legacy joystick mancante (§G M29) | `platform:macos`, `scope:input`, `priority:low` | low |
+| **I9** | Haptic intensity no Config UI (§G M29) | `platform:macos`, `scope:input`, `priority:low` | low |
+| **I10** | HTML viewer inline launchpad non portato (§A `ExtraLaunchpadOptions`) | `platform:macos`, `scope:ui`, `priority:low` | low |
+| **I11** | Blit copymode subset su OGLSketchpad (§L.2, L.4) | `platform:macos`, `scope:rendering`, `priority:medium` | medium |
+| **I12** | Linux XDG fallback per UserPaths (§G M26) | `platform:linux`, `scope:paths`, `priority:low` | low |
+| **I13** | Log contiene byte NUL (§C.4) | `platform:macos`, `scope:logging`, `priority:low` | low |
+| **I14** | ScnEditor 6 tab (New/Save/Edit/Elements/Landed/Docking) non portati (§B.5) | `platform:macos`, `scope:scneditor`, `priority:low` | low |
+
+**Totale:** 5 fix ora + 14 issue differibili = **19 item tracciati**.
+
+## Proposta issue body (per copy/paste)
+
+Per ognuno degli I1-I14 posso proporti il body dell'issue (titolo + descrizione + acceptance criteria + repro). Dimmi quando e te li butto giù in batch.
+
+---
+
+# Pronti per Fase 2?
+
+**Sì, condizionato a B1-B5.** Dopo i 5 fix il report va ri-verificato (smoke test + ctest); poi iniziamo la sessione interattiva seguendo la sequenza già proposta nel report originale.
+
+Se preferisci, posso applicare io stesso i fix B1-B5 su branch `qa/phase1-fixes` (separato da `qa/phase1-audit`) e fare un rebuild + smoke-retest per confermare. Fammi sapere.
