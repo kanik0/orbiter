@@ -12,6 +12,10 @@ namespace ogl {
 OGLPostProcess::OGLPostProcess(ShaderMgr *shaderMgr)
 	: m_shaderMgr(shaderMgr), m_width(0), m_height(0), m_initialized(false),
 	  m_bloomEnabled(true), m_flareEnabled(true),
+	  // uExposure is the HDR-path exposure (only used when OGL_POSTFX_HDR
+	  // is set and the scene FBO is GL_RGBA16F). On the LDR macOS default
+	  // the shader applies its own `kMacosLdrExposure` gain that
+	  // compensates for RGBA8 quantisation — see tonemap.frag.
 	  m_bloomThreshold(0.8f), m_bloomIntensity(0.5f), m_exposure(1.0f),
 	  m_sceneFBO(0), m_sceneColorTex(0), m_sceneDepthRBO(0),
 	  m_thresholdShader(0), m_blurShader(0), m_compositeShader(0), m_flareShader(0),
@@ -51,7 +55,30 @@ bool OGLPostProcess::Init(int width, int height)
 	glGenRenderbuffers(1, &m_sceneDepthRBO);
 
 	glBindTexture(GL_TEXTURE_2D, m_sceneColorTex);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, nullptr);
+	// macOS OpenGL 4.1-via-Metal silently drops fragment writes to
+	// floating-point colour attachments (GL_RGBA16F, GL_R11F_G11F_B10F):
+	// glCheckFramebufferStatus reports COMPLETE and no GL error fires,
+	// but the attachment stays all-zeros. That produced the "black scene
+	// with HUD only" failure mode that invalidated the Phase 1 smoke
+	// battery and the M30 rendering_parity baselines.
+	//
+	// Default to GL_RGBA8 on macOS: we lose HDR headroom (bloom threshold
+	// clamps to [0,1] so only the sun disc gets a real highlight), but
+	// the scene renders at all. OGL_POSTFX_HDR=1 re-enables GL_RGBA16F
+	// for validation on hardware / driver combinations that do support
+	// float colour attachments (e.g. a future macOS GL stack, or Linux
+	// Mesa drivers once the port adds Linux support).
+	static const bool s_forceHdr = []() {
+		const char *v = std::getenv("OGL_POSTFX_HDR");
+		return v && v[0] == '1';
+	}();
+	if (s_forceHdr) {
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F,
+		             width, height, 0, GL_RGBA, GL_FLOAT, nullptr);
+	} else {
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,
+		             width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	}
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -111,7 +138,19 @@ bool OGLPostProcess::CreateFBO(GLuint &fbo, GLuint &tex, int w, int h, GLenum in
 	glGenFramebuffers(1, &fbo);
 	glGenTextures(1, &tex);
 	glBindTexture(GL_TEXTURE_2D, tex);
-	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, w, h, 0, GL_RGBA, GL_FLOAT, nullptr);
+	// Apply the same macOS HDR-format workaround documented in Init():
+	// bloom / lens-flare FBOs also need to avoid GL_RGBA16F on Apple Silicon
+	// OpenGL. The caller's RGBA8 path is preserved verbatim.
+	static const bool s_forceHdr = []() {
+		const char *v = std::getenv("OGL_POSTFX_HDR");
+		return v && v[0] == '1';
+	}();
+	GLenum format = GL_RGBA, type = GL_UNSIGNED_BYTE;
+	if (internalFormat == GL_RGBA16F) {
+		if (!s_forceHdr) internalFormat = GL_RGBA8;
+		else { format = GL_RGBA; type = GL_FLOAT; }
+	}
+	glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, w, h, 0, format, type, nullptr);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -166,8 +205,12 @@ void OGLPostProcess::EndScene(float sunScreenX, float sunScreenY, bool sunVisibl
 		return;
 	}
 
-	// Apply bloom if enabled
-	if (m_bloomEnabled)
+	// Apply bloom if enabled (OGL_POSTFX_NOBLOOM=1 skips it for diagnostics)
+	static const bool s_noBloom = []() {
+		const char *v = std::getenv("OGL_POSTFX_NOBLOOM");
+		return v && v[0] == '1';
+	}();
+	if (m_bloomEnabled && !s_noBloom)
 		ApplyBloom();
 
 	// Apply lens flare if enabled
@@ -177,7 +220,16 @@ void OGLPostProcess::EndScene(float sunScreenX, float sunScreenY, bool sunVisibl
 	// Final composite: tone map HDR scene + bloom to screen
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	glViewport(0, 0, m_width, m_height);
+	// Reset all blend/depth/stencil/colour-mask state so upstream passes
+	// (vessel PBR, shadow map, particle system, ImGui during Launchpad)
+	// can't leave the compositor with a blend factor that blacks-out the
+	// fullscreen quad.
 	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_BLEND);
+	glDisable(GL_STENCIL_TEST);
+	glDisable(GL_CULL_FACE);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_FALSE);
 
 	glUseProgram(m_compositeShader);
 
@@ -191,11 +243,22 @@ void OGLPostProcess::EndScene(float sunScreenX, float sunScreenY, bool sunVisibl
 
 	glUniform1f(m_shaderMgr->GetUniformLoc(m_compositeShader, "uExposure"), m_exposure);
 	glUniform1f(m_shaderMgr->GetUniformLoc(m_compositeShader, "uBloomIntensity"),
-		m_bloomEnabled ? m_bloomIntensity : 0.0f);
+		m_bloomEnabled && !s_noBloom ? m_bloomIntensity : 0.0f);
+	// Tell the composite shader whether the scene attachment is HDR
+	// (R11F/R16F etc.) or LDR (RGBA8 fallback). ACES clamps dark pixels
+	// to 0 when fed LDR values, so the shader needs to skip the curve
+	// in that case and just gamma-encode.
+	{
+		const char *hdrEnv = std::getenv("OGL_POSTFX_HDR");
+		bool isHdr = hdrEnv && hdrEnv[0] == '1';
+		glUniform1i(m_shaderMgr->GetUniformLoc(m_compositeShader, "uIsHDR"),
+			isHdr ? 1 : 0);
+	}
 
 	DrawQuad();
 
 	glUseProgram(0);
+	glDepthMask(GL_TRUE);
 	glEnable(GL_DEPTH_TEST);
 }
 

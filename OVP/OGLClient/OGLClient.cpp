@@ -164,6 +164,13 @@ bool OGLClient::clbkSaveScreenshot(const char *path, int w, int h) {
 
 	std::vector<unsigned char> pixels((size_t)vw * vh * 4);
 	glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	// Force the driver to retire every pending draw before we sample the
+	// backbuffer. The macOS OpenGL 4.1-via-Metal stack is more lenient
+	// with implicit glReadPixels synchronisation than native GL, and a
+	// missing flush here historically produced all-black captures even
+	// when the interactive window rendered the scene correctly.
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+	glFinish();
 	// glReadBuffer is not allowed in core profile for default
 	// framebuffer reads of GL_BACK on macOS — but glReadPixels
 	// against the default framebuffer reads from GL_BACK by default
