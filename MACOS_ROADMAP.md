@@ -364,6 +364,30 @@ Ogni milestone comincia con:
 - **M7.b** — ✅ **DONE**: elevation displacement via `ELEVFILEHEADER` parse (uint8/int8/uint16/int16 dtypes supported), bilinear sampling in `BuildSpherePatch`. Crack-hiding skirts + proper per-vertex normal finite-differences restano come polish pass futuro (non-blocking, visually correct as-is).
 - **M14.b** — ✅ **DONE**: OGLvBase enumera ogni base del pianeta via `oapiGetBaseCount`/`oapiGetBasePadCount`/`oapiGetBasePadEquPos`, converte a world-coords con `oapiEquToGlobal`, e emette landing pad beacons (bianchi + rossi alternati stile PAPI-like) via `OGLBeaconArray` con cutoff a 500 km. Full `.bse` mesh parser (tarmacs, hangars) resta polish futuro — il contributo visibile più forte (luci pad) è coperto.
 
+### Follow-up Fase E — note post-M30
+
+- **Baseline curation is the path to a hard CI gate.** The repo
+  ships with three placeholder 0-byte baselines so the harness
+  exercises end-to-end on every PR but never blocks a merge on
+  framebuffer drift. Promoting a captured PNG to a real baseline
+  (drop the file into `Tests/rendering_parity/baselines/`) starts
+  gating that scenario at SSIM ≥ 0.92 (or 0.85 for `atmospheric:
+  true` entries). Aim for the 20-scenario set the original
+  roadmap calls out as M30 trickles in.
+- **The macos-14 runner has a window server**, so OpenGL works
+  off the bat — we don't need a software-GL fallback. Captures
+  are nonetheless OS-version sensitive (text antialiasing,
+  font-fallback resolution, etc.), which is why the parity
+  step is `continue-on-error: true` for now. Once a stable
+  baseline set lives in the repo, drop the flag to make the
+  gate hard.
+- **Capture latch** uses a `static bool` so a single Orbiter
+  process performs at most one screenshot per session; the
+  follow-up SDL_QUIT post triggers clean shutdown after the
+  PNG is on disk. Multi-frame / video-style captures would
+  need per-frame indexing on `--capture-out` (e.g. `%05d`
+  pattern); not in scope for the SSIM regression harness.
+
 ### Follow-up Fase E — note post-M29
 
 - **HapticFX targets gamepads** (SDL_GameController). Older
@@ -575,4 +599,4 @@ Ogni milestone comincia con:
 | M27 | Missing assets | E | ✅ | this branch (M27.a cmake/macos_assets.cmake fetches fa-solid-900 + Lekton-Bold + ArchitectsDaughter→architext.regular under SIL OFL with pinned SHA-256; M27.b cmake/download_earth_lod8.py opt-in via ORBITER_FETCH_EARTH_BLUEMARBLE → Wikimedia Commons mirror, tile-pyramid step documented as manual offline pipeline) |
 | M28 | CI/CD macOS | E | ✅ | this branch (cmake/codesign.cmake + Orbiter.entitlements.plist + macos-bundle-distributable + macos-codesign + macos-dmg targets; .github/workflows/reusable-build-macos.yml + on-push-macos.yml + pr-build-macos.yml + extended release.yml with macOS DMG job) |
 | M29 | Force feedback | E | ✅ | this branch (HapticFX module wraps SDL_GameControllerRumble; SDLPlatform owns the channel and binds it on Initialize; Orbiter::EndTimeStep emits Touchdown / EngineIgnite / AtmosphericBuffet effects from focus-vessel state edges) |
-| M30 | Parity test harness | E | ☐ | — |
+| M30 | Parity test harness | E | ✅ | this branch (M30.a --capture-frame CLI + OGLClient::clbkSaveScreenshot via stb_image_write; M30.b Tests/rendering_parity/run_parity.py with skimage SSIM; M30.c manifest.json + 3 sample scenarios + placeholder baselines + ctest target; M30.d pr-build-macos parity step continue-on-error) |
