@@ -73,6 +73,53 @@
 
 ---
 
+## Findings Fase 2 (bug tracker live)
+
+Ogni bug scoperto durante Fase 2 viene tracciato qui con ID `P2-B<n>`. A fine sessione apriamo tutti come GitHub issue in batch (stesso flow di Fase 1). Include anche minor/cosmetic.
+
+| ID | severity | step | descrizione breve | file/area | status |
+|---|---|---|---|---|---|
+| P2-B1 | cosmetic | 1.1 | Em-dash (`—`) renderizza come `?` nel placeholder del pane scenari | font/glyph Lekton/architext | open |
+| P2-B2 | low | 1.2 | Pulsante "Launch Orbiter" non differenzia visualmente enabled/disabled (sempre blu) | `OGLLaunchpad::RenderTabScenario` footer | confirmed (cosmetic, button gated funzionalmente) |
+| P2-B3 | **critical** | 1.2 | Interactive mode: scenario Today → scene tutto nero, solo HUD visibile. `--capture-frame=60` offline per lo stesso scn cattura PNG 183 KB con contenuto reale. Divergenza tra render loop interactive e capture mode | `OGLClient::clbkRenderScene` / backbuffer present path | investigating |
+
+---
+
 ## Log step-by-step
 
-(Verdetti compilati live mentre progrediamo.)
+### STEP 1.1: Launchpad boot + Tab Scenarios  [**PASS** ✅]
+
+**Action:** `cd out/build/macos-arm64-debug && ./Orbiter` senza arg.
+
+**Expected (Win32 reference):** finestra 1280×800, 6 tab (Scenarios/Options/Modules/Video/Extra/About), tab Scenarios attivo, tree categorie, pane descrizione vuoto, splitter, footer con "Start paused" + Launch + Exit.
+
+**My report:**
+- Finestra SDL 1280×800 OK
+- Title bar "Orbiter Space Flight Simulator" con close button
+- 6 tab presenti e corretti
+- Tab Scenarios selezionato (highlight blu)
+- Tree sinistra: 20 categorie top-level + 3 scenari root (test_far, test_moon, test_simple)
+- Pane destra con placeholder
+- Splitter presente
+- Footer: Start paused + Launch Orbiter + Exit
+
+**Verdict:** PASS ✅ struttura matcha Win32 reference.
+
+**Finding:** P2-B1 (em-dash glyph mancante).
+
+### STEP 1.2: Tree expand + description + thumbnail  [**PASS** ✅ con 1 verify-needed]
+
+**Action:** expand Demo → click Today.
+
+**Expected (Win32):** Demo espande 14 scenari, Today selezionato mostra thumbnail+DESC, Launch button abilitato.
+
+**My report:**
+- Demo espanso: 14 scenari (Atlantis Ascent AP, DG ISS Approach, Dione, Docked at ISS, Earth, Galilean system view, ISS Approach, Level 9 textures, Mir, Project Alpha, Saturn, The 1999 solar eclipse, Today, Virtual cockpit) ✅ match
+- Today highlight blu ✅
+- Pane destra: "Scenario: Demo/Today" + "The solar system at present." ✅ corrisponde a `BEGIN_DESC...END_DESC` di `Today.scn`
+- Thumbnail: non mostrato (nessun .jpg/.png in `Scenarios/` repo — by design, Demo scn non hanno thumbnail; Win32 si comporterebbe uguale)
+- Launch Orbiter button: blu ma visualmente identico a stato "nessuno scenario selezionato" → finding P2-B2
+
+**Verdict:** PASS ✅ core functionality OK. Finding P2-B2 da verificare live (click comportamento).
+
+
