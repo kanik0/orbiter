@@ -1,3 +1,4 @@
+#include "XRPlatform.h"
 // ==============================================================
 // XRSound engine class bound to a vessel.
 // 

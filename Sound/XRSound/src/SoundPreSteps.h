@@ -6,8 +6,9 @@
 // ==============================================================
 
 #pragma once
+#include "XRPlatform.h"
 
-#include <atlstr.h>             // for CString
+#include "XRString.h"
 #include <unordered_map>
 
 #include "OrbiterSDK.h"

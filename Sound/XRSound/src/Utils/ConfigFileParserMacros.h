@@ -9,6 +9,7 @@
 // ==============================================================
 
 #pragma once
+#include "../XRPlatform.h"
 
 // convenience macros
 // Note: by design, string comparisons are case-insensitive

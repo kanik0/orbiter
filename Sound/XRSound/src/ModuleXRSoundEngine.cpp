@@ -1,3 +1,4 @@
+#include "XRPlatform.h"
 // ==============================================================
 // XRSound engine class bound to an Orbiter module (i.e., to a unique ID).
 // 

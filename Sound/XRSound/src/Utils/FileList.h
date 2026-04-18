@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <atlstr.h>		// for CString
+#include "XRString.h"
 #include <vector>
 
 using namespace std;

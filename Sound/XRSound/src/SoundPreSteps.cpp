@@ -1,3 +1,4 @@
+#include "XRPlatform.h"
 // ==============================================================
 // Implements default sounds handlers for XRSound.
 // 

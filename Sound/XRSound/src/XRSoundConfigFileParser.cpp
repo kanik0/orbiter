@@ -1,3 +1,4 @@
+#include "XRPlatform.h"
 // ==============================================================
 // XRSoundConfigFileParser.cpp : Parses XRSound.cfg
 //

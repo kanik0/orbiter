@@ -394,10 +394,10 @@ Ogni milestone comincia con:
 | M15 | Virtual Cockpit | C | ✅ | this branch (M15.a re-enable F1 + M15.b vismode/dual-pass + M15.c MFD texture compositing + M15.d HUD overlay/click zones) |
 | M16 | 2D Panel | C | ✅ | this branch (UsrFlag skip + MFD slot resolution via GetMFDSurface + mesh-local fallback for NULL hSurf) |
 | M17 | MFD Sketchpad 100% | C | ✅ | this branch (M17.a FBO retarget + M17.b colour transforms + M17.c blit/state/shape/text extras + M17.d transform stack / view-proj / clipping / mesh draw) |
-| M18 | IAudioBackend + OpenAL | D | ☐ | — |
-| M19 | CString + irrKlang shim | D | ☐ | — |
-| M20 | XRSound core integration | D | ☐ | — |
-| M21 | Default sounds pack | D | ☐ | — |
+| M18 | IAudioBackend + OpenAL | D | ✅ | this branch (M18.a IAudioBackend + OpenAL Soft wiring + M18.b vendored dr_wav / dr_mp3 / stb_vorbis decoders) |
+| M19 | CString + irrKlang shim | D | ✅ | this branch (XRString std::string-backed shim + irrKlang.h include gate + pluggable engine factory) |
+| M20 | XRSound core integration | D | ✅ | this branch (CMake platform switch + XRPlatform.h POSIX shims + dlsym RTLD_DEFAULT bridge + libXRSound.dylib 1.1 MB) |
+| M21 | Default sounds pack | D | ✅ | this branch (XRSound_assets install verified 302 files, xrsound_openal_smoke CTest target + API round-trip) |
 | M22 | Launchpad 6 tab | E | ☐ | — |
 | M23 | Dialogs core F3–F10 | E | ☐ | — |
 | M24 | WindowMgr gcGUI | E | ☐ | — |

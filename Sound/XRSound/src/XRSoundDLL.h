@@ -7,6 +7,7 @@
 // ==============================================================
 
 #pragma once
+#include "XRPlatform.h"
 
 #include "OrbiterSDK.h"
 #include "XRSoundEngine.h"

@@ -7,8 +7,9 @@
 // ==============================================================
 
 #pragma once
+#include "XRPlatform.h"
 
-#include <atlstr.h>             // for CString
+#include "XRString.h"
 #include <unordered_map>
 
 #include "OrbiterSDK.h"
@@ -25,9 +26,22 @@ class ModuleXRSoundEngine;
 #define oapiGetSimTime ERROR! "Do not invoke oapiGetSimTime: see comment block in XRSoundDLL::clbkPreStep for details"
 
 #ifdef XRSOUND_DLL_BUILD
-#include <irrKlang.h>
-using namespace irrklang;
-#include "XRSoundConfigFileParser.h"
+  // On Windows the production build links against irrKlang exactly as
+  // before; IAudioBackend.h typedefs xrsound::IAudioBackend / IAudioSound
+  // onto irrklang::ISoundEngine / ISound so every pSoundEngine-> / pISound->
+  // callsite compiles unchanged. On macOS/Linux the header ships abstract
+  // classes backed by OpenALBackend.
+  #include "IAudioBackend.h"
+  #ifdef _WIN32
+    using namespace irrklang;
+  #else
+    // Alias so legacy callsites can keep writing `ISoundEngine *` /
+    // `ISound *` unchanged. The underlying types are xrsound::IAudioBackend
+    // / xrsound::IAudioSound — same method set, different backend.
+    typedef xrsound::IAudioBackend ISoundEngine;
+    typedef xrsound::IAudioSound   ISound;
+  #endif
+  #include "XRSoundConfigFileParser.h"
 #else
 // we're compiling XRSoundLib, so all we need is a forward reference (and we don't want to include the full class definition on the .lib side!)
 class ISoundEngine;

@@ -1,3 +1,4 @@
+#include "XRPlatform.h"
 // ==============================================================
 // XRSoundDLL.cpp : Main class file for XRSound Orbiter module.
 //

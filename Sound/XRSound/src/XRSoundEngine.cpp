@@ -1,3 +1,4 @@
+#include "XRPlatform.h"
 // ==============================================================
 // XRSound engine implementation.
 // 
@@ -31,18 +32,40 @@ bool XRSoundEngine::InitializeIrrKlangEngine()
         // Note: we do NOT want to use multi-threading here: that opens up possible timing gaps / race conditions between the time 
         // we query a given sound's state in our thread and when the OTHER thread updates that state.
         // TODO: if and when we want to support 3D sounds, will need to add ESEO_USE_3D_BUFFERS flag below as well
+#ifdef _WIN32
         s_pKlangEngine = createIrrKlangDevice(
             ESOD_AUTO_DETECT,
             ESEO_LOAD_PLUGINS | ESEO_PRINT_DEBUG_INFO_TO_DEBUGGER
         );
+#else
+        // On macOS / Linux the backend is the OpenAL-backed
+        // xrsound::IAudioBackend; irrKlang is Windows-only. The typedef
+        // in XRSoundEngine.h aliases ISoundEngine to IAudioBackend so
+        // every downstream callsite is unchanged.
+        s_pKlangEngine = xrsound::createAudioBackend();
+#endif
 
         char logMsg[256];   // can't use CString easily here b/c Orbiter's oapiWriteLog takes a char * instead of const char * for some bizarre reason.
-        if (s_pKlangEngine)
-            sprintf_s(logMsg, "%s initialized using sound driver %s; irrKlang version = %s.  XRSound UpdateInterval = %.03lf (%.1lf updates per second)", 
-                GetVersionStr(), XRSoundEngine::GetSoundDriverName(), IRR_KLANG_VERSION, 
+        if (s_pKlangEngine) {
+#ifdef _WIN32
+            sprintf_s(logMsg, "%s initialized using sound driver %s; irrKlang version = %s.  XRSound UpdateInterval = %.03lf (%.1lf updates per second)",
+                GetVersionStr(), XRSoundEngine::GetSoundDriverName(), IRR_KLANG_VERSION,
                 s_globalConfig.UpdateInterval, (1.0 / s_globalConfig.UpdateInterval));
-        else
+#else
+            // IRR_KLANG_VERSION isn't defined when we link OpenAL — use the
+            // backend's reported driver name as the "engine identity".
+            snprintf(logMsg, sizeof(logMsg),
+                "%s initialized using sound driver %s.  XRSound UpdateInterval = %.03lf (%.1lf updates per second)",
+                GetVersionStr(), XRSoundEngine::GetSoundDriverName(),
+                s_globalConfig.UpdateInterval, (1.0 / s_globalConfig.UpdateInterval));
+#endif
+        } else {
+#ifdef _WIN32
             sprintf_s(logMsg, "%s ERROR: could not initialize default sound device.", GetVersionStr());
+#else
+            snprintf(logMsg, sizeof(logMsg), "%s ERROR: could not initialize default sound device.", GetVersionStr());
+#endif
+        }
 
         oapiWriteLog(logMsg);
         s_globalConfig.WriteLog("----------------------------------------------------------------------------");

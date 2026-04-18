@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include <atlstr.h>   // for CString
+#include "XRString.h"
 #include <unordered_map>
 
 //=========================================================================
