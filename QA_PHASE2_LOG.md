@@ -85,6 +85,7 @@ Ogni bug scoperto durante Fase 2 viene tracciato qui con ID `P2-B<n>`. A fine se
 | P2-B4 | high | 1.2 | Colori planet sbagliati post-fix: Terra nera, continenti verde fosforescente, "spazio" blu. Red channel assente dal scene output. | `shaders/texplanet.frag` o `OGLvPlanet::Render` color sampling | ➡️ **tracked as [#25](https://github.com/kanik0/orbiter/issues/25)** |
 | P2-B5 | ~~high~~ | 1.2 | Presunta assenza stelle in Today scenario. | `OGLCelSphere` | ✅ **FALSE POSITIVE — CLOSED**: `Demo/Atlantis Ascent AP` cockpit view post-fix mostra starfield chiaramente. In Today le stelle sono oscurate dal clear-color × exposure = 0.16 blue che satura background; non è un bug di rendering stelle. |
 | P2-B6 | medium | 1.2 | No Rayleigh/Mie atmosphere halo visible around Earth. M4 marked ✅ in roadmap ma scatter pass inerte. | `shaders/scatter.frag` | ➡️ **tracked as [#26](https://github.com/kanik0/orbiter/issues/26)** |
+| P2-B7 | cosmetic | 1.3 | Tree-expand icons renderizzate come `?` nella sidebar "Visual helpers" (4 sub-item Planetarium/Labels/Forces/Frame axes). Simile a P2-B1 ma glyph differente (tree marker ▶/▼ vs em-dash). | font/glyph set ImGui | open |
 
 ---
 
@@ -124,5 +125,21 @@ Ogni bug scoperto durante Fase 2 viene tracciato qui con ID `P2-B<n>`. A fine se
 - Launch Orbiter button: blu ma visualmente identico a stato "nessuno scenario selezionato" → finding P2-B2
 
 **Verdict:** PASS ✅ core functionality OK. Finding P2-B2 da verificare live (click comportamento).
+
+### STEP 1.3: Tab Options + 12 sub-pagine  [**PASS** ✅ con P2-B7 nuovo]
+
+**Action:** click Options tab, inspect sidebar + 3 rappresentative pages (Visual, Physics, Instruments).
+
+**Expected:** 12 OptionsPages 1:1 match Win32 ref (Visual/Physics/Instrument/Vessel/UI/Joystick/CelSphere/VisHelper/Planetarium/Labels/Forces/Axes).
+
+**My report:**
+- Sidebar: 8 top-level + 4 children sotto "Visual helpers" = 12 totali. Naming rebrandizzato (Instruments, User interface, Celestial sphere, Visual helpers, Frame axes) ma 1:1 concettualmente. ✅
+- Visual page: 13 toggle + 5 slider + dropdown elevation interp. Copre M4/M5/M6/M7/M8/M10/M11/M12 milestones. ✅
+- Physics page: 5 toggle + 4 RK propagation levels + thresholds. ✅
+- Instruments page: MFD config + pow2 + 2D/VC size + compact glass cockpit. ✅
+
+**Finding:** P2-B7 (tree-expand icon `?` glyph).
+
+**Verdict:** PASS ✅ struttura completa, naming coerente, contenuti popolati per 3 pagine ispezionate. 9 pagine restanti non ispezionate singolarmente ma visibili in sidebar.
 
 
