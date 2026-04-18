@@ -3,6 +3,15 @@
 
 # Core library to go to the Orbiter main directory
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${ORBITER_BINARY_ROOT_DIR})
+# NOTE: on macOS / Linux we deliberately do NOT set LIBRARY_OUTPUT_DIRECTORY
+# to the root. LuaInline.cpp still uses Win32 threading (_beginthreadex,
+# WaitForSingleObject, TerminateThread) which is stubbed on POSIX. Loading
+# the dylib successfully — rather than silently failing to locate it —
+# exposes a SIGSEGV when a vessel (e.g. DeltaGlider::AAPSubsystem) calls
+# oapiExecScriptCmd. Until LuaInline is ported to std::thread, leave the
+# dylib in Modules/ where the loader won't find it, keeping the current
+# "silent-broken scripting, no crash" behaviour.
+# See GitHub issue tracked under label `platform:macos`, `scope:lua`.
 
 add_library(LuaInline SHARED
 	LuaInline.cpp
@@ -30,6 +39,7 @@ set_target_properties(LuaInline
 	PROPERTIES
 	FOLDER Modules/Lua
 )
+
 
 # Installation
 install(TARGETS LuaInline

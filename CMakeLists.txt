@@ -358,6 +358,13 @@ if(NOT WIN32)
 	include(${CMAKE_SOURCE_DIR}/cmake/macos_assets.cmake)
 endif()
 
+# enable_testing() MUST run before add_subdirectory(Sound) because
+# Sound/XRSound/CMakeLists_OpenAL.cmake registers xrsound_openal_smoke
+# via add_test() which silently no-ops if testing isn't enabled yet.
+if(ORBITER_MAKE_TESTS)
+	enable_testing()
+endif()
+
 # Sub-projects
 add_subdirectory(Extern)
 add_subdirectory(Src)
@@ -425,6 +432,6 @@ cpack_add_component(RuntimeLibraries
 #set(CPACK_PRE_BUILD_SCRIPTS ${ORBITER_SOURCE_ROOT_DIR}/cmake/cpack_install.cmake)
 
 if (ORBITER_MAKE_TESTS)
-      enable_testing()
+      # enable_testing() already called above, before add_subdirectory(Sound)
       add_subdirectory(Tests)
 endif()
