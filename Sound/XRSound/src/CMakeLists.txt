@@ -1,5 +1,5 @@
 ## XRSound_dll
-add_library(XRSound_dll SHARED
+set(_XRSOUND_CORE_SOURCES
 	DefaultSoundGroupPreSteps.cpp
 	ModuleXRSoundEngine.cpp
 	SoundPreSteps.cpp
@@ -8,29 +8,55 @@ add_library(XRSound_dll SHARED
 	XRSoundDLL.cpp
 	XRSoundEngine.cpp
 	XRSoundEngine30.cpp
-	Resource.rc
 	Utils/ConfigFileParser.cpp
 	Utils/FileList.cpp
 )
+if(WIN32)
+	# Windows gets the resource script + the legacy VS-generated dllmain.
+	list(APPEND _XRSOUND_CORE_SOURCES Resource.rc)
+endif()
 
-set_target_properties(XRSound_dll PROPERTIES
-	RUNTIME_OUTPUT_DIRECTORY ${ORBITER_BINARY_PLUGIN_DIR}
-	OUTPUT_NAME XRSound
-	COMPILE_DEFINITIONS "XRSOUND_DLL_BUILD;_CRT_SECURE_NO_WARNINGS;_USRDLL;XRSOUNDDLL_EXPORTS"
-)
+add_library(XRSound_dll SHARED ${_XRSOUND_CORE_SOURCES})
+
+if(WIN32)
+	set_target_properties(XRSound_dll PROPERTIES
+		RUNTIME_OUTPUT_DIRECTORY ${ORBITER_BINARY_PLUGIN_DIR}
+		OUTPUT_NAME XRSound
+		COMPILE_DEFINITIONS "XRSOUND_DLL_BUILD;_CRT_SECURE_NO_WARNINGS;_USRDLL;XRSOUNDDLL_EXPORTS"
+	)
+else()
+	# macOS / Linux: ship as libXRSound.dylib / .so in Modules/Plugin.
+	set_target_properties(XRSound_dll PROPERTIES
+		LIBRARY_OUTPUT_DIRECTORY ${ORBITER_BINARY_PLUGIN_DIR}
+		OUTPUT_NAME XRSound
+		COMPILE_DEFINITIONS "XRSOUND_DLL_BUILD"
+	)
+endif()
 
 target_include_directories(XRSound_dll PUBLIC
 	${ORBITER_SOURCE_SDK_INCLUDE_DIR}
 	${CMAKE_CURRENT_SOURCE_DIR}
 	${CMAKE_CURRENT_SOURCE_DIR}/Utils
-	${IRRKLANG_DIR}/include
 )
+if(WIN32)
+	target_include_directories(XRSound_dll PUBLIC ${IRRKLANG_DIR}/include)
+endif()
 
-target_link_libraries(XRSound_dll
-	${ORBITER_LIB}
-	${ORBITER_SDK_LIB}
-	${IRRKLANG_LIB}
-)
+if(WIN32)
+	target_link_libraries(XRSound_dll
+		${ORBITER_LIB}
+		${ORBITER_SDK_LIB}
+		${IRRKLANG_LIB}
+	)
+else()
+	# XRSound_backend_openal owns OpenAL + vendored decoders; the
+	# ${OPENAL_LIBRARY} dependency comes through as transitive.
+	target_link_libraries(XRSound_dll
+		${ORBITER_LIB}
+		${ORBITER_SDK_LIB}
+		XRSound_backend_openal
+	)
+endif()
 
 add_dependencies(XRSound_dll
 	${OrbiterTgt}

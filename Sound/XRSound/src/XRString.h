@@ -84,6 +84,12 @@ public:
 		return p == std::string::npos ? -1 : (int)p;
 	}
 
+	// ReverseFind: last occurrence of `c`, or -1. Matches CString.
+	int ReverseFind(char c) const {
+		size_t p = m_s.rfind(c);
+		return p == std::string::npos ? -1 : (int)p;
+	}
+
 	XRString Left(int n) const {
 		if (n <= 0) return XRString();
 		if ((size_t)n >= m_s.size()) return *this;
@@ -94,6 +100,39 @@ public:
 	int CompareNoCase(const char *other) const {
 		if (!other) return m_s.empty() ? 0 : 1;
 		return ::strcasecmp(m_s.c_str(), other);
+	}
+
+	// MFC's CString exposes a mutable buffer via GetBuffer / ReleaseBuffer;
+	// callers fill the buffer and ReleaseBuffer() resyncs .length() by
+	// scanning for the NUL terminator.
+	char *GetBuffer(int minSize = 0) {
+		if (minSize > 0 && (size_t)minSize > m_s.size())
+			m_s.resize((size_t)minSize);
+		return m_s.data();
+	}
+	void ReleaseBuffer(int newLen = -1) {
+		if (newLen < 0) m_s.resize(std::strlen(m_s.c_str()));
+		else            m_s.resize((size_t)newLen);
+	}
+
+	// CString::Tokenize splits on any character in `delimiters`. `iStart`
+	// is an in/out parameter: 0 on first call, the function advances it
+	// past the returned token; returns an empty XRString when no further
+	// token is available (and sets iStart = -1, matching MFC).
+	XRString Tokenize(const char *delimiters, int &iStart) const {
+		if (iStart < 0 || iStart > (int)m_s.size()) { iStart = -1; return XRString(); }
+		// Skip leading delimiters.
+		while (iStart < (int)m_s.size() && delimiters &&
+		       std::strchr(delimiters, m_s[(size_t)iStart]) != nullptr) {
+			iStart++;
+		}
+		if (iStart >= (int)m_s.size()) { iStart = -1; return XRString(); }
+		const int tokBegin = iStart;
+		while (iStart < (int)m_s.size() && delimiters &&
+		       std::strchr(delimiters, m_s[(size_t)iStart]) == nullptr) {
+			iStart++;
+		}
+		return XRString(m_s.substr((size_t)tokBegin, (size_t)(iStart - tokBegin)));
 	}
 
 	bool operator==(const char *s)    const { return s && m_s == s; }

@@ -1,4 +1,6 @@
-## irrKlang
+## irrKlang (Windows only). On macOS / Linux we swap in the
+## OpenAL-backed xrsound::IAudioBackend via CMakeLists_OpenAL.cmake.
+if(WIN32)
 if(NOT IRRKLANG_DIR)
 	set(IRRKLANG_DIR ${EXTERN_DIR}/irrKlang/${ARCH})
 
@@ -39,6 +41,13 @@ else()
 	set(IRRKLANG_LIB_DIR ${IRRKLANG_DIR}/lib/Win32-visualStudio)
 endif()
 set(IRRKLANG_LIB ${IRRKLANG_LIB_DIR}/irrKlang.lib)
+endif() # WIN32 (irrKlang block)
+
+# On macOS / Linux we link against OpenAL Soft via CMakeLists_OpenAL.cmake;
+# Sound/CMakeLists.txt includes that already when XRSound is built.
+if(NOT WIN32)
+	include(${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists_OpenAL.cmake)
+endif()
 
 ## XRSound
 set(ASSET_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets)
@@ -47,19 +56,34 @@ set(IRRKLANG_DLL_DIR ${IRRKLANG_DIR})
 # Deploy assets
 file(GLOB config_files ${ASSET_DIR}/XRSound/*.cfg)
 
-add_custom_target(XRSound_assets ALL
-	COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_ROOT_DIR}/Doc
-	COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_ROOT_DIR}/XRSound
-	COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_SDK_DIR}/XRSound/
-	COMMAND ${CMAKE_COMMAND} -E copy ${config_files} ${ORBITER_BINARY_ROOT_DIR}/XRSound/
-	COMMAND ${CMAKE_COMMAND} -E copy ${ASSET_DIR}/XRSound/ReadMe.txt ${ORBITER_BINARY_ROOT_DIR}/XRSound/
-	COMMAND ${CMAKE_COMMAND} -E copy "${ASSET_DIR}/Doc/XRSound User Manual.pdf" ${ORBITER_BINARY_ROOT_DIR}/Doc/
-	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SOLUTION_DIR}/XRSound.h ${ORBITER_BINARY_SDK_DIR}/XRSound/
-	COMMAND ${CMAKE_COMMAND} -E copy ${IRRKLANG_BIN_DIR}/ikpMP3.dll ${ORBITER_BINARY_ROOT_DIR}
-	COMMAND ${CMAKE_COMMAND} -E copy ${IRRKLANG_BIN_DIR}/ikpFlac.dll ${ORBITER_BINARY_ROOT_DIR}
-	COMMAND ${CMAKE_COMMAND} -E copy ${IRRKLANG_BIN_DIR}/irrKlang.dll ${ORBITER_BINARY_ROOT_DIR}
-	COMMAND ${CMAKE_COMMAND} -E copy_directory ${ASSET_DIR}/XRSound/Default ${ORBITER_BINARY_ROOT_DIR}/XRSound/Default
-)
+if(WIN32)
+	add_custom_target(XRSound_assets ALL
+		COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_ROOT_DIR}/Doc
+		COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_ROOT_DIR}/XRSound
+		COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_SDK_DIR}/XRSound/
+		COMMAND ${CMAKE_COMMAND} -E copy ${config_files} ${ORBITER_BINARY_ROOT_DIR}/XRSound/
+		COMMAND ${CMAKE_COMMAND} -E copy ${ASSET_DIR}/XRSound/ReadMe.txt ${ORBITER_BINARY_ROOT_DIR}/XRSound/
+		COMMAND ${CMAKE_COMMAND} -E copy "${ASSET_DIR}/Doc/XRSound User Manual.pdf" ${ORBITER_BINARY_ROOT_DIR}/Doc/
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SOLUTION_DIR}/XRSound.h ${ORBITER_BINARY_SDK_DIR}/XRSound/
+		COMMAND ${CMAKE_COMMAND} -E copy ${IRRKLANG_BIN_DIR}/ikpMP3.dll ${ORBITER_BINARY_ROOT_DIR}
+		COMMAND ${CMAKE_COMMAND} -E copy ${IRRKLANG_BIN_DIR}/ikpFlac.dll ${ORBITER_BINARY_ROOT_DIR}
+		COMMAND ${CMAKE_COMMAND} -E copy ${IRRKLANG_BIN_DIR}/irrKlang.dll ${ORBITER_BINARY_ROOT_DIR}
+		COMMAND ${CMAKE_COMMAND} -E copy_directory ${ASSET_DIR}/XRSound/Default ${ORBITER_BINARY_ROOT_DIR}/XRSound/Default
+	)
+else()
+	# macOS / Linux: copy configs + default WAV pack, omit the
+	# irrKlang companion DLLs (they don't exist on this platform).
+	add_custom_target(XRSound_assets ALL
+		COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_ROOT_DIR}/Doc
+		COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_ROOT_DIR}/XRSound
+		COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_SDK_DIR}/XRSound/
+		COMMAND ${CMAKE_COMMAND} -E copy ${config_files} ${ORBITER_BINARY_ROOT_DIR}/XRSound/
+		COMMAND ${CMAKE_COMMAND} -E copy ${ASSET_DIR}/XRSound/ReadMe.txt ${ORBITER_BINARY_ROOT_DIR}/XRSound/
+		COMMAND ${CMAKE_COMMAND} -E copy "${ASSET_DIR}/Doc/XRSound User Manual.pdf" ${ORBITER_BINARY_ROOT_DIR}/Doc/
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SOLUTION_DIR}/XRSound.h ${ORBITER_BINARY_SDK_DIR}/XRSound/
+		COMMAND ${CMAKE_COMMAND} -E copy_directory ${ASSET_DIR}/XRSound/Default ${ORBITER_BINARY_ROOT_DIR}/XRSound/Default
+	)
+endif()
 
 install(DIRECTORY ${ORBITER_BINARY_ROOT_DIR}/XRSound
 	DESTINATION ${ORBITER_INSTALL_ROOT_DIR}
@@ -73,8 +97,10 @@ install(DIRECTORY ${ORBITER_BINARY_ROOT_DIR}/XRSound/Default
 install(FILES "${ORBITER_BINARY_ROOT_DIR}/Doc/XRSound User Manual.pdf"
 	DESTINATION ${ORBITER_INSTALL_DOC_DIR}/
 )
-install(FILES ${ORBITER_BINARY_ROOT_DIR}/ikpMP3.dll ${ORBITER_BINARY_ROOT_DIR}/ikpFlac.dll ${ORBITER_BINARY_ROOT_DIR}/irrKlang.dll
-	DESTINATION ${ORBITER_INSTALL_ROOT_DIR}/
-)
+if(WIN32)
+	install(FILES ${ORBITER_BINARY_ROOT_DIR}/ikpMP3.dll ${ORBITER_BINARY_ROOT_DIR}/ikpFlac.dll ${ORBITER_BINARY_ROOT_DIR}/irrKlang.dll
+		DESTINATION ${ORBITER_INSTALL_ROOT_DIR}/
+	)
+endif()
 
 add_subdirectory(src)

@@ -67,6 +67,13 @@ public:
     // -------------------------------------------------------------------------------
 
 private:
+#ifdef _WIN32
     HMODULE m_hDLL;
+#else
+    // On non-Windows the symbol lookup goes through RTLD_DEFAULT so we
+    // never actually need a handle; we keep a truthy void* sentinel so
+    // the Initialize / IsPresent logic is unchanged.
+    void   *m_hDLL;
+#endif
     XRSoundEngine *m_pEngine;   // created by XRSound.dll; this is a BORROWED reference; do not free it from this side!
 };

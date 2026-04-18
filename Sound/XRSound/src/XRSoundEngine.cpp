@@ -1,3 +1,4 @@
+#include "XRPlatform.h"
 // ==============================================================
 // XRSound engine implementation.
 // 

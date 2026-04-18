@@ -1,3 +1,4 @@
+#include "XRPlatform.h"
 // ==============================================================
 // XRSound static library main source file.
 // 
@@ -8,7 +9,16 @@
 // ==============================================================
 
 #include "XRSoundImpl.h"
-#include <Strsafe.h> 
+#ifdef _WIN32
+#include <Strsafe.h>
+#else
+#include <dlfcn.h>
+// Strsafe.h helpers; StringCchPrintf maps to snprintf on POSIX. Good
+// enough for the two log lines below.
+#include <cstdio>
+#define StringCchPrintf(buf, size, fmt, ...) \
+    std::snprintf((buf), (size), (fmt), __VA_ARGS__)
+#endif
 
 // NOTE: In order to maximize compatibility with users using versions of Visual Studio other than VS 2019, do not call any MSVCRT methods in this code.
 // More information is at https://connect.microsoft.com/VisualStudio/feedback/details/1144980/error-lnk2001-unresolved-external-symbol-imp-iob-func.
@@ -35,15 +45,27 @@ bool XRSoundImpl::Initialize(VESSEL *pVessel)
         return false;
 
     bool retVal = false;
-    // Note: GetModuleHandle is faster than LoadLibrary (and no need to call FreeLibrary on it), but it's not 
+#ifdef _WIN32
+    // Note: GetModuleHandle is faster than LoadLibrary (and no need to call FreeLibrary on it), but it's not
     // thread-safe.  However, GetModuleHandle is fine for our purposes since Orbiter is not multi-threaded anyway.
-    m_hDLL = GetModuleHandle("XRSound.dll");  
-    if (m_hDLL)
+    m_hDLL = GetModuleHandle("XRSound.dll");
+    VesselXRSoundEngineInstanceFuncPtr pFunc = m_hDLL
+        ? reinterpret_cast<VesselXRSoundEngineInstanceFuncPtr>(GetProcAddress(m_hDLL, "GetXRSoundEngineInstance"))
+        : nullptr;
+#else
+    // macOS / Linux: the module that would be `XRSound.dll` on Windows
+    // is loaded in-process as `libXRSound.dylib` / `libXRSound.so`. The
+    // symbol is exported with C linkage, so RTLD_DEFAULT finds it
+    // regardless of which shared object actually owns it.
+    m_hDLL = (void*)1;  // truthy sentinel; real handle not needed with RTLD_DEFAULT
+    VesselXRSoundEngineInstanceFuncPtr pFunc =
+        reinterpret_cast<VesselXRSoundEngineInstanceFuncPtr>(
+            dlsym(RTLD_DEFAULT, "GetXRSoundEngineInstance"));
+#endif
+    if (m_hDLL && pFunc)
     {
         // Note: the m_pEngine acquired by this call is a *borrowed reference*: do not attempt to delete it
-        VesselXRSoundEngineInstanceFuncPtr pFunc = reinterpret_cast<VesselXRSoundEngineInstanceFuncPtr>(GetProcAddress(m_hDLL, "GetXRSoundEngineInstance"));
-        if (pFunc)
-            m_pEngine = (pFunc)(pVessel->GetHandle());   // returns nullptr if sound initialization fails
+        m_pEngine = (pFunc)(pVessel->GetHandle());   // returns nullptr if sound initialization fails
 
         if (m_pEngine)
         {
@@ -108,13 +130,21 @@ bool XRSoundImpl::Initialize(const char *pUniqueModuleName)
         return false;
 
     bool retVal = false;
+#ifdef _WIN32
     m_hDLL = GetModuleHandle("XRSound.dll");
-    if (m_hDLL)
+    ModuleXRSoundEngineInstanceFuncPtr pFunc = m_hDLL
+        ? reinterpret_cast<ModuleXRSoundEngineInstanceFuncPtr>(GetProcAddress(m_hDLL, "GetModuleXRSoundEngineInstance"))
+        : nullptr;
+#else
+    m_hDLL = (void*)1;
+    ModuleXRSoundEngineInstanceFuncPtr pFunc =
+        reinterpret_cast<ModuleXRSoundEngineInstanceFuncPtr>(
+            dlsym(RTLD_DEFAULT, "GetModuleXRSoundEngineInstance"));
+#endif
+    if (m_hDLL && pFunc)
     {
         // Note: the m_pEngine acquired by this call is a *borrowed reference*: do not attempt to delete it
-        ModuleXRSoundEngineInstanceFuncPtr pFunc = reinterpret_cast<ModuleXRSoundEngineInstanceFuncPtr>(GetProcAddress(m_hDLL, "GetModuleXRSoundEngineInstance"));
-        if (pFunc)
-            m_pEngine = (pFunc)(pUniqueModuleName);   // returns nullptr if sound initialization fails or if another module has previously registered using pUniqueModuleName
+        m_pEngine = (pFunc)(pUniqueModuleName);   // returns nullptr if sound initialization fails or if another module has previously registered using pUniqueModuleName
     }
 
     GetVersion();  // log a warning to Orbiter.log if the .lib and .dll versions don't match

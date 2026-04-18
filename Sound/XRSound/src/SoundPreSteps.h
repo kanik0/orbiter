@@ -6,6 +6,7 @@
 // ==============================================================
 
 #pragma once
+#include "XRPlatform.h"
 
 #include "XRString.h"
 #include <unordered_map>

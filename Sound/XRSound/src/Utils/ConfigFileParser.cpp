@@ -1,3 +1,4 @@
+#include "../XRPlatform.h"
 // ==============================================================
 // From the XR Vessel Framework
 // 
@@ -19,7 +20,14 @@
 
 #include "ConfigFileParser.h"
 
+#ifdef _WIN32
 #include <Shlwapi.h>   // for PathFileExists
+#else
+// non-Windows: PathFileExists is shimmed in XRPlatform.h, already
+// included transitively via OrbiterPlatform.h.
+#include <sys/time.h>   // gettimeofday
+#include <time.h>       // localtime_r
+#endif
 #include <string.h>
 #include "XRString.h"
 
@@ -39,7 +47,13 @@ ConfigFileParser::ConfigFileParser(const char *pDefaultFilename, const char *pLo
         {
             char temp[256];
             sprintf(temp, "Error opening log file '%s' for writing; attempting to continue", pLogFilename);
+#ifdef _WIN32
             MessageBox(nullptr, temp, "XR Framework Warning", MB_OK | MB_SETFOREGROUND);
+#else
+            // Non-Windows has no MessageBox; the warning already went to
+            // stderr via sprintf. Route it to Orbiter's log too.
+            fprintf(stderr, "[XRSound] %s\n", temp);
+#endif
         }
     }
 }
@@ -267,21 +281,37 @@ void ConfigFileParser::WriteLog(const char *pMsg) const
     if ((pMsg == nullptr) || (m_pLogFile == nullptr)) 
         return;
 
-    CStringA csMsg;
-    // get and format the current time
-    SYSTEMTIME st;
-    GetLocalTime(&st);
+    CString csMsg;
     CString csPrefix;
     if (!GetLogPrefix().IsEmpty())
         csPrefix.Format("[%s] ", static_cast<const char *>(GetLogPrefix()));
 
-    csMsg.Format("%02d.%02d.%04d %02d:%02d:%02d.%03d - %s%s\n", 
-        st.wMonth, st.wDay, st.wYear, 
+#ifdef _WIN32
+    // Windows: SYSTEMTIME via GetLocalTime for familiar millisecond
+    // granularity.
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    csMsg.Format("%02d.%02d.%04d %02d:%02d:%02d.%03d - %s%s\n",
+        st.wMonth, st.wDay, st.wYear,
         st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
         static_cast<const char *>(csPrefix), pMsg);
 
-    // no point in checking for error here
     OutputDebugString(csMsg);   // send to debug console
+#else
+    // POSIX: localtime_r + gettimeofday for the same wall-clock layout.
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    struct tm lt;
+    localtime_r(&tv.tv_sec, &lt);
+    csMsg.Format("%02d.%02d.%04d %02d:%02d:%02d.%03d - %s%s\n",
+        lt.tm_mon + 1, lt.tm_mday, lt.tm_year + 1900,
+        lt.tm_hour, lt.tm_min, lt.tm_sec, (int)(tv.tv_usec / 1000),
+        static_cast<const char *>(csPrefix), pMsg);
+
+    // stderr is the closest analogue to OutputDebugString when running
+    // under Orbiter's SDL window on macOS / Linux.
+    fputs(csMsg, stderr);
+#endif
     fwrite(csMsg, 1, csMsg.GetLength(), m_pLogFile);
 
     // flush to disk in case we crash or are terminated

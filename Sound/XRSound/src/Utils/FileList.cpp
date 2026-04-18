@@ -1,3 +1,4 @@
+#include "../XRPlatform.h"
 // ==============================================================
 // Parses a tree of files, optionally recursing subdirectories,
 // and invoking an abstract callback method for each file and folder.

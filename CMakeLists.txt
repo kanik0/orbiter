@@ -52,7 +52,10 @@ if(APPLE)
 	message(STATUS "Building for macOS")
 	# Force-disable Windows-only components on macOS
 	set(ORBITER_BUILD_D3D9CLIENT OFF CACHE BOOL "D3D9Client not available on macOS" FORCE)
-	set(ORBITER_BUILD_XRSOUND OFF CACHE BOOL "XRSound not yet ported to macOS" FORCE)
+	# XRSound now has an OpenAL-backed port (Fase D / M18-M20). Build it
+	# by default; callers can still override with -DORBITER_BUILD_XRSOUND=OFF
+	# if they want to skip the full DLL + asset copy.
+	set(ORBITER_BUILD_XRSOUND ON CACHE BOOL "XRSound (OpenAL backend on macOS)")
 	# Find SDL2 for windowing/input on macOS
 	find_package(SDL2 REQUIRED)
 	find_package(OpenGL REQUIRED)
