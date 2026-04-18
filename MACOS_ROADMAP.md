@@ -364,6 +364,23 @@ Ogni milestone comincia con:
 - **M7.b** — ✅ **DONE**: elevation displacement via `ELEVFILEHEADER` parse (uint8/int8/uint16/int16 dtypes supported), bilinear sampling in `BuildSpherePatch`. Crack-hiding skirts + proper per-vertex normal finite-differences restano come polish pass futuro (non-blocking, visually correct as-is).
 - **M14.b** — ✅ **DONE**: OGLvBase enumera ogni base del pianeta via `oapiGetBaseCount`/`oapiGetBasePadCount`/`oapiGetBasePadEquPos`, converte a world-coords con `oapiEquToGlobal`, e emette landing pad beacons (bianchi + rossi alternati stile PAPI-like) via `OGLBeaconArray` con cutoff a 500 km. Full `.bse` mesh parser (tarmacs, hangars) resta polish futuro — il contributo visibile più forte (luci pad) è coperto.
 
+### Follow-up Fase E — note post-M22
+
+- **M22.f / Extra API extension** — `LaunchpadItem::clbkRender()` is a
+  new virtual on the public `Orbitersdk` API (default impl returns
+  false). External Win32-only addons that override `clbkOpen(HWND)`
+  but not `clbkRender()` will display a description-only modal on
+  macOS. Per-plugin migration is part of M25 (Win32 plugins port).
+- **M22.d / `.info` sidecars** — `cmake/orbiter_module_info.cmake`
+  emits a portable `<plugin>.info` next to every plugin shared
+  library. Future plugins must call `orbiter_module_info(<target>
+  CATEGORY <c> DESCRIPTION <d>)` from their CMakeLists, otherwise
+  the Modules tab will list them under "Miscellaneous" with no
+  description (degraded but functional — activation still works).
+- **TrackIR plugin** is now excluded from non-Windows builds since it
+  depends on the proprietary NaturalPoint NPClient driver. (Roadmap
+  item M25 covers the broader Win32 plugins port.)
+
 ### Follow-up Fase C — polish non-bloccanti post-M15
 
 - **M15 — interactive verification**: smoke tests confermano zero-crash cross-scenario ma l'acceptance visiva del ciclo F1 → VC (mesh cockpit, look-around, MFD rendering, HUD overlay, area click response) richiede sessione desktop. Da sottoporre ad human-in-the-loop prima del tag release.
@@ -398,7 +415,7 @@ Ogni milestone comincia con:
 | M19 | CString + irrKlang shim | D | ✅ | this branch (XRString std::string-backed shim + irrKlang.h include gate + pluggable engine factory) |
 | M20 | XRSound core integration | D | ✅ | this branch (CMake platform switch + XRPlatform.h POSIX shims + dlsym RTLD_DEFAULT bridge + libXRSound.dylib 1.1 MB) |
 | M21 | Default sounds pack | D | ✅ | this branch (XRSound_assets install verified 302 files, xrsound_openal_smoke CTest target + API round-trip) |
-| M22 | Launchpad 6 tab | E | ☐ | — |
+| M22 | Launchpad 6 tab | E | ✅ | this branch (M22.a scaffold + M22.b Scenario w/ thumbnails+desc+splitter + M22.c Video + M22.d Modules+`.info` infra + M22.e Options 12 pages + M22.f Extra+`clbkRender` API + M22.g 15 builtin extras ImGui + M22.h About+geometry persist) |
 | M23 | Dialogs core F3–F10 | E | ☐ | — |
 | M24 | WindowMgr gcGUI | E | ☐ | — |
 | M25 | Win32 plugins port | E | ☐ | — |
