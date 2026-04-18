@@ -99,6 +99,8 @@ Ogni bug scoperto durante Fase 2 viene tracciato qui con ID `P2-B<n>`. A fine se
 | P2-B18 | medium | 3.1 | Ctrl+F1 DlgCamera: shortcut non fires, nessun dialog appare. | keymap binding / `Keymap.cpp` Ctrl+F1 → DlgCamera dispatch | open |
 | P2-B19 | medium | 3.2 | Ctrl+F2 DlgTacc: dialog appare ma pulsanti unresponsive AND il dialog non si chiude (ESC o X non chiudono). Possibile modal-block sticky. | `DlgTacc::OnDraw` close/button handlers | open |
 | P2-B20 | medium | 3.7 | Alt+F1 DlgHelp: shortcut non fires, browser non aperto. Roadmap M23.a dichiarava URL fallback cross-platform completo. Regression sospetta. | `Keymap.cpp` Alt+F1 → DlgHelp dispatch / `DlgHelp` URL-open path | open |
+| P2-B21 | cosmetic | 5 | Missing icon textures per menu bar: `MenuInfoBar/Notes.png`, `MenuInfoBar/LuaConsole.png` (e probabilmente altri plugin). Menu items comunque visibili. | install pipeline plugin icon assets | open |
+| P2-B22 | high | 6 | XRSound: init succeeds (no crash post-PR #27 InitModule fix), ma **no audio events triggering** in Demo/Atlantis Ascent scenario. Root cause candidates: XRSound-Atlantis.cfg parsing issue; OpenAL device buffer non-routed; vessel events non triggering. | `XRSound` runtime event path / OpenAL backend | open, verify post-P2-B14 cockpit fix |
 
 ---
 
@@ -225,6 +227,57 @@ Ogni bug scoperto durante Fase 2 viene tracciato qui con ID `P2-B<n>`. A fine se
 Skipped Ctrl+I (DlgInfo — tested STEP 2.1 with P2-B15) + Ctrl+M (DlgMap — empty STEP 2.1 P2-B16).
 
 **Verdict:** PARTIAL ⚠️ 4/7 dialog-based features funzionano. Ctrl+F1 + Alt+F1 non rispondono (keymap); Ctrl+F2 ha dialog modal-stuck.
+
+### STEP 4: Custom Functions (via Ctrl+F4)  [**PASS** ✅ for available items]
+
+**Action:** open DlgFunction, inspect registered custom funcs.
+
+**Expected:** builtin (Joystick calibration, Keymap editor) + plugin-registered (Rcontrol, Meshdebug, Scenario editor if Modules tab enabled).
+
+**Report:**
+- 2 entries visible: `Joystick calibration`, `Keymap editor` (M26.c/M26.d). ✅
+- Entrambi aprono modal ImGui.
+- Plugin-dependent custom funcs (Rcontrol/Meshdebug/ScnEditor) non presenti: plugin non attivati in Modules tab — comportamento atteso, non bug.
+
+**SKIPPED sub-steps:**
+- 4.1 Rcontrol — plugin not enabled (would need Modules tab activation)
+- 4.2 Mesh debugger — plugin not enabled
+- 4.3 Scenario editor — plugin not enabled
+- 4.5 Joystick calibration deep-test (axis widgets, deadzone slider) — no controller attached
+
+**Verdict:** PASS ✅ builtin custom funcs available and openable. Plugin-based sub-steps legitimately skipped.
+
+### STEP 5: Plugin runtime (Framerate/Notes/LuaConsole)  [**PARTIAL** ⚠️]
+
+**Action:** enable Framerate + Notes + LuaConsole in Modules tab → launch scenario → verify menu items.
+
+**Report:**
+- No crash su activation + scenario launch ✅
+- Menu items Notes + LuaConsole visibili ✅
+- ⚠️ Missing icon textures "MenuInfoBar/Notes.png" e "MenuInfoBar/LuaConsole.png" (log warning) — P2-B21
+- Framerate overlay non trovato (non chiaro come attivarlo — probabile require specific shortcut o auto-appears in specific camera mode)
+
+**SKIPPED sub-steps MFD-based:**
+- 5.1 TransX MFD — blocked by MFD selector issue P2-B17
+- 5.2 ExtMFD — same
+- 5.4 FlightData overlay — blocked by Shift+F1 issue
+- 5.5 LuaConsole REPL — openable but LuaInline scripting rotto (known since Phase 1 — I15)
+
+**Verdict:** PARTIAL ⚠️ plugin activation + menu registration funziona; asset/icon + MFD-based testing bloccati.
+
+### STEP 6: Audio XRSound  [**PARTIAL** ⚠️]
+
+**Action:** enable XRSound in Modules → scenario Today e Atlantis Ascent → verifica audio events.
+
+**Report:**
+- No crash in entrambi gli scenari ✅ (prima fix P2-B12 InitModule XRSound era già silenzato)
+- Today: no audio atteso (nessun evento acustico in scenario static)
+- Atlantis Ascent: **nessun suono** durante ascent burn → P2-B22
+- XRSound init phase completa: OpenAL device probabilmente creato, pack Default/*.wav loaded
+
+**Verdict:** PARTIAL ⚠️ audio pipeline si inizializza ma eventi vessel non triggeranno audio. Serve debug runtime events path (possibilmente legato a P2-B14 cockpit/vessel state non aggiornato).
+
+
 
 
 ### STEP 2.2-2.3: Atlantis Ascent AP + Demo/Earth  [**SKIPPED** ⏭️]
