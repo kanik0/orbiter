@@ -86,6 +86,8 @@ Ogni bug scoperto durante Fase 2 viene tracciato qui con ID `P2-B<n>`. A fine se
 | P2-B5 | ~~high~~ | 1.2 | Presunta assenza stelle in Today scenario. | `OGLCelSphere` | ✅ **FALSE POSITIVE — CLOSED**: `Demo/Atlantis Ascent AP` cockpit view post-fix mostra starfield chiaramente. In Today le stelle sono oscurate dal clear-color × exposure = 0.16 blue che satura background; non è un bug di rendering stelle. |
 | P2-B6 | medium | 1.2 | No Rayleigh/Mie atmosphere halo visible around Earth. M4 marked ✅ in roadmap ma scatter pass inerte. | `shaders/scatter.frag` | ➡️ **tracked as [#26](https://github.com/kanik0/orbiter/issues/26)** |
 | P2-B7 | cosmetic | 1.3 | Tree-expand icons renderizzate come `?` nella sidebar "Visual helpers" (4 sub-item Planetarium/Labels/Forces/Frame axes). Simile a P2-B1 ma glyph differente (tree marker ▶/▼ vs em-dash). | font/glyph set ImGui | open |
+| P2-B8 | low | 1.4 | AscentMFD (SDK sample) esposto in Modules tab sotto "Miscellaneous" (post-fix B1 ora builda). Dovrebbe essere hidden dall'UI utente OPPURE avere `.info` "Samples"/dev category. UX cosmetic. | `Orbitersdk/samples/AscentMFD/CMakeLists.txt` (add orbiter_module_info) | open |
+| P2-B9 | medium | 1.4 | XRSound manca di `.info` sidecar → appare in Modules tab come "Miscellaneous" generico senza description. Utenti audio non sanno cosa attivare. Dovrebbe avere category "Audio" + description "OpenAL-backed audio engine for vessel sounds". | `Sound/XRSound/src/CMakeLists.txt` (add orbiter_module_info) | open |
 
 ---
 
@@ -141,5 +143,24 @@ Ogni bug scoperto durante Fase 2 viene tracciato qui con ID `P2-B<n>`. A fine se
 **Finding:** P2-B7 (tree-expand icon `?` glyph).
 
 **Verdict:** PASS ✅ struttura completa, naming coerente, contenuti popolati per 3 pagine ispezionate. 9 pagine restanti non ispezionate singolarmente ma visibili in sidebar.
+
+### STEP 1.4: Tab Modules  [**PASS** ✅ con P2-B8/B9 polish]
+
+**Action:** click Modules tab, inspect plugin list + categories + footer.
+
+**Expected:** 11 plugin con .info match (ExtMFD, FlightData, Framerate, LuaConsole, LuaMFD, Meshdebug, Notes, Rcontrol, ScnEditor, ScriptMFD, TransX). TrackIR NON presente.
+
+**My report:**
+- 13 plugin visibili (2 extra rispetto Phase 1 F baseline)
+- Tutti gli 11 attesi presenti con categoria corretta
+- TrackIR correctly omitted (Win32-only gating ✅)
+- Extras: AscentMFD (sample SDK post-B1 fix) + XRSound (post-B1/B2 fix) in "Miscellaneous" senza .info
+- Footer: Deactivate all + Rescan buttons presenti
+- Tutti checkbox unchecked di default
+- Right pane con prompt "Select a module to see its description"
+
+**Findings:** P2-B8 (AscentMFD expose), P2-B9 (XRSound no .info).
+
+**Verdict:** PASS ✅. Tutti i plugin previsti + category. Side-effect dei fix Phase 1 (AscentMFD/XRSound in misc) da polishare ma non-bloccanti.
 
 
