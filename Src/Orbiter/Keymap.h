@@ -47,6 +47,19 @@ public:
 	// (kstate only used for modifier keys)
 	// if clearkey == true then key is set to 0 on return, if a match is found
 
+	// Editor accessors (used by the macOS / Linux OGLKeymapEditor).
+	// LOBYTE = key id (OAPI_KEY_*), HIBYTE = modifier flags (KMOD_*).
+	WORD GetBinding (int lfunc) const;
+	void SetBinding (int lfunc, WORD key);
+	static int LogicalKeyCount ();
+	static const char *LogicalKeyName (int lfunc);
+	// Pretty-print a (key | modifier) value into `cbuf` (>=64 bytes
+	// recommended). Returns the same buffer for chaining.
+	char *FormatBinding (char *cbuf, WORD key) const;
+	// Parse a textual binding (e.g. "F1+CTRL") into a (key|mod) value.
+	// Returns true on success.
+	bool ParseBinding (const char *str, WORD &key) const;
+
 private:
 	bool IsMatchingModifier (char *kstate, WORD key) const;
 

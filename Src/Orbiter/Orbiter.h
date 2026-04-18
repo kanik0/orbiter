@@ -473,6 +473,13 @@ public:
 	bool RemoveGraphicsClient (oapi::GraphicsClient *gc);
 	inline oapi::GraphicsClient *GetGraphicsClient () { return gclient; }
 
+#ifndef _WIN32
+	// macOS / Linux: expose the SDL platform layer so cross-platform
+	// dialogs (joystick calibration, keymap editor) can read live
+	// input state without going through DirectInput stubs.
+	inline orbiter::SDLPlatform *GetSDLPlatform() { return m_pSDL; }
+#endif
+
 private:
 	oapi::GraphicsClient *gclient;       // external graphics client (renderer)
 	OrbiterGraphics *oclient;            // inline graphics client

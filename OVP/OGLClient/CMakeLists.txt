@@ -23,6 +23,8 @@ if(NOT WIN32)
 		OGLSketchpad.cpp
 		OGLLaunchpad.cpp
 		OGLWindowMgr.cpp
+		OGLKeymapEditor.cpp
+		OGLJoystickCalibration.cpp
 		OGLTile.cpp
 		OGLParticle.cpp
 		OGLBeaconArray.cpp

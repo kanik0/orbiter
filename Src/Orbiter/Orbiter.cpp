@@ -65,6 +65,10 @@
 #include "OGLLaunchpad.h"
 #include "BuiltinLaunchpadItems.h"
 #include "UserPaths.h"
+namespace ogl {
+	void OpenKeymapEditor();
+	void OpenJoystickCalibration();
+}
 #include "imgui.h"
 #include "backends/imgui_impl_sdl2.h"
 #include "backends/imgui_impl_opengl3.h"
@@ -509,6 +513,17 @@ Orbiter::Orbiter ()
 			g_pOrbiter->OpenHelp (&DefHelpContext);			
 		});
 	RegisterMenuCmd("Save",     "MenuInfoBar/save.png",     [](void *) {g_pOrbiter->Quicksave();});
+#ifndef _WIN32
+	// macOS: Keymap editor + Joystick calibration are exposed through
+	// Custom Functions (Ctrl-F4) so they are reachable from the menu
+	// without claiming a slot in the always-visible info bar.
+	RegisterCustomCmd((char*)"Keymap editor",
+		(char*)"Inspect and remap keyboard bindings (saves to keymap.cfg)",
+		[](void *) { ogl::OpenKeymapEditor(); }, nullptr);
+	RegisterCustomCmd((char*)"Joystick calibration",
+		(char*)"Live-test joystick axes and adjust deadzone / saturation",
+		[](void *) { ogl::OpenJoystickCalibration(); }, nullptr);
+#endif
 	RegisterMenuCmd("Exit",     "MenuInfoBar/exit.png",     [](void *) {
 #ifdef _WIN32
 		PostMessage(g_pOrbiter->GetRenderWnd(), WM_CLOSE, 0, 0);

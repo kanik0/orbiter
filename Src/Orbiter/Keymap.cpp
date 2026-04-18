@@ -226,6 +226,42 @@ Keymap::Keymap ()
 	SetDefault ();
 }
 
+// ----- Public editor accessors (used by OGLKeymapEditor on macOS) -----
+
+WORD Keymap::GetBinding (int lfunc) const
+{
+	return (lfunc >= 0 && lfunc < LKEY_COUNT) ? func[lfunc] : 0;
+}
+
+void Keymap::SetBinding (int lfunc, WORD key)
+{
+	if (lfunc >= 0 && lfunc < LKEY_COUNT) func[lfunc] = key;
+}
+
+int Keymap::LogicalKeyCount ()
+{
+	return LKEY_COUNT;
+}
+
+const char *Keymap::LogicalKeyName (int lfunc)
+{
+	return (lfunc >= 0 && lfunc < LKEY_COUNT) ? lkeyspec[lfunc].itemstr : "";
+}
+
+char *Keymap::FormatBinding (char *cbuf, WORD key) const
+{
+	WORD k = key;
+	return PrintStr(cbuf, k);
+}
+
+bool Keymap::ParseBinding (const char *str, WORD &key) const
+{
+	char tmp[256];
+	strncpy(tmp, str, sizeof(tmp) - 1);
+	tmp[sizeof(tmp) - 1] = '\0';
+	return ScanStr(tmp, key);
+}
+
 void Keymap::SetDefault ()
 {
 	for (WORD i = 0; i < LKEY_COUNT; i++)
