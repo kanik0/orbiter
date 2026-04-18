@@ -90,7 +90,15 @@ Ogni bug scoperto durante Fase 2 viene tracciato qui con ID `P2-B<n>`. A fine se
 | P2-B9 | medium | 1.4 | XRSound manca di `.info` sidecar → appare in Modules tab come "Miscellaneous" generico senza description. Utenti audio non sanno cosa attivare. Dovrebbe avere category "Audio" + description "OpenAL-backed audio engine for vessel sounds". | `Sound/XRSound/src/CMakeLists.txt` (add orbiter_module_info) | open |
 | P2-B10 | medium | 1.5 | Video tab: Width field mostra `20310460` e Height field `0` (valori garbage / uninitialized). Resolution dropdown funziona correttamente ("2560 x 1664"), ma i due campi numerici sotto hanno binding sbagliato a variabili non inizializzate. UX confondente. | `OGLLaunchpad::RenderTabVideo` Width/Height `ImGui::InputInt` binding | open |
 | P2-B11 | low | 1.5 | Video tab: mancante MSAA/multisample antialias combo (0x/2x/4x/8x) che Win32 Video tab espone. Possibile by-design macOS (Metal MSAA autonomo) o regression M22.c. | `OGLLaunchpad::RenderTabVideo` | open, verify intent |
-| P2-B12 | **critical** | 1.6a | **Extra tab AtlantisConfig absent — two stacked bugs, both systemic**: <br>**(a)** `Orbiter.cpp:675` chiamava `LoadStartupModules()` PRIMA di `RegisterBuiltinLaunchpadItems(pConfig)` → registry vuoto quando startup plugins registrano. <br>**(b) Ben peggio**: `Src/Orbitersdk/Orbitersdk.cpp` POSIX constructor chiamava `InitLib(nullptr)` → `dlsym(RTLD_DEFAULT, "InitModule")` ma plugin caricati con `RTLD_LOCAL` → **InitModule di TUTTI i plugin non veniva mai chiamato** su macOS. Impatto reale: tutti i `oapiRegisterMFDMode`/`oapiRegisterLaunchpadItem`/hooks da InitModule rotti silenziosamente nell'intero porting macOS. | `Src/Orbiter/Orbiter.cpp:675` + `Src/Orbitersdk/Orbitersdk.cpp:posix_module_init` | ✅ **RESOLVED** via commits `db9f94c8` (ordering) + `017f3827` (dladdr + RTLD_NOLOAD self-handle). Diagnostic confirms: `root handle = 0x3 for 'Vessel configuration'` + `RegisterLaunchpadItem → 0x10`. |
+| P2-B12 | **critical** | 1.6a | **Extra tab AtlantisConfig absent — two stacked bugs, both systemic**: <br>**(a)** `Orbiter.cpp:675` chiamava `LoadStartupModules()` PRIMA di `RegisterBuiltinLaunchpadItems(pConfig)` → registry vuoto quando startup plugins registrano. <br>**(b) Ben peggio**: `Src/Orbitersdk/Orbitersdk.cpp` POSIX constructor chiamava `InitLib(nullptr)` → `dlsym(RTLD_DEFAULT, "InitModule")` ma plugin caricati con `RTLD_LOCAL` → **InitModule di TUTTI i plugin non veniva mai chiamato** su macOS. Impatto reale: tutti i `oapiRegisterMFDMode`/`oapiRegisterLaunchpadItem`/hooks da InitModule rotti silenziosamente nell'intero porting macOS. | `Src/Orbiter/Orbiter.cpp:675` + `Src/Orbitersdk/Orbitersdk.cpp:posix_module_init` | ✅ **RESOLVED** via PR #27 (commits `34d70589` + `7e7b99e9`). |
+| P2-B13 | medium | 2.1 | Planet texture chunky/blocky continent edges — low LOD texture without M27.b Blue Marble LOD8 + red channel missing makes stepping very visible. | `OGLTile` / M27.b opt-in | open, depends on #25 |
+| P2-B14 | **high** | 2.1 | F1 cockpit view shows only stars — no 2D panel, no VC mesh. M15/M16 rendering regression. | `OGLvVessel::Render` cockpit pass / M15/M16 | open |
+| P2-B15 | low | 2.1 | DlgInfo default vessel selection is Sol, not the focus vessel (GL-01 from Today scn `BEGIN_FOCUS`). Selector switch works correctly. | `DlgInfo::OnDraw` initial object | open |
+| P2-B16 | medium | 2.1 | DlgMap opens but map content is empty — Sketchpad (M17) rendering regression. | `OGLSketchpad` / DlgMap mapping pass | open |
+| P2-B17 | low | 2.1 | Shift+F1 MFD mode selector non responsive in cockpit. Root cause ambigua: può essere keybinding, oppure 0 MFD plugin attivi (Modules tab), oppure legato a M15/M16 P2-B14 cockpit rendering. | Keymap/MFD panel integration | open, verify after P2-B14 fix |
+| P2-B18 | medium | 3.1 | Ctrl+F1 DlgCamera: shortcut non fires, nessun dialog appare. | keymap binding / `Keymap.cpp` Ctrl+F1 → DlgCamera dispatch | open |
+| P2-B19 | medium | 3.2 | Ctrl+F2 DlgTacc: dialog appare ma pulsanti unresponsive AND il dialog non si chiude (ESC o X non chiudono). Possibile modal-block sticky. | `DlgTacc::OnDraw` close/button handlers | open |
+| P2-B20 | medium | 3.7 | Alt+F1 DlgHelp: shortcut non fires, browser non aperto. Roadmap M23.a dichiarava URL fallback cross-platform completo. Regression sospetta. | `Keymap.cpp` Alt+F1 → DlgHelp dispatch / `DlgHelp` URL-open path | open |
 
 ---
 
@@ -183,6 +191,55 @@ Ogni bug scoperto durante Fase 2 viene tracciato qui con ID `P2-B<n>`. A fine se
 **Findings:** P2-B10 (width/height garbage), P2-B11 (no MSAA).
 
 **Verdict:** PARTIAL ⚠️ layout e controlli principali presenti e funzionanti; campi Width/Height corrotti creano confusione.
+
+### STEP 2.1: Demo/Today scenario launch — render 3D acceptance  [**PARTIAL** ⚠️]
+
+**Action:** launch Demo/Today from Launchpad, observe 3D scene + try F1 cockpit + Shift+F1 MFD selector + Ctrl+I DlgInfo + Ctrl+M DlgMap.
+
+**My report:**
+- Earth sferica visibile, continenti verde fosforescente, spazio blu scuro, stelle visibili ✅ (rendering unblocked)
+- Colori assolutamente innaturali (Terra nera, nessun blu oceano, nessun altro colore) — tracked as [#25](https://github.com/kanik0/orbiter/issues/25)
+- Continenti chunky/sgranati — P2-B13 nuovo finding
+- F1 cockpit view → solo stelle, nessuna mesh cockpit o panel → **P2-B14**
+- Shift+F1 MFD selector non responsive (in cockpit view con 0 MFD plugin enabled) → **P2-B17**
+- Ctrl+I DlgInfo apre dialog, ma default mostra Sol invece di GL-01 focus → **P2-B15**
+- Ctrl+M DlgMap apre dialog ma mappa vuota → **P2-B16**
+
+**Verdict:** PARTIAL ⚠️ rendering 3D esterno visibile (degraded), ma cockpit + MFD + panel + map tutti bloccati da regressioni Sketchpad/VC/Panel. Ulteriori fix rendering pipeline richiesti prima di acceptance visual completa.
+
+### STEP 3: In-sim dialogs  [**PARTIAL** ⚠️ 4/7 PASS]
+
+**Action:** test 7 shortcut dialog (Ctrl+F1/F2/F4/F5, F3, F6, Alt+F1).
+
+**Report:**
+| shortcut | dialog | verdict |
+|---|---|---|
+| Ctrl+F1 | DlgCamera | ❌ FAIL (no response) — P2-B18 |
+| Ctrl+F2 | DlgTacc | ⚠️ PARTIAL (opens, buttons dead, won't close) — P2-B19 |
+| Ctrl+F4 | DlgFunction | ✅ PASS |
+| Ctrl+F5 | DlgRecorder | ✅ PASS |
+| F3 | DlgFocus | ✅ PASS |
+| F6 | DlgOptions | ✅ PASS |
+| Alt+F1 | DlgHelp | ❌ FAIL (no response) — P2-B20 |
+
+Skipped Ctrl+I (DlgInfo — tested STEP 2.1 with P2-B15) + Ctrl+M (DlgMap — empty STEP 2.1 P2-B16).
+
+**Verdict:** PARTIAL ⚠️ 4/7 dialog-based features funzionano. Ctrl+F1 + Alt+F1 non rispondono (keymap); Ctrl+F2 ha dialog modal-stuck.
+
+
+### STEP 2.2-2.3: Atlantis Ascent AP + Demo/Earth  [**SKIPPED** ⏭️]
+
+Skip: stessa degradazione visiva di Today attesa (same rendering pipeline). Test ridondante finché #25/#26/P2-B14/B16 non sono risolti.
+
+---
+
+## Path decisione (post-STEP 2.1)
+
+Phase 2 STEP 2+ bloccata da rendering pipeline incompleto (cockpit/MFD/panel/map/sketchpad). Decisione condivisa con utente: **percorso A + C**:
+
+- **Continue** Phase 2 su step che non dipendono da rendering 3D runtime (dialog UI, save/load, window geometry, DMG install)
+- **SKIP / PARTIAL** step rendering-dependent (cockpit, MFD, VC, 2D panel, planetary map)
+- **File** tutti i finding residui come GitHub issue a chiusura Phase 2
 
 ### STEP 1.6a: Tab Extra  [**PASS** ✅ after P2-B12 fix]
 
