@@ -79,8 +79,23 @@ ScnEditor::~ScnEditor ()
 	ImageList_Destroy (imglist);
 }
 
+#ifndef _WIN32
+// Forward declarations of the cross-platform ImGui front-end
+// (ScnEditorImGui.cpp). On Windows the resource-driven dialog flow
+// below is the canonical implementation.
+void ScnEditorImGui_Open();
+void ScnEditorImGui_Close();
+#endif
+
 void ScnEditor::OpenDialog ()
 {
+#ifndef _WIN32
+	// macOS / Linux: reuse the persistent ImGui dialog instance
+	// owned by ScnEditorImGui.cpp so re-opening preserves field
+	// edits and tab selection across hides.
+	ScnEditorImGui_Open();
+	return;
+#endif
 	nTab  = 0;
 	cTab  = NULL;
 	hDlg  = oapiOpenDialogEx (hInst, IDD_EDITOR, EditorProc, 0, this);
@@ -88,6 +103,10 @@ void ScnEditor::OpenDialog ()
 
 void ScnEditor::CloseDialog ()
 {
+#ifndef _WIN32
+	ScnEditorImGui_Close();
+	return;
+#endif
 	if (hDlg) {
 		oapiCloseDialog (hDlg);
 		hDlg = NULL;
