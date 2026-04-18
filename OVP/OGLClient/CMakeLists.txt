@@ -20,6 +20,7 @@ if(NOT WIN32)
 		OGLvVessel.cpp
 		OGLCelSphere.cpp
 		OGLSurface.cpp
+		OGLSketchpad.cpp
 		OGLLaunchpad.cpp
 		OGLTile.cpp
 		OGLParticle.cpp
