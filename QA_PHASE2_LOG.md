@@ -90,6 +90,7 @@ Ogni bug scoperto durante Fase 2 viene tracciato qui con ID `P2-B<n>`. A fine se
 | P2-B9 | medium | 1.4 | XRSound manca di `.info` sidecar → appare in Modules tab come "Miscellaneous" generico senza description. Utenti audio non sanno cosa attivare. Dovrebbe avere category "Audio" + description "OpenAL-backed audio engine for vessel sounds". | `Sound/XRSound/src/CMakeLists.txt` (add orbiter_module_info) | open |
 | P2-B10 | medium | 1.5 | Video tab: Width field mostra `20310460` e Height field `0` (valori garbage / uninitialized). Resolution dropdown funziona correttamente ("2560 x 1664"), ma i due campi numerici sotto hanno binding sbagliato a variabili non inizializzate. UX confondente. | `OGLLaunchpad::RenderTabVideo` Width/Height `ImGui::InputInt` binding | open |
 | P2-B11 | low | 1.5 | Video tab: mancante MSAA/multisample antialias combo (0x/2x/4x/8x) che Win32 Video tab espone. Possibile by-design macOS (Metal MSAA autonomo) o regression M22.c. | `OGLLaunchpad::RenderTabVideo` | open, verify intent |
+| P2-B12 | **critical** | 1.6a | **Extra tab AtlantisConfig absent — two stacked bugs, both systemic**: <br>**(a)** `Orbiter.cpp:675` chiamava `LoadStartupModules()` PRIMA di `RegisterBuiltinLaunchpadItems(pConfig)` → registry vuoto quando startup plugins registrano. <br>**(b) Ben peggio**: `Src/Orbitersdk/Orbitersdk.cpp` POSIX constructor chiamava `InitLib(nullptr)` → `dlsym(RTLD_DEFAULT, "InitModule")` ma plugin caricati con `RTLD_LOCAL` → **InitModule di TUTTI i plugin non veniva mai chiamato** su macOS. Impatto reale: tutti i `oapiRegisterMFDMode`/`oapiRegisterLaunchpadItem`/hooks da InitModule rotti silenziosamente nell'intero porting macOS. | `Src/Orbiter/Orbiter.cpp:675` + `Src/Orbitersdk/Orbitersdk.cpp:posix_module_init` | ✅ **RESOLVED** via commits `db9f94c8` (ordering) + `017f3827` (dladdr + RTLD_NOLOAD self-handle). Diagnostic confirms: `root handle = 0x3 for 'Vessel configuration'` + `RegisterLaunchpadItem → 0x10`. |
 
 ---
 
@@ -182,5 +183,18 @@ Ogni bug scoperto durante Fase 2 viene tracciato qui con ID `P2-B<n>`. A fine se
 **Findings:** P2-B10 (width/height garbage), P2-B11 (no MSAA).
 
 **Verdict:** PARTIAL ⚠️ layout e controlli principali presenti e funzionanti; campi Width/Height corrotti creano confusione.
+
+### STEP 1.6a: Tab Extra  [**PASS** ✅ after P2-B12 fix]
+
+**Action:** click Extra tab, inspect tree, verify AtlantisConfig appears under Vessel configuration after P2-B12 double-fix (ordering + POSIX bootstrap).
+
+**Expected:** 5 container + 10 built-in items, plus AtlantisConfig under "Vessel configuration" per M22.f/M25.b + AtmConfig somewhere if its InitModule runs.
+
+**My report (post-fix):**
+- Tree (screenshot): ▶ Physics engine, ▶ Instruments and panels, ▼ Vessel configuration → **Atlantis Configuration** ✅, Planet configuration, ▶ Debug options, **Atmosphere Configuration** (top-level, new)
+- Atlantis Configuration selected → right pane: "Global configuration for the default Space Shuttle Atlantis." + Edit... button ✅
+- Atmosphere Configuration: un-parented bonus (AtmConfig plugin non specifica parent → top-level). Conferma che P2-B12 era sistemico — non solo AtlantisConfig, TUTTI gli startup plugins erano silenzati.
+
+**Verdict:** PASS ✅ tree correttamente popolato. P2-B12 chiuso come resolved.
 
 
