@@ -1,6 +1,11 @@
 # Copyright (c) Martin Schweiger
 # Licensed under the MIT License
 
+# Pull in imgui_SOURCE_DIR for the macOS / Linux ImGui dialog path.
+if(NOT WIN32)
+	FetchContent_MakeAvailable(imgui)
+endif()
+
 add_library(Meshdebug SHARED
 	Meshdebug.cpp
 	Meshdebug.rc
@@ -9,6 +14,7 @@ add_library(Meshdebug SHARED
 target_include_directories(Meshdebug
 	PUBLIC ${ORBITER_SOURCE_SDK_INCLUDE_DIR}
 	PUBLIC ${MODULE_COMMON_DIR}
+	PUBLIC ${imgui_SOURCE_DIR}
 )
 
 target_link_libraries(Meshdebug
