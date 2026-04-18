@@ -2117,6 +2117,11 @@ DLLEXPORT void oapiColourFill (SURFHANDLE tgt, DWORD fillcolor, int tgtx, int tg
 	}
 }
 
+// LaunchpadRegistry — used by the non-Windows oapiRegister/Unregister/
+// Find LaunchpadItem path further down. Pulled in here so the Windows
+// build keeps the include footprint identical.
+#include "LaunchpadRegistry.h"
+
 DLLEXPORT bool oapiAcceptDelayedKey (char key, double interval)
 {
 	static char lastkey = (char)255;
@@ -2134,7 +2139,13 @@ DLLEXPORT LAUNCHPADITEM_HANDLE oapiRegisterLaunchpadItem (LaunchpadItem *item, L
 #ifdef _WIN32
 	return (LAUNCHPADITEM_HANDLE)g_pOrbiter->Launchpad()->RegisterExtraParam (item, (HTREEITEM)parent);
 #else
-	return 0;
+	// macOS / Linux: the Launchpad lives in OGLLaunchpad and reads the
+	// process-wide registry. Modules can register at any time (typically
+	// during opcDLLInit) — the registry survives across Launchpad open
+	// / close cycles.
+	auto h = orbiter::LaunchpadRegistry::Instance().Register(item,
+		(orbiter::LpadHandle)parent);
+	return (LAUNCHPADITEM_HANDLE)h;
 #endif
 }
 
@@ -2143,7 +2154,7 @@ DLLEXPORT bool oapiUnregisterLaunchpadItem (LaunchpadItem *item)
 #ifdef _WIN32
 	return g_pOrbiter->Launchpad()->UnregisterExtraParam (item);
 #else
-	return false;
+	return orbiter::LaunchpadRegistry::Instance().Unregister(item);
 #endif
 }
 
@@ -2152,7 +2163,9 @@ DLLEXPORT LAUNCHPADITEM_HANDLE oapiFindLaunchpadItem (const char *name, LAUNCHPA
 #ifdef _WIN32
 	return g_pOrbiter->Launchpad()->FindExtraParam (name, (HTREEITEM)parent);
 #else
-	return 0;
+	auto h = orbiter::LaunchpadRegistry::Instance().Find(name,
+		(orbiter::LpadHandle)parent);
+	return (LAUNCHPADITEM_HANDLE)h;
 #endif
 }
 

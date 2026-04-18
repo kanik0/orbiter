@@ -10,6 +10,12 @@
 #include "OrbiterAPI.h"
 #include "Psys.h"
 
+#ifndef _WIN32
+// Use the narrow joystick subheader instead of full SDL.h — pulling in
+// SDL_keycode.h here clashes with Keymap.h's KMOD_* macros.
+#  include <SDL_joystick.h>
+#endif
+
 extern Orbiter* g_pOrbiter;
 extern PlanetarySystem* g_psys;
 
@@ -166,17 +172,23 @@ void DlgOptions::DrawJoystick()
 	DWORD ndev;
 	DIDEVICEINSTANCE* joylist;
 	g_pOrbiter->GetDInput()->GetJoysticks(&joylist, &ndev);
+	auto JoyName = [&](int i) -> const char* { return joylist[i].tszProductName; };
 #else
-	DWORD ndev = 0;
+	// SDL enumeration of attached joysticks. SDL_Init(SDL_INIT_JOYSTICK)
+	// is performed by SDLPlatform during boot so the count below is
+	// already populated.
+	DWORD ndev = (DWORD)SDL_NumJoysticks();
+	auto JoyName = [&](int i) -> const char* {
+		const char *n = SDL_JoystickNameForIndex(i);
+		return n ? n : "(unnamed joystick)";
+	};
 #endif
 	DWORD &jidx = g_pOrbiter->Cfg()->CfgJoystickPrm.Joy_idx;
 
 	const char *preview = "<Disabled>";
-#ifdef _WIN32
-	if(jidx > 0 && jidx <= ndev) {
-		preview = joylist[jidx - 1].tszProductName;
+	if (jidx > 0 && jidx <= ndev) {
+		preview = JoyName((int)jidx - 1);
 	}
-#endif
 
 	if(ImGui::BeginAnimatedCombo("##joydev", preview)) {
 		bool selected = jidx == 0;
@@ -186,10 +198,9 @@ void DlgOptions::DrawJoystick()
 		if (selected) {
 			ImGui::SetItemDefaultFocus();
 		}
-#ifdef _WIN32
 		for (int i = 0; i < (int)ndev; i++) {
 			selected = jidx == (DWORD)(i+1);
-			if(ImGui::Selectable(joylist[i].tszProductName, &selected)) {
+			if(ImGui::Selectable(JoyName(i), &selected)) {
 				jidx = i + 1;
 				g_pOrbiter->OnOptionChanged(OPTCAT_JOYSTICK, OPTITEM_JOYSTICK_DEVICE);
 			}
@@ -197,7 +208,6 @@ void DlgOptions::DrawJoystick()
 				ImGui::SetItemDefaultFocus();
 			}
 		}
-#endif // _WIN32
 		ImGui::EndAnimatedCombo();
 	}
 

@@ -35,3 +35,8 @@ install(TARGETS ScriptMFD
 	RUNTIME
 	DESTINATION ${ORBITER_INSTALL_PLUGIN_DIR}
 )
+
+orbiter_module_info(ScriptMFD
+	CATEGORY "Script tools and drivers"
+	DESCRIPTION "SCRIPT MFD:\n\nThe driver module for script-based MFD (multifunctional display) modes. By activating this module, all script-based MFD modes become available during the simulation."
+)

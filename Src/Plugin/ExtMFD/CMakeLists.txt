@@ -37,3 +37,8 @@ install(TARGETS ExtMFD
 install(FILES ExtMFD.png
 	DESTINATION ${ORBITER_INSTALL_TEXTURES_DIR}/MenuInfoBar
 )
+
+orbiter_module_info(ExtMFD
+	CATEGORY "Tools and dialogs"
+	DESCRIPTION "EXTERNAL MFD:\n\nAttach an MFD instrument as a movable, resizable floating window outside the main cockpit. Useful for users with multiple monitors or for keeping an MFD visible while panning the camera away from the cockpit."
+)

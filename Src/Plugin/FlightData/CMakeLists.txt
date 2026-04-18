@@ -35,3 +35,8 @@ install(TARGETS FlightData
 install(FILES FlightData.png
 	DESTINATION ${ORBITER_INSTALL_TEXTURES_DIR}/MenuInfoBar
 )
+
+orbiter_module_info(FlightData
+	CATEGORY "Tools and dialogs"
+	DESCRIPTION "FLIGHT DATA RECORDER:\n\nGraph and log atmospheric flight parameters (altitude, dynamic pressure, mach, AoA, vertical speed, ...) for the focus vessel. Open the recorder window from the Custom Functions dialog (Ctrl-F4)."
+)

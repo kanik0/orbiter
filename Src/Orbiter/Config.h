@@ -294,6 +294,10 @@ struct CFG_CMDLINEPRM {
 	double MaxSimTime;          // Max session runtime (sim time). 0 = unlimited
 	std::string LaunchScenario; // if not empty, start scenario instantly without opening Launchpad
 	std::list<std::string> LoadPlugins; // list of plugins to load
+	// Rendering parity harness hooks (M30) — capture frame N to a PNG
+	// then exit. Both default off.
+	size_t CaptureFrame = 0;          // 0 = disabled, otherwise capture this frame
+	std::string CaptureOut;           // PNG path (relative to cwd unless absolute)
 };
 
 // =============================================================

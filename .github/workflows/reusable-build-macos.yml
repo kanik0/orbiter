@@ -1,0 +1,159 @@
+name: Build macOS
+
+# Reusable macOS build workflow. Mirrors the structure of
+# reusable-build.yml but targets the Apple Silicon `macos-14`
+# runner. Configures via the `macos-arm64-debug` /
+# `macos-arm64-release` presets and invokes the `macos-bundle`
+# CMake target so the resulting tree contains a launch-ready
+# Orbiter.app. When `dmg: true` the workflow continues into the
+# `macos-dmg` target which produces a UDZO-compressed disk image
+# (signed if APPLE_CODESIGN_IDENTITY is exported, ad-hoc
+# otherwise; notarized only when APPLE_NOTARIZATION_KEYCHAIN_PROFILE
+# is also set — typically only the official release pipeline).
+#
+# Inputs are validated by the workflow_call schema; no untrusted
+# user-controlled strings reach `run:` commands.
+
+on:
+  workflow_call:
+    inputs:
+      configuration:
+        description: 'Build configuration: release or debug'
+        default: release
+        type: string
+      upload:
+        description: Upload resulting artifact?
+        type: boolean
+        default: false
+      dmg:
+        description: Also build a .dmg disk image?
+        type: boolean
+        default: false
+      smoke:
+        description: Run the simulation smoke test?
+        type: boolean
+        default: true
+      parity:
+        description: Run the rendering parity ctest target?
+        type: boolean
+        default: false
+
+run-name: Build macOS arm64 ${{ inputs.configuration }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build macOS arm64
+    runs-on: macos-14
+    timeout-minutes: 90
+    env:
+      ORBITER_BUILD_XRSOUND: ON
+      CONFIGURATION: ${{ inputs.configuration }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v6
+
+    - name: Install Homebrew dependencies
+      run: |
+        brew update >/dev/null
+        brew install sdl2 openal-soft || true
+
+    - name: Install Python deps for parity harness
+      if: ${{ inputs.parity }}
+      run: |
+        python3 -m pip install --user --break-system-packages \
+          scikit-image Pillow numpy
+
+    - name: Configure
+      run: cmake --preset "macos-arm64-${CONFIGURATION}"
+        -DORBITER_BUILD_XRSOUND=ON
+        -DORBITER_MAKE_TESTS=ON
+
+    - name: Build core + plugins
+      run: |
+        BUILD_DIR="out/build/macos-arm64-${CONFIGURATION}"
+        cmake --build "$BUILD_DIR" \
+          --parallel 4 \
+          --target Orbiter OGLClient \
+            Sun Mercury Venus Earth Mars Jupiter Saturn Uranus Neptune \
+            Moon Io Europa Ganymede Callisto \
+            Mimas Enceladus Tethys Dione Rhea Titan Hyperion Iapetus \
+            Triton Nereid Proteus Vesta Ariel Umbriel Titania Oberon \
+            Miranda Phobos Deimos \
+            DeltaGlider ShuttlePB ShuttleA Atlantis HST ISS \
+            Quadcopter Carina LDEF Leonardo MMU Solarsail Dragonfly \
+            ExtMFD FlightData Framerate LuaConsole LuaMFD Meshdebug \
+            Notes Rcontrol ScnEditor ScriptMFD TransX \
+            AtlantisConfig CopyData
+        # XRSound is optional (depends on Homebrew openal-soft); build
+        # it but tolerate failure on a fresh runner where the tap is
+        # missing.
+        cmake --build "$BUILD_DIR" \
+          --target XRSound_dll XRSound_assets || true
+
+    - name: Build .app bundle
+      run: cmake --build "out/build/macos-arm64-${CONFIGURATION}"
+        --target macos-bundle
+
+    - name: Smoke test (Launchpad init)
+      if: ${{ inputs.smoke }}
+      run: |
+        cd "out/build/macos-arm64-${CONFIGURATION}"
+        # Launchpad-only run: confirms binary loads, registers the
+        # graphics client, scans scenarios and modules. Killed after
+        # 8s — a fully interactive scenario launch needs a real
+        # display, which the runner doesn't provide.
+        ./Orbiter > smoke.log 2>&1 & SMOKE_PID=$!
+        sleep 8
+        kill $SMOKE_PID 2>/dev/null || true
+        echo "----- smoke.log (tail) -----"
+        tail -20 smoke.log
+        if grep -iE 'crash|abort|terminat|fatal|asser' smoke.log; then
+          echo "::error::smoke test surfaced fatal output"
+          exit 1
+        fi
+
+    - name: Rendering parity (ctest)
+      if: ${{ inputs.parity }}
+      # Best-effort: the macos-14 runner has a window-server but the
+      # framebuffer captures are highly OS-version sensitive. The
+      # ctest target skips scenarios whose baselines are placeholder
+      # 0-byte files (the default in the repo), so a green CI run
+      # only proves the pipeline plumbing — adding real baselines
+      # tightens the gate without touching this workflow.
+      continue-on-error: true
+      run: ctest --test-dir "out/build/macos-arm64-${CONFIGURATION}"
+        -R rendering_parity --output-on-failure
+
+    - name: Build .dmg disk image
+      if: ${{ inputs.dmg }}
+      run: cmake --build "out/build/macos-arm64-${CONFIGURATION}"
+        --target macos-dmg
+
+    - name: Upload .app artifact
+      if: ${{ inputs.upload && !inputs.dmg }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: Orbiter-macos-arm64-${{ inputs.configuration }}
+        path: out/build/macos-arm64-${{ inputs.configuration }}/Orbiter.app
+        retention-days: 14
+
+    - name: Upload .dmg artifact
+      if: ${{ inputs.upload && inputs.dmg }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: Orbiter-macos-arm64-${{ inputs.configuration }}-dmg
+        path: out/build/macos-arm64-${{ inputs.configuration }}/Orbiter-macos-arm64.dmg
+        retention-days: 14
+
+    - name: Upload parity captures (debug)
+      if: ${{ inputs.parity && always() }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: Orbiter-parity-captures-${{ inputs.configuration }}
+        path: out/build/macos-arm64-${{ inputs.configuration }}/Testing/parity/
+        retention-days: 7
+        if-no-files-found: ignore

@@ -180,7 +180,11 @@ std::vector<::CommandLine::Key>& orbiter::CommandLine::KeyList() const
 		{ KEY_MAXSYSTIME, "maxsystime", 'T', true},
 		{ KEY_MAXSIMTIME, "maxsimtime", 't', true},
 		{ KEY_FRAMECOUNT, "maxframes", '_', true},
-		{ KEY_PLUGIN, "plugin", 'p', true}
+		{ KEY_PLUGIN, "plugin", 'p', true},
+		// Parity harness — long form only (no clash with existing
+		// short keys).
+		{ KEY_CAPTURE_FRAME, "capture-frame", '_', true},
+		{ KEY_CAPTURE_OUT,   "capture-out",   '_', true}
 	};
 	return keyList;
 }
@@ -235,6 +239,22 @@ void orbiter::CommandLine::ApplyOption(const Key* key, const std::string& value)
 	case KEY_PLUGIN:
 		cfg.LoadPlugins.push_back(value);
 		break;
+	case KEY_CAPTURE_FRAME:
+		res = sscanf(value.c_str(), "%zu", &s);
+		if (res == 1) {
+			cfg.CaptureFrame = s;
+			// Force fast-exit so the harness completes deterministically
+			// after the capture rather than parking in the menu loop.
+			cfg.bFastExit = true;
+			// Bound the session so even a stuck simulation can't wedge
+			// the runner. Frame budget = capture target + small slack.
+			if (cfg.FrameLimit == 0 || cfg.FrameLimit < s + 60)
+				cfg.FrameLimit = s + 60;
+		}
+		break;
+	case KEY_CAPTURE_OUT:
+		cfg.CaptureOut = value;
+		break;
 	}
 }
 
@@ -259,6 +279,8 @@ void orbiter::CommandLine::PrintHelpAndExit() const
 	std::cout << "  --maxsimtime=<t>, -t <t>: Terminate session at simulation time <t>\n";
 	std::cout << "  --maxframes=<f>: Terminate session after <f> time frames\n";
 	std::cout << "  --plugin=<pg>, -p <pg>: Load plugin <pg> (from Modules\\Plugin\\<pg>.dll)\n";
+	std::cout << "  --capture-frame=<n>: Capture frame <n> to PNG and exit (parity harness)\n";
+	std::cout << "  --capture-out=<path>: Destination PNG path for --capture-frame\n";
 	std::cout << std::endl;
 
 	exit(0);

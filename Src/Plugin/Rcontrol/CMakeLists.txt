@@ -35,3 +35,8 @@ install(TARGETS Rcontrol
 install(FILES Rcontrol.png
 	DESTINATION ${ORBITER_INSTALL_TEXTURES_DIR}/MenuInfoBar
 )
+
+orbiter_module_info(Rcontrol
+	CATEGORY "Input devices"
+	DESCRIPTION "REMOTE CONTROL:\n\nRemote vessel control panel — manipulate the focus vessel (RCS, main/hover/retro thrusters, attitude programs) from a separate floating window. Useful when flying with a HOTAS while keeping the cockpit view free of overlays."
+)

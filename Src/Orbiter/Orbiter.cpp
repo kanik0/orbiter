@@ -61,8 +61,15 @@
 #include "imgui_impl_win32.h"
 #else
 #include "SDLPlatform.h"
+#include "HapticFX.h"
 #include "OGLClient.h"
 #include "OGLLaunchpad.h"
+#include "BuiltinLaunchpadItems.h"
+#include "UserPaths.h"
+namespace ogl {
+	void OpenKeymapEditor();
+	void OpenJoystickCalibration();
+}
 #include "imgui.h"
 #include "backends/imgui_impl_sdl2.h"
 #include "backends/imgui_impl_opengl3.h"
@@ -222,8 +229,18 @@ INT WINAPI WinMain (HINSTANCE hInstance, HINSTANCE, LPSTR strCmdLine, INT nCmdSh
 	// Parse command line
 	orbiter::CommandLine::Parse(g_pOrbiter, strCmdLine);
 
-	// Initialise the log
+	// Initialise the log. On macOS the .app bundle install dir is
+	// read-only for non-admin users, so route Orbiter.log to a
+	// per-user location under ~/Library/Logs/Orbiter/.
+#ifdef __APPLE__
+	{
+		std::string lp = orbiter::GetUserLogPath();
+		INITLOG(lp.empty() ? "Orbiter.log" : lp.c_str(),
+			g_pOrbiter->Cfg()->CfgCmdlinePrm.bAppendLog);
+	}
+#else
 	INITLOG("Orbiter.log", g_pOrbiter->Cfg()->CfgCmdlinePrm.bAppendLog); // init log file
+#endif
 #ifdef ISBETA
 	LOGOUT("Build %s BETA [v.%06d]", __DATE__, GetVersion());
 #else
@@ -329,8 +346,13 @@ int main (int argc, char *argv[])
 	orbiter::CommandLine::Parse(g_pOrbiter, cmdlineBuf);
 	delete[] cmdlineBuf;
 
-	// Initialise the log
-	INITLOG("Orbiter.log", false);  // Force non-append for debugging
+	// Initialise the log. On macOS use the user-writable
+	// ~/Library/Logs/Orbiter/ location so it survives a read-only
+	// .app bundle install.
+	{
+		std::string lp = orbiter::GetUserLogPath();
+		INITLOG(lp.empty() ? "Orbiter.log" : lp.c_str(), false);
+	}
 #ifdef ISBETA
 	LOGOUT("Build %s BETA [v.%06d]", __DATE__, g_pOrbiter->GetVersion());
 #else
@@ -492,6 +514,17 @@ Orbiter::Orbiter ()
 			g_pOrbiter->OpenHelp (&DefHelpContext);			
 		});
 	RegisterMenuCmd("Save",     "MenuInfoBar/save.png",     [](void *) {g_pOrbiter->Quicksave();});
+#ifndef _WIN32
+	// macOS: Keymap editor + Joystick calibration are exposed through
+	// Custom Functions (Ctrl-F4) so they are reachable from the menu
+	// without claiming a slot in the always-visible info bar.
+	RegisterCustomCmd((char*)"Keymap editor",
+		(char*)"Inspect and remap keyboard bindings (saves to keymap.cfg)",
+		[](void *) { ogl::OpenKeymapEditor(); }, nullptr);
+	RegisterCustomCmd((char*)"Joystick calibration",
+		(char*)"Live-test joystick axes and adjust deadzone / saturation",
+		[](void *) { ogl::OpenJoystickCalibration(); }, nullptr);
+#endif
 	RegisterMenuCmd("Exit",     "MenuInfoBar/exit.png",     [](void *) {
 #ifdef _WIN32
 		PostMessage(g_pOrbiter->GetRenderWnd(), WM_CLOSE, 0, 0);
@@ -521,9 +554,34 @@ HRESULT Orbiter::Create (HINSTANCE hInstance)
 
 	HRESULT hr;
 
-	// parameter manager - parses from master config file
+	// parameter manager - parses from master config file. On macOS
+	// prefer the user override (~/Library/Application Support/Orbiter/
+	// Orbiter.cfg) when present so personal settings survive .app
+	// re-installs; fall back to the bundled MasterConfigFile in the
+	// install dir.
 	hInst = hInstance;
+#ifdef __APPLE__
+	{
+		std::string up = orbiter::ResolveUserConfig(MasterConfigFile);
+		bool ok = false;
+		if (!up.empty()) {
+			std::ifstream probe(up.c_str());
+			if (probe.good()) ok = pConfig->Load(up.c_str());
+		}
+		if (!ok) pConfig->Load(MasterConfigFile);
+		// Re-target the master cfg to the user override location even
+		// on a first run so subsequent pConfig->Write() lands in a
+		// writable directory (the .app bundle install dir is read-only
+		// for non-admin users).
+		if (!up.empty()) {
+			delete[] pConfig->Root;
+			pConfig->Root = new char[up.size() + 1];
+			std::strcpy(pConfig->Root, up.c_str());
+		}
+	}
+#else
 	pConfig->Load(MasterConfigFile);
+#endif
 	strcpy (cfgpath, pConfig->CfgDirPrm.ConfigDir);   cfglen = strlen (cfgpath);
 
 #ifdef _WIN32
@@ -1215,6 +1273,38 @@ HRESULT Orbiter::Render3DEnvironment (bool hidedialogs)
 			gclient->clbkImGuiRenderDrawData();
 		else if (ImGui::GetCurrentContext())
 			ImGui::EndFrame(); // Ensure frame is always ended
+
+		// Rendering parity harness (M30): capture the current
+		// backbuffer to disk on the requested frame, then drive
+		// session termination via the existing FrameLimit gate.
+		// We use a >= comparison plus a one-shot latch because the
+		// renderer can skip frames under load (BeginTimeStep may
+		// fail for a frame), so the exact target frame number can
+		// be missed.
+		static bool s_captureDone = false;
+		if (pConfig->CfgCmdlinePrm.CaptureFrame > 0 &&
+		    !s_captureDone &&
+		    td.FrameCount() >= pConfig->CfgCmdlinePrm.CaptureFrame &&
+		    !pConfig->CfgCmdlinePrm.CaptureOut.empty()) {
+			s_captureDone = gclient->clbkSaveScreenshot(
+				pConfig->CfgCmdlinePrm.CaptureOut.c_str());
+			if (s_captureDone) {
+				// Trip session termination so the harness exits
+				// the moment the screenshot is on disk. The macOS
+				// / Linux event loop drains SDL_QUIT and breaks
+				// out of Run(); on Windows the existing FrameLimit
+				// gate (set in cmdline.cpp KEY_CAPTURE_FRAME)
+				// terminates the session a few frames later.
+#ifndef _WIN32
+				if (m_pSDL) {
+					SDL_Event ev{};
+					ev.type = SDL_QUIT;
+					SDL_PushEvent(&ev);
+				}
+#endif
+			}
+		}
+
 		gclient->clbkDisplayFrame ();
 	}
 	// Mark frame boundary for when using the profiler
@@ -1243,12 +1333,23 @@ INT Orbiter::Run ()
 
 	// If no scenario specified on command line, show ImGui Launchpad
 	if (pConfig->CfgCmdlinePrm.LaunchScenario.empty() && m_pSDL) {
+		// Populate the LaunchpadRegistry with the built-in Extra items
+		// (Physics / Instruments / Debug containers + their leaves) so
+		// the Extra tab matches the Win32 default. Plugin-registered
+		// items (oapiRegisterLaunchpadItem) appear alongside.
+		orbiter::RegisterBuiltinLaunchpadItems(pConfig);
+
 		ogl::OGLLaunchpad launchpadUI;
+		launchpadUI.Bind(pConfig);
 		char cwd[1024];
 		std::string scnDir = "Scenarios";
-		if (getcwd(cwd, sizeof(cwd)))
-			scnDir = std::string(cwd) + "/Scenarios";
+		std::string pluginDir = "Modules/Plugin";
+		if (getcwd(cwd, sizeof(cwd))) {
+			scnDir    = std::string(cwd) + "/Scenarios";
+			pluginDir = std::string(cwd) + "/Modules/Plugin";
+		}
 		launchpadUI.ScanScenarios(scnDir);
+		launchpadUI.ScanModules(pluginDir);
 
 		// Dedicated Launchpad render loop using SDL+ImGui directly
 		// (no graphics client needed — just clear + ImGui overlay)
@@ -2140,6 +2241,47 @@ void Orbiter::EndTimeStep (bool running)
 	// Update visual states
 	if (gclient) gclient->clbkUpdate (bRunning);
 	g_bForceUpdate = false;                        // clear flag
+
+#ifndef _WIN32
+	// macOS / Linux: drive gamepad rumble from focus-vessel events.
+	// We sample the focus interface every frame and emit transient
+	// effects on rising edges (touchdown, engine ignition) plus a
+	// sustained channel for atmospheric buffeting. The HapticFX
+	// implementation is a no-op when no controller is attached.
+	if (running && m_pSDL && m_pSDL->GetHaptic() && g_focusobj) {
+		orbiter::HapticFX *fx = m_pSDL->GetHaptic();
+		// Touchdown rising edge.
+		bool contact = g_focusobj->bSurfaceContact;
+		if (contact && !m_haptPrevContact) {
+			// Scale by recent vertical speed (approximated via
+			// frame-to-frame altitude delta if needed; here we
+			// just emit a moderate bump because we don't track
+			// altitude history). Vessels with non-trivial
+			// touchdown elasticity feel the difference more.
+			fx->Touchdown(0.7f);
+		}
+		m_haptPrevContact = contact;
+
+		// Engine ignite rising edge (main thrust 0..1).
+		double mainLvl = g_focusobj->GetThrusterGroupLevel(THGROUP_MAIN);
+		if (mainLvl > 0.10 && m_haptPrevMain <= 0.05) {
+			fx->EngineIgnite((float)mainLvl);
+		}
+		m_haptPrevMain = mainLvl;
+
+		// Atmospheric buffeting — driven by dynamic pressure.
+		// Scaled so the channel saturates at 1 above ~50 kPa
+		// (re-entry), idles below ~5 kPa. DynPressure() returns
+		// false when the vessel is in vacuum.
+		double dynp = 0.0;
+		float buffet = 0.0f;
+		if (g_focusobj->DynPressure(dynp) && dynp > 5000.0)
+			buffet = (float)std::min(1.0, (dynp - 5000.0) / 45000.0);
+		fx->AtmosphericBuffet(buffet);
+
+		fx->Tick(td.SimDT);
+	}
+#endif
 
 	// check for termination of demo mode
 	if (SessionLimitReached())

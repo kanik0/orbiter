@@ -1484,6 +1484,34 @@ public:
 	virtual void clbkImGuiRenderDrawData () = 0;
 	virtual void clbkImGuiInit () = 0;
 	virtual void clbkImGuiShutdown() = 0;
+
+	/** \brief Render plugin-registered side-bar applications.
+	 *
+	 *  Invoked once per frame from inside DialogManager::ImGuiNewFrame
+	 *  while an ImGui frame is active. The macOS / Linux OGLClient
+	 *  forwards to OGLWindowMgr::RenderAll(); the default impl below
+	 *  is a no-op so existing graphics clients (D3D9Client) that own
+	 *  their own HWND-based side-bar (WindowMgr.cpp) continue to
+	 *  manage rendering themselves.
+	 */
+	virtual void clbkRenderImGuiPlugins() {}
+
+	/** \brief Capture the current backbuffer to a PNG file.
+	 *
+	 *  Used by the rendering parity harness (M30): the simulator
+	 *  invokes this method on a specific frame to dump the rendered
+	 *  scene to disk for SSIM comparison against a baseline.
+	 *  Must be called before the next buffer swap. Returns true on
+	 *  success, false if the operation isn't supported by the
+	 *  backend.
+	 *  \param path absolute or cwd-relative PNG destination
+	 *  \param w viewport width (default 0 = full backbuffer)
+	 *  \param h viewport height (default 0 = full backbuffer)
+	 */
+	virtual bool clbkSaveScreenshot(const char *path, int w = 0, int h = 0) {
+		(void)path; (void)w; (void)h;
+		return false;
+	}
 	// Returns an ImTextureID from a surface so that it can be used in
 	// ImGui widgets.
 	// Note: we use uint64_t so we don't have to include imgui.h

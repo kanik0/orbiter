@@ -35,6 +35,13 @@
 #include "backends/imgui_impl_sdl2.h"
 #include "backends/imgui_impl_opengl3.h"
 
+// gcGUI side-bar host. gcGetGUICore() is exported from OGLWindowMgr.cpp
+// and resolved at run time by gcGUIApp::Initialize via dlsym
+// (RTLD_DEFAULT). Included before the namespace block so the nested
+// `ogl::OGLWindowMgr` is reachable as `ogl::OGLWindowMgr` rather than
+// `ogl::ogl::OGLWindowMgr` from inside this TU.
+#include "OGLWindowMgr.h"
+
 namespace ogl {
 
 // ============================================================================
@@ -100,6 +107,10 @@ void OGLClient::clbkImGuiInit() {
 	ImGui_ImplSDL2_InitForOpenGL(m_sdlWindow, m_sdlContext);
 	ImGui_ImplOpenGL3_Init("#version 410");
 	m_imguiInitialized = true;
+
+	// Register the gcGUI smoke-test app if the operator opted in via
+	// ORBITER_GCGUI_TEST=1 — verifies the dlsym dispatch end-to-end.
+	ogl::MaybeStartGcGuiSmokeApp();
 }
 
 void OGLClient::clbkImGuiShutdown() {
@@ -126,6 +137,56 @@ uint64_t OGLClient::clbkImGuiSurfaceTexture(SURFHANDLE surf) {
 	if (!surf) return 0;
 	OGLSurface *s = (OGLSurface*)surf;
 	return (uint64_t)s->GetTexture();
+}
+
+void OGLClient::clbkRenderImGuiPlugins() {
+	ogl::OGLWindowMgr::Instance().RenderAll();
+}
+
+// stb_image_write — vendored under OVP/OGLClient/stb_image_write.h.
+// Define implementation in this TU so the writer is linked once.
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
+bool OGLClient::clbkSaveScreenshot(const char *path, int w, int h) {
+	if (!path || !*path) return false;
+	int vw = w, vh = h;
+	if (vw <= 0 || vh <= 0) {
+		if (m_sdlWindow) {
+			SDL_GL_GetDrawableSize(m_sdlWindow, &vw, &vh);
+		} else {
+			GLint vp[4] = {0};
+			glGetIntegerv(GL_VIEWPORT, vp);
+			vw = vp[2]; vh = vp[3];
+		}
+	}
+	if (vw <= 0 || vh <= 0) return false;
+
+	std::vector<unsigned char> pixels((size_t)vw * vh * 4);
+	glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	// glReadBuffer is not allowed in core profile for default
+	// framebuffer reads of GL_BACK on macOS — but glReadPixels
+	// against the default framebuffer reads from GL_BACK by default
+	// after a draw, so we can skip the explicit glReadBuffer call.
+	glReadPixels(0, 0, vw, vh, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
+	// Flip vertically: OpenGL origin is bottom-left, PNG / image
+	// loaders treat origin as top-left.
+	std::vector<unsigned char> flipped((size_t)vw * vh * 4);
+	const size_t row = (size_t)vw * 4;
+	for (int y = 0; y < vh; ++y) {
+		std::memcpy(flipped.data() + (size_t)y * row,
+		            pixels.data()  + (size_t)(vh - 1 - y) * row,
+		            row);
+	}
+
+	int rc = stbi_write_png(path, vw, vh, 4, flipped.data(), (int)row);
+	if (!rc) {
+		fprintf(stderr, "[OGLClient] screenshot write failed: %s\n", path);
+		return false;
+	}
+	fprintf(stderr, "[OGLClient] screenshot saved: %s (%dx%d)\n", path, vw, vh);
+	return true;
 }
 
 // ============================================================================

@@ -364,6 +364,199 @@ Ogni milestone comincia con:
 - **M7.b** — ✅ **DONE**: elevation displacement via `ELEVFILEHEADER` parse (uint8/int8/uint16/int16 dtypes supported), bilinear sampling in `BuildSpherePatch`. Crack-hiding skirts + proper per-vertex normal finite-differences restano come polish pass futuro (non-blocking, visually correct as-is).
 - **M14.b** — ✅ **DONE**: OGLvBase enumera ogni base del pianeta via `oapiGetBaseCount`/`oapiGetBasePadCount`/`oapiGetBasePadEquPos`, converte a world-coords con `oapiEquToGlobal`, e emette landing pad beacons (bianchi + rossi alternati stile PAPI-like) via `OGLBeaconArray` con cutoff a 500 km. Full `.bse` mesh parser (tarmacs, hangars) resta polish futuro — il contributo visibile più forte (luci pad) è coperto.
 
+### Follow-up Fase E — note post-M30
+
+- **Baseline curation is the path to a hard CI gate.** The repo
+  ships with three placeholder 0-byte baselines so the harness
+  exercises end-to-end on every PR but never blocks a merge on
+  framebuffer drift. Promoting a captured PNG to a real baseline
+  (drop the file into `Tests/rendering_parity/baselines/`) starts
+  gating that scenario at SSIM ≥ 0.92 (or 0.85 for `atmospheric:
+  true` entries). Aim for the 20-scenario set the original
+  roadmap calls out as M30 trickles in.
+- **The macos-14 runner has a window server**, so OpenGL works
+  off the bat — we don't need a software-GL fallback. Captures
+  are nonetheless OS-version sensitive (text antialiasing,
+  font-fallback resolution, etc.), which is why the parity
+  step is `continue-on-error: true` for now. Once a stable
+  baseline set lives in the repo, drop the flag to make the
+  gate hard.
+- **Capture latch** uses a `static bool` so a single Orbiter
+  process performs at most one screenshot per session; the
+  follow-up SDL_QUIT post triggers clean shutdown after the
+  PNG is on disk. Multi-frame / video-style captures would
+  need per-frame indexing on `--capture-out` (e.g. `%05d`
+  pattern); not in scope for the SSIM regression harness.
+
+### Follow-up Fase E — note post-M29
+
+- **HapticFX targets gamepads** (SDL_GameController). Older
+  joysticks that present as raw SDL_Joystick handles without a
+  GameController mapping won't get rumble. Adding SDL_Haptic
+  fallback for the legacy SDL_Joystick path is a future polish
+  item; the GameController mapping covers every modern Xbox / PS /
+  generic 8BitDo controller out of the box.
+- **No Config UI for haptic intensity yet** — effects fire at
+  hard-coded levels (Touchdown 0.7, EngineIgnite scaled to throttle,
+  AtmosphericBuffet 5..50 kPa linear). When user feedback surfaces
+  the right need, expose a `CfgJoystickPrm.HapticGain` slider in
+  the Joystick calibration dialog from M26.d.
+- **Touchdown intensity is fixed**: ideally we would scale by the
+  vertical descent rate at impact, but Vesselbase doesn't expose
+  the velocity at the precise transition frame. A future revision
+  can sample altitude from the previous frame and derive vz; for
+  the smoke target ("vibrazione on landing gear touchdown") the
+  fixed 0.7 level is sufficient.
+
+### Follow-up Fase E — note post-M28
+
+- **Notarization secrets** are not committed to the repo. The
+  release pipeline runs in unsigned-DMG mode unless an org admin
+  defines `APPLE_CODESIGN_IDENTITY` and `APPLE_NOTARIZATION_KEYCHAIN_PROFILE`
+  as repository secrets and exposes them to the
+  reusable-build-macos workflow via env (one-line addition to the
+  release job). Without notarization the user must run
+  `xattr -dr com.apple.quarantine /Applications/Orbiter.app` once
+  after first install.
+- **DMG size** is dominated by Textures (~400 MiB) and Scenarios
+  (~30 MiB). Trimming to a "lite" .dmg without the planet
+  bitmaps would require a separate post-install asset downloader
+  (M27.b's Earth pipeline already pioneers the pattern). Not
+  blocking for the first release tag.
+- **Smoke test scope**: the GitHub runner has no display, so the
+  CI smoke test only verifies the Launchpad initialisation path
+  (8 s timeout, grep for fatal output). Full scenario rendering
+  parity is the M30 harness's responsibility, gated by SSIM
+  thresholds against pre-recorded reference frames.
+
+### Follow-up Fase E — note post-M27
+
+- **architext.regular.ttf is a substitute**. The original
+  "architext" face from Crosswire Bibles (2003) is no longer
+  cleanly redistributable; we install Architects Daughter (Google
+  Fonts, SIL OFL 1.1) under the historical filename so existing
+  Orbiter.cfg paths keep resolving. The MANUSCRIPT font slot in
+  Orbiter retains a handwritten character without claiming the
+  original IP.
+- **Earth tile-pyramid generation** is documented as a manual
+  pipeline (texconv / compressonatorcli + quad-tree splitter) in
+  cmake/download_earth_lod8.py. Folding it into the configure
+  phase would require shipping a hardware texture compressor as a
+  CMake dependency — out of scope for M27. Future M27.bis can
+  package compressonatorcli as a FetchContent target if a
+  one-click hi-res Earth becomes a release blocker.
+- **Hash pin policy**: the three font hashes are pinned to
+  current upstream tags (FontAwesome 6.7.2 release; google/fonts
+  main HEAD at the time of commit). When bumping versions, the
+  CMake module fails closed and the maintainer must refresh the
+  pin via `shasum -a 256` on the new file.
+
+### Follow-up Fase E — note post-M26
+
+- **macOS user paths** are macOS-only. Linux falls back to the
+  legacy cwd-relative `Orbiter.log` + cwd-relative `Orbiter.cfg`.
+  Adding XDG-compliant paths
+  (`$XDG_CONFIG_HOME/Orbiter/Orbiter.cfg`,
+  `$XDG_STATE_HOME/Orbiter/log/`) for Linux is a future item if
+  the .deb / .AppImage build needs it.
+- **Keymap editor** captures via `ImGui::IsKeyPressed` so only
+  keys that ImGui maps to a named ImGuiKey are translatable to
+  OAPI_KEY_*. The numpad block, NumLock-only keys, and OS-level
+  Cmd / Win keys aren't reachable through the capture loop yet —
+  document as a follow-up if a user reports a missing key.
+- **Joystick calibration** displays the raw SDL axis state
+  already-mapped through SDLPlatform's static deadzone band; the
+  configured CfgJoystickPrm.Deadzone slider only affects
+  downstream consumers (vessel attitude). A future polish pass
+  could wire the dialog deadzone directly into SDLPlatform's
+  deadzone constant for a true round-trip preview.
+- The legacy Wine-detection block at Orbiter.cpp:553 is already
+  `#ifdef _WIN32`-gated; the macOS branch sets `bWINEenv = false`.
+  No env-var override added — Wine is irrelevant for native
+  .app builds.
+
+### Follow-up Fase E — note post-M25
+
+- **ScnEditor on macOS** ships with the 6 most-used tabs (State /
+  Orientation / AngularVel / Propellant / Date / Vessel picker).
+  The remaining 6 Win32 tabs (New, Edit, Save, Elements, Landed,
+  Docking, Custom) are accessible through alternative in-sim
+  affordances and are not blocking. A future M25.d.bis can add
+  them when concrete user demand arises — file follow-ups in
+  GitHub Issues with `platform:macos` + `scope:scneditor`.
+- **TrackIR** stays excluded from macOS builds (NaturalPoint
+  driver is Win32-only). The Launchpad Modules tab no longer
+  shows it (set in M22.d). Future macOS head-tracker support
+  would need a separate driver layer (e.g. Apple Vision Pro,
+  EyeTracker.app) which is out of scope for M25.
+- **AtlantisConfig** lives in Modules/Startup/ as a startup
+  plugin and registers under the "Vessel configuration" parent
+  in the LaunchpadRegistry — M22.f's plugin path opens a modal
+  for the new clbkRender editor.
+
+### Follow-up Fase E — note post-M24
+
+- **Two gcGUI.h headers** coexist: the legacy
+  `OVP/D3D9Client/gcGUI.h` (Win32-only, internal D3D9Client client)
+  and the new `Orbitersdk/include/gcGUI.h` (cross-platform, the
+  canonical addon-facing header). Win32 plugins that include
+  `<gcGUI.h>` from the SDK now get the new file with the legacy
+  HWND virtuals still present, so source compatibility is
+  preserved. Future cleanup: collapse to a single header once the
+  D3D9Client port is itself updated to the new ABI.
+- **Existing Win32 D3D9 plugins** that override the legacy HWND
+  registration on the new gcGUIBase will compile with virtual
+  pure errors only if they implement `gcGUIBase` themselves
+  (not the typical case — addons only override `gcGUIApp` which
+  is unchanged). Verified D3D9Client itself (its `WindowManager`
+  class) lives outside this build and is not affected.
+- **OGLWindowMgr is intentionally simple** — single-window per
+  application, ImGui CollapsingHeaders for sub-sections, no
+  custom dock pane. The Win32 docked side bar is a deliberate
+  feature gap on macOS; users get standalone draggable / resizable
+  ImGui windows instead. Future polish (real dock zone with
+  per-app pinning) can be layered on without API changes.
+
+### Follow-up Fase E — note post-M23
+
+- **All 11 ImGui dialogs were already present** from earlier work
+  (DlgInfo / DlgMap / DlgCamera / DlgHelp / DlgFocus / DlgRecorder /
+  DlgTacc / DlgCapture / DlgFunction / DlgOptions / DlgMenuCfg ≈
+  5800 lines). M23 reduced to: cross-platform URL fallback in
+  DlgHelp, SDL joystick enumeration in DlgOptions, and a
+  case-insensitive vessel-cfg lookup so the dispatch path that was
+  already wired in `Orbiter::KbdInputBuffered_System` could
+  actually reach a running scenario without aborting on
+  Deltaglider.cfg-vs-DeltaGlider.cfg.
+- **Case-insensitive lookup** is plumbed through
+  `OpenFileIgnoreCase()` and currently wired only into
+  `Vessel::OpenConfigFile`. Other CONFIGDIR-relative loads (mesh,
+  texture, base, scenario) may surface similar mismatches as more
+  scenarios are exercised; switch them to the helper as needed.
+- **Build infra debt** — vessel module dylibs are not built by the
+  default `--target Orbiter` invocation; the user has to enumerate
+  vessels (`DeltaGlider ShuttleA Atlantis ...`) manually. M22.d's
+  pattern (centralised CMakeLists wiring) should be extended to
+  include vessel modules under `--target macos-bundle` so the .app
+  ships with the full set without manual target listing.
+
+### Follow-up Fase E — note post-M22
+
+- **M22.f / Extra API extension** — `LaunchpadItem::clbkRender()` is a
+  new virtual on the public `Orbitersdk` API (default impl returns
+  false). External Win32-only addons that override `clbkOpen(HWND)`
+  but not `clbkRender()` will display a description-only modal on
+  macOS. Per-plugin migration is part of M25 (Win32 plugins port).
+- **M22.d / `.info` sidecars** — `cmake/orbiter_module_info.cmake`
+  emits a portable `<plugin>.info` next to every plugin shared
+  library. Future plugins must call `orbiter_module_info(<target>
+  CATEGORY <c> DESCRIPTION <d>)` from their CMakeLists, otherwise
+  the Modules tab will list them under "Miscellaneous" with no
+  description (degraded but functional — activation still works).
+- **TrackIR plugin** is now excluded from non-Windows builds since it
+  depends on the proprietary NaturalPoint NPClient driver. (Roadmap
+  item M25 covers the broader Win32 plugins port.)
+
 ### Follow-up Fase C — polish non-bloccanti post-M15
 
 - **M15 — interactive verification**: smoke tests confermano zero-crash cross-scenario ma l'acceptance visiva del ciclo F1 → VC (mesh cockpit, look-around, MFD rendering, HUD overlay, area click response) richiede sessione desktop. Da sottoporre ad human-in-the-loop prima del tag release.
@@ -398,12 +591,12 @@ Ogni milestone comincia con:
 | M19 | CString + irrKlang shim | D | ✅ | this branch (XRString std::string-backed shim + irrKlang.h include gate + pluggable engine factory) |
 | M20 | XRSound core integration | D | ✅ | this branch (CMake platform switch + XRPlatform.h POSIX shims + dlsym RTLD_DEFAULT bridge + libXRSound.dylib 1.1 MB) |
 | M21 | Default sounds pack | D | ✅ | this branch (XRSound_assets install verified 302 files, xrsound_openal_smoke CTest target + API round-trip) |
-| M22 | Launchpad 6 tab | E | ☐ | — |
-| M23 | Dialogs core F3–F10 | E | ☐ | — |
-| M24 | WindowMgr gcGUI | E | ☐ | — |
-| M25 | Win32 plugins port | E | ☐ | — |
-| M26 | Keymap/joystick/config | E | ☐ | — |
-| M27 | Missing assets | E | ☐ | — |
-| M28 | CI/CD macOS | E | ☐ | — |
-| M29 | Force feedback | E | ☐ | — |
-| M30 | Parity test harness | E | ☐ | — |
+| M22 | Launchpad 6 tab | E | ✅ | this branch (M22.a scaffold + M22.b Scenario w/ thumbnails+desc+splitter + M22.c Video + M22.d Modules+`.info` infra + M22.e Options 12 pages + M22.f Extra+`clbkRender` API + M22.g 15 builtin extras ImGui + M22.h About+geometry persist) |
+| M23 | Dialogs core F3–F10 | E | ✅ | this branch (M23.a DlgHelp URL fallback + DlgOptions SDL joystick + M23.b F-key dispatch verified + M23.c case-insensitive vessel cfg lookup; all 11 ImGui dialogs already in place from earlier work) |
+| M24 | WindowMgr gcGUI | E | ✅ | this branch (cross-platform Orbitersdk/include/gcGUI.h with legacy HWND + new ImGui overloads + OGLWindowMgr backend + clbkRenderImGuiPlugins hook + ORBITER_GCGUI_TEST smoke driver) |
+| M25 | Win32 plugins port | E | ✅ | this branch (M25.a Rcontrol verified ImGui-native + M25.b AtlantisConfig clbkRender override + M25.c Meshdebug ImGui dialog + M25.d ScnEditor ImGui port w/ State+Orientation+AngVel+Propellant+Date tabs; TrackIR excluded macOS already in M22.d) |
+| M26 | Keymap/joystick/config | E | ✅ | this branch (M26.a UserPaths.{h,cpp} → ~/Library/Application Support/Orbiter/Orbiter.cfg + ~/Library/Logs/Orbiter/Orbiter.log + M26.b Wine detection already gated + M26.c OGLKeymapEditor visual keyboard + M26.d OGLJoystickCalibration live SDL axis monitor) |
+| M27 | Missing assets | E | ✅ | this branch (M27.a cmake/macos_assets.cmake fetches fa-solid-900 + Lekton-Bold + ArchitectsDaughter→architext.regular under SIL OFL with pinned SHA-256; M27.b cmake/download_earth_lod8.py opt-in via ORBITER_FETCH_EARTH_BLUEMARBLE → Wikimedia Commons mirror, tile-pyramid step documented as manual offline pipeline) |
+| M28 | CI/CD macOS | E | ✅ | this branch (cmake/codesign.cmake + Orbiter.entitlements.plist + macos-bundle-distributable + macos-codesign + macos-dmg targets; .github/workflows/reusable-build-macos.yml + on-push-macos.yml + pr-build-macos.yml + extended release.yml with macOS DMG job) |
+| M29 | Force feedback | E | ✅ | this branch (HapticFX module wraps SDL_GameControllerRumble; SDLPlatform owns the channel and binds it on Initialize; Orbiter::EndTimeStep emits Touchdown / EngineIgnite / AtmosphericBuffet effects from focus-vessel state edges) |
+| M30 | Parity test harness | E | ✅ | this branch (M30.a --capture-frame CLI + OGLClient::clbkSaveScreenshot via stb_image_write; M30.b Tests/rendering_parity/run_parity.py with skimage SSIM; M30.c manifest.json + 3 sample scenarios + placeholder baselines + ctest target; M30.d pr-build-macos parity step continue-on-error) |

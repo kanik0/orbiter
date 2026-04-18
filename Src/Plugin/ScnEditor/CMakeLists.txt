@@ -1,15 +1,24 @@
 # Copyright (c) Martin Schweiger
 # Licensed under the MIT License
 
+# Pull in imgui_SOURCE_DIR for the macOS / Linux ImGui dialog port
+# (ScnEditorImGui.cpp). Win32 path keeps using the resource-driven
+# dialog tree.
+if(NOT WIN32)
+	FetchContent_MakeAvailable(imgui)
+endif()
+
 add_library(ScnEditor SHARED
 	ScnEditor.cpp
 	Editor.cpp
 	Convert.cpp
 	ScnEditor.rc
+	$<$<NOT:$<PLATFORM_ID:Windows>>:ScnEditorImGui.cpp>
 )
 
 target_include_directories(ScnEditor
 	PUBLIC ${ORBITER_SOURCE_SDK_INCLUDE_DIR}
+	PUBLIC ${imgui_SOURCE_DIR}
 )
 
 target_link_libraries(ScnEditor
@@ -53,6 +62,11 @@ install(FILES ScnEditorAPI.h
 
 install(FILES ScnEdit.png
 	DESTINATION ${ORBITER_INSTALL_TEXTURES_DIR}/MenuInfoBar
+)
+
+orbiter_module_info(ScnEditor
+	CATEGORY "Tools and dialogs"
+	DESCRIPTION "SCENARIO EDITOR:\n\nCreate and delete spacecraft during the simulation — edit position, orientation, orbital elements, surface location, fuel status and docking connections. Reset the simulation time.\n\nThe scenario editor can be opened by selecting \"Scenario editor\" in the Custom Functions dialog (Ctrl-F4)."
 )
 
 if(ORBITER_MAKE_DOC)

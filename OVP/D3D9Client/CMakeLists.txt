@@ -124,7 +124,14 @@ set(IncludeFiles
 )
 
 set(APIHeaders
-    ${INCLUDE_TARGET_DIR}/gcGUI.h
+	# gcGUI.h is now ship-canonical from Orbitersdk/include/ (the
+	# macOS port's cross-platform header), copied into
+	# ${INCLUDE_TARGET_DIR} by the Orbitersdk top-level
+	# `copy_sdk_include` target. Listing the source-tree path here
+	# keeps IDEs surfacing the right file under the D3D9Client
+	# project tree without re-emitting a duplicate ninja rule that
+	# would conflict with copy_sdk_include's GLOB output.
+	${ORBITER_SOURCE_SDK_INCLUDE_DIR}/gcGUI.h
 	${INCLUDE_TARGET_DIR}/gcCoreAPI.h
 )
 
@@ -218,14 +225,20 @@ add_custom_command(
 	COMMAND ${CMAKE_COMMAND} -E copy_directory ${D3D9_SOURCE_DIR}/shaders/ ${ORBITER_BINARY_MODULE_DIR}/D3D9Client
 )
 
-add_custom_command(OUTPUT ${INCLUDE_TARGET_DIR}/gcCoreAPI.h ${INCLUDE_TARGET_DIR}/gcGUI.h
-	DEPENDS ${D3D9_SOURCE_DIR}/gcGUI.h ${D3D9_SOURCE_DIR}/gcCore.h ${D3D9_SOURCE_DIR}/gcCore.cpp
+# gcCoreAPI.h is generated from gcCore.h via InterfaceBuilder; gcGUI.h
+# is now ship-canonical from Orbitersdk/include/ (added by the macOS
+# port — cross-platform header with both legacy HWND virtuals and
+# new ImGui overloads). The Orbitersdk top-level CMakeLists already
+# copies it into ${INCLUDE_TARGET_DIR} via copy_sdk_include, so we
+# stop emitting a second rule here that would conflict at ninja
+# generation time.
+add_custom_command(OUTPUT ${INCLUDE_TARGET_DIR}/gcCoreAPI.h
+	DEPENDS ${D3D9_SOURCE_DIR}/gcCore.h ${D3D9_SOURCE_DIR}/gcCore.cpp
 	COMMAND ${InterfaceBuilder} ${D3D9_SOURCE_DIR}/gcCore.h ${INCLUDE_TARGET_DIR}/gcCoreAPI.h ${D3D9_SOURCE_DIR}/gcCore.cpp
-	COMMAND ${CMAKE_COMMAND} -E copy ${D3D9_SOURCE_DIR}/gcGUI.h ${INCLUDE_TARGET_DIR}/gcGUI.h
 	VERBATIM
 )
 add_custom_target(D3D9Client_Interface
-	DEPENDS ${INCLUDE_TARGET_DIR}/gcCoreAPI.h ${INCLUDE_TARGET_DIR}/gcGUI.h
+	DEPENDS ${INCLUDE_TARGET_DIR}/gcCoreAPI.h
 )
 
 add_dependencies(D3D9Client

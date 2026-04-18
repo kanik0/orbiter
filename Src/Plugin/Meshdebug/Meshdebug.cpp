@@ -15,16 +15,16 @@
 #define ORBITER_MODULE
 #ifdef _WIN32
 #include <windows.h>
+#include <commctrl.h>
 #else
 #include "OrbiterPlatform.h"
 #include "resource_stub.h"
-#endif
-#ifdef _WIN32
-#include <commctrl.h>
+#include "imgui.h"
 #endif
 #include "orbitersdk.h"
 #include "resource.h"
 #include <cstdio>
+#include <cmath>
 
 using std::min;
 using std::max;
@@ -55,9 +55,73 @@ bool blink;
 
 void ChangeMesh (int idx);
 void ChangeGroup (int idx);
+void GetMeshParams ();
 void OpenDlgClbk (void *context);
 void SetMaterialOpacity (MESHHANDLE hMesh, float opac);
 INT_PTR CALLBACK MsgProc (HWND, UINT, WPARAM, LPARAM);
+
+#ifndef _WIN32
+// Cross-platform ImGui dialog. Uses the same global state
+// (g_vessel, g_mesh, g_imesh, g_igrp, ...) and ChangeMesh /
+// ChangeGroup helpers as the Win32 path so the underlying mesh
+// modulation logic is shared bit-for-bit.
+class MeshDebugImGui : public ImGuiDialog {
+public:
+	MeshDebugImGui() : ImGuiDialog("Mesh Debugger", {340, 180}) {}
+
+	void Activate() {
+		ImGuiDialog::Activate();
+		GetMeshParams();
+		g_hDlg = (HWND)this; // non-null sentinel: opcPreStep blink toggle
+	}
+
+	void OnDraw() override {
+		VESSEL *focus = oapiGetFocusInterface();
+		if (!focus) {
+			ImGui::TextDisabled("No focus vessel.");
+			return;
+		}
+		// If focus changed since last frame, re-scan mesh count.
+		if (focus != g_vessel) GetMeshParams();
+		if (g_nmesh == 0) {
+			ImGui::TextDisabled("Focus vessel has no visual yet.");
+			return;
+		}
+
+		ImGui::Text("Vessel: %s", focus->GetName());
+		ImGui::Separator();
+
+		int m = g_imesh;
+		ImGui::SetNextItemWidth(120);
+		if (ImGui::SliderInt("Mesh", &m, 0, (int)g_nmesh - 1)) {
+			if (m != g_imesh) ChangeMesh(m);
+		}
+		ImGui::SameLine();
+		ImGui::TextDisabled("(0..%d)", (int)g_nmesh - 1);
+
+		if (g_ngrp > 0) {
+			int gi = g_igrp;
+			ImGui::SetNextItemWidth(120);
+			if (ImGui::SliderInt("Group", &gi, 0, (int)g_ngrp - 1)) {
+				if (gi != g_igrp) ChangeGroup(gi);
+			}
+			ImGui::SameLine();
+			ImGui::TextDisabled("(0..%d)", (int)g_ngrp - 1);
+		}
+
+		ImGui::Spacing();
+		ImGui::TextWrapped("The selected mesh group blinks against a "
+			"semi-transparent background of the rest of the vessel mesh.");
+	}
+
+	~MeshDebugImGui() {
+		if (g_mesh) ChangeMesh(-1);
+		g_hDlg = 0;
+	}
+};
+
+static MeshDebugImGui *g_imguiDlg = nullptr;
+#endif // !_WIN32
 
 // ==============================================================
 // API interface
@@ -109,7 +173,12 @@ DLLCLBK void opcPreStep (double simt, double simdt, double mjd)
 
 void OpenDlgClbk (void *context)
 {
+#ifdef _WIN32
 	g_hDlg = oapiOpenDialog (g_hInst, IDD_DBGDIALOG, MsgProc);
+#else
+	if (!g_imguiDlg) g_imguiDlg = new MeshDebugImGui();
+	g_imguiDlg->Activate();
+#endif
 }
 
 

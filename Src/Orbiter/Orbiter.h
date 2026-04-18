@@ -391,6 +391,11 @@ private:
 
 #ifndef _WIN32
 	orbiter::SDLPlatform *m_pSDL;  // SDL2 platform layer (macOS/Linux)
+	// HapticFX edge-detection state (touchdown rising edge needs the
+	// previous-frame contact bit; engine-ignite needs the previous
+	// main-thrust level).
+	bool m_haptPrevContact = false;
+	double m_haptPrevMain = 0.0;
 #endif
 
 	// render parameters (only used if graphics client is present)
@@ -472,6 +477,13 @@ public:
 	bool AttachGraphicsClient (oapi::GraphicsClient *gc);
 	bool RemoveGraphicsClient (oapi::GraphicsClient *gc);
 	inline oapi::GraphicsClient *GetGraphicsClient () { return gclient; }
+
+#ifndef _WIN32
+	// macOS / Linux: expose the SDL platform layer so cross-platform
+	// dialogs (joystick calibration, keymap editor) can read live
+	// input state without going through DirectInput stubs.
+	inline orbiter::SDLPlatform *GetSDLPlatform() { return m_pSDL; }
+#endif
 
 private:
 	oapi::GraphicsClient *gclient;       // external graphics client (renderer)

@@ -45,6 +45,13 @@ endfunction()
 # Register unit tests
 add_test_file(Lua.Interpreter)
 
+# Rendering parity harness (M30) — driven by a Python script that
+# captures a frame from a live scenario and SSIM-compares it with a
+# baseline. POSIX-only because it consumes the OGLClient capture path.
+if(NOT WIN32)
+	add_subdirectory(rendering_parity)
+endif()
+
 if (BUILD_ORBITER_SERVER)
 
 	# Sanity check for scenario tests

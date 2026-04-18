@@ -35,3 +35,8 @@ install(TARGETS Notes
 install(FILES Notes.png
 	DESTINATION ${ORBITER_INSTALL_TEXTURES_DIR}/MenuInfoBar
 )
+
+orbiter_module_info(Notes
+	CATEGORY "Tools and dialogs"
+	DESCRIPTION "FLIGHT NOTES:\n\nFloating notes window for ad-hoc text annotations during a simulation session. Useful for keeping checklists, mission notes, or reminders next to the cockpit view."
+)

@@ -100,6 +100,18 @@ set(common_src
 	Memstat.cpp
 	Util.cpp
 	ZTreeMgr.cpp
+	# Cross-platform default vtable for the LaunchpadItem API
+	LaunchpadItem.cpp
+	LaunchpadRegistry.cpp
+	# Built-in Extra-tab items, ImGui-based (compiled-out on Windows
+	# where TabExtra.cpp owns the equivalent Win32 dialog flow).
+	BuiltinLaunchpadItems.cpp
+	# User-writable paths (~/Library/Application Support, ~/Library/Logs)
+	UserPaths.cpp
+	# Gamepad force-feedback / rumble (SDL_GameController-based on
+	# macOS / Linux, no-op stub on Win32 where DirectInput already
+	# exposes IDirectInputDevice8::SetEffect natively).
+	HapticFX.cpp
 )
 
 # Platform-specific sources
@@ -259,10 +271,27 @@ else()
 		file(WRITE ${_symlink_script}
 			"#!/bin/sh\n"
 			"mkdir -p \"${CMAKE_BINARY_DIR}/Modules/Celbody\" \"${CMAKE_BINARY_DIR}/Fonts\"\n"
+			"# (1) Bridge the prebuilt Win32 .dll archives shipped under\n"
+			"#     Modules/Celbody/ to .dylib symlinks so dlopen finds them.\n"
 			"for f in \"${CMAKE_BINARY_DIR}\"/Modules/Celbody/*.dll; do\n"
 			"  [ -f \"$f\" ] || continue\n"
 			"  base=$(basename \"$f\" .dll)\n"
 			"  ln -sf \"$f\" \"${CMAKE_BINARY_DIR}/Modules/Celbody/lib$base.dylib\" 2>/dev/null\n"
+			"done\n"
+			"# (2) Bridge the planet / Galsat / Satsat / Vsop87 dylibs\n"
+			"#     that get built into Modules/ (because SHARED libraries\n"
+			"#     on macOS use the LIBRARY_OUTPUT_DIRECTORY — Modules/ —\n"
+			"#     instead of the Modules/Celbody/ value set as RUNTIME).\n"
+			"#     Orbiter dlopen's Modules/Celbody/lib<Name>.dylib, so we\n"
+			"#     symlink only the known celbody libs (avoids shadowing\n"
+			"#     plugin libs that also live in Modules/Plugin/).\n"
+			"for name in Sun Mercury Venus Earth Mars Jupiter Saturn Uranus Neptune \\\n"
+			"            Moon Vsop87 Galsat Io Europa Ganymede Callisto \\\n"
+			"            Satsat Mimas Enceladus Tethys Dione Rhea Titan \\\n"
+			"            Hyperion Iapetus Phoebe Vesta Nereid Proteus; do\n"
+			"  src=\"${CMAKE_BINARY_DIR}/Modules/lib$name.dylib\"\n"
+			"  dst=\"${CMAKE_BINARY_DIR}/Modules/Celbody/lib$name.dylib\"\n"
+			"  [ -f \"$src\" ] && ln -sf \"../lib$name.dylib\" \"$dst\" 2>/dev/null\n"
 			"done\n"
 			"exit 0\n"
 		)
@@ -279,7 +308,14 @@ string(TIMESTAMP DATE "%d %b %Y")
 string(TIMESTAMP VERSION "%y%m%d")
 configure_file(about.hpp.in about.hpp @ONLY)
 
-# macOS .app bundle target
+# macOS .app bundle + DMG packaging
+if(APPLE)
+	# Code-signing helper + macos-bundle-distributable + macos-dmg
+	# targets. Pulls in APPLE_CODESIGN_IDENTITY +
+	# APPLE_NOTARIZATION_KEYCHAIN_PROFILE cache vars.
+	include(${CMAKE_SOURCE_DIR}/cmake/codesign.cmake)
+endif()
+
 if(APPLE)
 	set(ORBITER_VERSION "${VERSION}")
 	configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in ${CMAKE_BINARY_DIR}/Info.plist @ONLY)

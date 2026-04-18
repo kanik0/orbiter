@@ -350,6 +350,14 @@ if(NOT WIN32)
 	set(CMAKE_RC_COMPILER "")
 endif()
 
+# macOS / Linux: fetch the third-party fonts the imgui dialogs depend
+# on (FontAwesome 6 Solid, Lekton-Bold, Architects Daughter as
+# substitute for the legacy "architext" face). Hashes pinned in the
+# module so the build fails closed on a tampered upstream.
+if(NOT WIN32)
+	include(${CMAKE_SOURCE_DIR}/cmake/macos_assets.cmake)
+endif()
+
 # Sub-projects
 add_subdirectory(Extern)
 add_subdirectory(Src)

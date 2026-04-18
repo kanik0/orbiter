@@ -11,6 +11,10 @@
 #include <stdio.h>
 #ifdef _WIN32
 #include <io.h>
+#else
+#  include <unistd.h>
+#  include "imgui.h"
+#  define _access access
 #endif
 
 class VesselConfig;
@@ -34,6 +38,10 @@ public:
 	char *Name() { return (char*)"Atlantis Configuration"; }
 	char *Description();
 	bool clbkOpen (HWND hLaunchpad);
+#ifndef _WIN32
+	bool clbkRender() override;        // ImGui editor for cross-platform Launchpad
+	void EnsureSeeded();
+#endif
 	bool TexHiresEnabled() const;
 	void TexEnableHires (bool enable);
 	bool MshHiresEnabled() const;
@@ -41,6 +49,13 @@ public:
 	void InitDialog (HWND hWnd);
 	void Apply (HWND hWnd);
 	static INT_PTR CALLBACK DlgProc (HWND, UINT, WPARAM, LPARAM);
+
+private:
+#ifndef _WIN32
+	bool m_uiSeeded   = false;         // initial state copied from disk?
+	bool m_uiTexHires = false;
+	bool m_uiMshHires = false;
+#endif
 };
 
 char *AtlantisConfig::Description()
@@ -135,6 +150,53 @@ INT_PTR CALLBACK AtlantisConfig::DlgProc (HWND hWnd, UINT uMsg, WPARAM wParam, L
 	}
 	return 0;
 }
+
+#ifndef _WIN32
+void AtlantisConfig::EnsureSeeded()
+{
+	if (m_uiSeeded) return;
+	m_uiTexHires = TexHiresEnabled();
+	m_uiMshHires = MshHiresEnabled();
+	m_uiSeeded   = true;
+}
+
+// Cross-platform editor for the Orbiter macOS / Linux Launchpad.
+// Drawn inside the modal popup opened from the Extra tab — the host
+// supplies the surrounding ImGui::BeginPopupModal scope, so we only
+// emit the form body and an Apply button. Returns true to keep the
+// editor open across frames.
+bool AtlantisConfig::clbkRender()
+{
+	EnsureSeeded();
+
+	ImGui::TextWrapped("Activate the high-resolution texture and mesh "
+		"variants of the default Space Shuttle Atlantis. The textures "
+		"and the high-res VC mesh are heavier to load — keep the "
+		"low-res variant on lower-spec hosts.");
+
+	ImGui::Spacing();
+	ImGui::SeparatorText("Cockpit textures");
+	ImGui::RadioButton("High resolution (256/1024 pixel)", m_uiTexHires == true);
+	if (ImGui::IsItemClicked()) m_uiTexHires = true;
+	ImGui::RadioButton("Standard resolution",              m_uiTexHires == false);
+	if (ImGui::IsItemClicked()) m_uiTexHires = false;
+
+	ImGui::Spacing();
+	ImGui::SeparatorText("Virtual cockpit mesh");
+	ImGui::RadioButton("High detail",   m_uiMshHires == true);
+	if (ImGui::IsItemClicked()) m_uiMshHires = true;
+	ImGui::RadioButton("Standard detail", m_uiMshHires == false);
+	if (ImGui::IsItemClicked()) m_uiMshHires = false;
+
+	ImGui::Spacing();
+	if (ImGui::Button("Apply")) {
+		TexEnableHires(m_uiTexHires);
+		MshEnableHires(m_uiMshHires);
+		m_uiSeeded = false; // re-read from disk in case rename failed
+	}
+	return true; // host's "Close" button signals dismissal
+}
+#endif // !_WIN32
 
 // ==============================================================
 // The DLL entry point

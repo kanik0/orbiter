@@ -15,8 +15,16 @@ if(ORBITER_BUILD_XRSOUND)
 endif()
 
 target_include_directories(LuaInterpreter
-	PUBLIC ${ORBITER_SOURCE_SDK_INCLUDE_DIR}
+	# Build-tree SDK include dir comes first so the
+	# InterfaceBuilder-generated gcCoreAPI.h (real D3D9 API) shadows
+	# the source-tree gcCoreAPI.h stub on Windows. On macOS / Linux
+	# the build-tree dir is empty for gcCoreAPI (no InterfaceBuilder)
+	# so the include resolution falls through to the source-tree
+	# stub via ORBITER_SOURCE_SDK_INCLUDE_DIR. Without this order
+	# Windows compiles Interpreter.cpp against the stub and fails
+	# with "CAMERAHANDLE: undeclared identifier".
 	PUBLIC ${ORBITER_BINARY_SDK_DIR}/include
+	PUBLIC ${ORBITER_SOURCE_SDK_INCLUDE_DIR}
 	PUBLIC ${ORBITER_BINARY_SDK_DIR}/XRSound/
 )
 

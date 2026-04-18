@@ -31,3 +31,8 @@ install(TARGETS Framerate
 	RUNTIME
 	DESTINATION ${ORBITER_INSTALL_PLUGIN_DIR}
 )
+
+orbiter_module_info(Framerate
+	CATEGORY "Developer resources and samples"
+	DESCRIPTION "FRAMERATE:\n\nLog frame timing statistics during the simulation — useful for performance analysis and to gauge the cost of new vessels, scenery or rendering settings. Open the framerate dialog from the Custom Functions dialog (Ctrl-F4)."
+)
