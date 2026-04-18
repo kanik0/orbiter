@@ -18,6 +18,10 @@
 // public interface to decode scenario thumbnails.
 #include "stb_image.h"
 
+// SDL2 — needed to enumerate display modes for the Video tab. SDL_Init has
+// already been called by SDLPlatform before the Launchpad runs.
+#include <SDL.h>
+
 // OpenGL — needed for direct texture upload of scenario thumbnails into the
 // pre-game ImGui frame.
 #if defined(__APPLE__)
@@ -73,6 +77,37 @@ void OGLLaunchpad::InitFromConfig()
 	m_vid.bTryStencil = m_cfg->CfgDevPrm.bTryStencil;
 	m_vid.winW        = (int)m_cfg->CfgDevPrm.WinW;
 	m_vid.winH        = (int)m_cfg->CfgDevPrm.WinH;
+
+	// Enumerate SDL display modes for the primary display, deduplicate by
+	// (w,h) so the user picks a resolution rather than a refresh rate. Skip if
+	// SDL_INIT_VIDEO has not been initialised — we still keep the manual
+	// width/height fields working.
+	m_vid.modeList.clear();
+	if (SDL_WasInit(SDL_INIT_VIDEO)) {
+		int nmodes = SDL_GetNumDisplayModes(0);
+		for (int i = 0; i < nmodes; ++i) {
+			SDL_DisplayMode dm;
+			if (SDL_GetDisplayMode(0, i, &dm) != 0) continue;
+			std::pair<int,int> wh{dm.w, dm.h};
+			if (std::find(m_vid.modeList.begin(), m_vid.modeList.end(), wh)
+				== m_vid.modeList.end())
+				m_vid.modeList.push_back(wh);
+		}
+		// Largest first (most useful default).
+		std::sort(m_vid.modeList.begin(), m_vid.modeList.end(),
+			[](const std::pair<int,int>& a, const std::pair<int,int>& b) {
+				return (long long)a.first * a.second > (long long)b.first * b.second;
+			});
+	}
+	// Pick the entry that matches the saved window size, fallback to entry 0.
+	m_vid.modeIndex = 0;
+	for (size_t i = 0; i < m_vid.modeList.size(); ++i) {
+		if (m_vid.modeList[i].first == m_vid.winW &&
+			m_vid.modeList[i].second == m_vid.winH) {
+			m_vid.modeIndex = (int)i;
+			break;
+		}
+	}
 
 	// Splitter positions persisted across runs
 	if (m_cfg->CfgWindowPos.LaunchpadScnListWidth > 0)
@@ -478,7 +513,71 @@ void OGLLaunchpad::RenderTabModules(float availH)
 void OGLLaunchpad::RenderTabVideo(float availH)
 {
 	ImGui::BeginChild("VideoContent", ImVec2(0, availH), false);
-	ImGui::TextDisabled("Video tab — implemented in M22.c");
+
+	ImGui::TextDisabled("Graphics engine");
+	ImGui::Text("OGLClient (OpenGL 4.1 Core Profile, SDL2)");
+	ImGui::Text("Renderer: built-in / single client on macOS");
+	ImGui::Separator();
+	ImGui::Spacing();
+
+	ImGui::TextDisabled("Display");
+
+	// Resolution combo populated from SDL_GetDisplayMode.
+	if (!m_vid.modeList.empty()) {
+		std::string preview;
+		if (m_vid.modeIndex >= 0 && m_vid.modeIndex < (int)m_vid.modeList.size()) {
+			char buf[64];
+			snprintf(buf, sizeof(buf), "%d x %d",
+				m_vid.modeList[m_vid.modeIndex].first,
+				m_vid.modeList[m_vid.modeIndex].second);
+			preview = buf;
+		} else {
+			preview = "(custom)";
+		}
+		if (ImGui::BeginCombo("Resolution", preview.c_str())) {
+			for (size_t i = 0; i < m_vid.modeList.size(); ++i) {
+				char buf[64];
+				snprintf(buf, sizeof(buf), "%d x %d",
+					m_vid.modeList[i].first, m_vid.modeList[i].second);
+				bool sel = ((int)i == m_vid.modeIndex);
+				if (ImGui::Selectable(buf, sel)) {
+					m_vid.modeIndex = (int)i;
+					m_vid.winW = m_vid.modeList[i].first;
+					m_vid.winH = m_vid.modeList[i].second;
+				}
+				if (sel) ImGui::SetItemDefaultFocus();
+			}
+			ImGui::EndCombo();
+		}
+	} else {
+		ImGui::TextDisabled("(SDL display modes unavailable — using manual size)");
+	}
+
+	// Manual width / height for users who need an off-list size.
+	ImGui::PushItemWidth(120.0f);
+	if (ImGui::InputInt("Width",  &m_vid.winW, 0)) {
+		if (m_vid.winW < 320) m_vid.winW = 320;
+	}
+	ImGui::SameLine();
+	if (ImGui::InputInt("Height", &m_vid.winH, 0)) {
+		if (m_vid.winH < 240) m_vid.winH = 240;
+	}
+	ImGui::PopItemWidth();
+
+	ImGui::Spacing();
+	ImGui::TextDisabled("Mode");
+	ImGui::Checkbox("Fullscreen",          &m_vid.bFullscreen);
+	bool vsync = !m_vid.bNoVsync;
+	if (ImGui::Checkbox("Vertical sync",   &vsync))
+		m_vid.bNoVsync = !vsync;
+	ImGui::Checkbox("Try stencil buffer",  &m_vid.bTryStencil);
+	ImGui::Checkbox("Stereo (anaglyph)",   &m_vid.bStereo);
+
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::TextWrapped("Changes apply on the next launch. macOS uses "
+		"borderless fullscreen — the OS picks the optimum refresh rate.");
+
 	ImGui::EndChild();
 }
 
