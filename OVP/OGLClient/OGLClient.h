@@ -40,6 +40,7 @@ public:
 	void clbkImGuiNewFrame() override;
 	void clbkImGuiRenderDrawData() override;
 	uint64_t clbkImGuiSurfaceTexture(SURFHANDLE surf) override;
+	void clbkRenderImGuiPlugins() override;
 
 	// === Session lifecycle ===
 

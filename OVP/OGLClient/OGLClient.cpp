@@ -35,6 +35,13 @@
 #include "backends/imgui_impl_sdl2.h"
 #include "backends/imgui_impl_opengl3.h"
 
+// gcGUI side-bar host. gcGetGUICore() is exported from OGLWindowMgr.cpp
+// and resolved at run time by gcGUIApp::Initialize via dlsym
+// (RTLD_DEFAULT). Included before the namespace block so the nested
+// `ogl::OGLWindowMgr` is reachable as `ogl::OGLWindowMgr` rather than
+// `ogl::ogl::OGLWindowMgr` from inside this TU.
+#include "OGLWindowMgr.h"
+
 namespace ogl {
 
 // ============================================================================
@@ -100,6 +107,10 @@ void OGLClient::clbkImGuiInit() {
 	ImGui_ImplSDL2_InitForOpenGL(m_sdlWindow, m_sdlContext);
 	ImGui_ImplOpenGL3_Init("#version 410");
 	m_imguiInitialized = true;
+
+	// Register the gcGUI smoke-test app if the operator opted in via
+	// ORBITER_GCGUI_TEST=1 — verifies the dlsym dispatch end-to-end.
+	ogl::MaybeStartGcGuiSmokeApp();
 }
 
 void OGLClient::clbkImGuiShutdown() {
@@ -126,6 +137,10 @@ uint64_t OGLClient::clbkImGuiSurfaceTexture(SURFHANDLE surf) {
 	if (!surf) return 0;
 	OGLSurface *s = (OGLSurface*)surf;
 	return (uint64_t)s->GetTexture();
+}
+
+void OGLClient::clbkRenderImGuiPlugins() {
+	ogl::OGLWindowMgr::Instance().RenderAll();
 }
 
 // ============================================================================

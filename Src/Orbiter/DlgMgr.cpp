@@ -597,6 +597,12 @@ void DialogManager::ImGuiNewFrame()
 		}
 	}
 
+	// Render plugin-registered gcGUI applications. The Win32 D3D9Client
+	// hosts these as HWND child dialogs inside its own side bar; on
+	// macOS / Linux the OGL backend draws each registered application
+	// as a standalone ImGui window via OGLWindowMgr::RenderAll().
+	gc->clbkRenderImGuiPlugins();
+
 	ImGui::EndFrame();
 }
 

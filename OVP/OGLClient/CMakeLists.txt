@@ -22,6 +22,7 @@ if(NOT WIN32)
 		OGLSurface.cpp
 		OGLSketchpad.cpp
 		OGLLaunchpad.cpp
+		OGLWindowMgr.cpp
 		OGLTile.cpp
 		OGLParticle.cpp
 		OGLBeaconArray.cpp
