@@ -364,6 +364,28 @@ Ogni milestone comincia con:
 - **M7.b** — ✅ **DONE**: elevation displacement via `ELEVFILEHEADER` parse (uint8/int8/uint16/int16 dtypes supported), bilinear sampling in `BuildSpherePatch`. Crack-hiding skirts + proper per-vertex normal finite-differences restano come polish pass futuro (non-blocking, visually correct as-is).
 - **M14.b** — ✅ **DONE**: OGLvBase enumera ogni base del pianeta via `oapiGetBaseCount`/`oapiGetBasePadCount`/`oapiGetBasePadEquPos`, converte a world-coords con `oapiEquToGlobal`, e emette landing pad beacons (bianchi + rossi alternati stile PAPI-like) via `OGLBeaconArray` con cutoff a 500 km. Full `.bse` mesh parser (tarmacs, hangars) resta polish futuro — il contributo visibile più forte (luci pad) è coperto.
 
+### Follow-up Fase E — note post-M27
+
+- **architext.regular.ttf is a substitute**. The original
+  "architext" face from Crosswire Bibles (2003) is no longer
+  cleanly redistributable; we install Architects Daughter (Google
+  Fonts, SIL OFL 1.1) under the historical filename so existing
+  Orbiter.cfg paths keep resolving. The MANUSCRIPT font slot in
+  Orbiter retains a handwritten character without claiming the
+  original IP.
+- **Earth tile-pyramid generation** is documented as a manual
+  pipeline (texconv / compressonatorcli + quad-tree splitter) in
+  cmake/download_earth_lod8.py. Folding it into the configure
+  phase would require shipping a hardware texture compressor as a
+  CMake dependency — out of scope for M27. Future M27.bis can
+  package compressonatorcli as a FetchContent target if a
+  one-click hi-res Earth becomes a release blocker.
+- **Hash pin policy**: the three font hashes are pinned to
+  current upstream tags (FontAwesome 6.7.2 release; google/fonts
+  main HEAD at the time of commit). When bumping versions, the
+  CMake module fails closed and the maintainer must refresh the
+  pin via `shasum -a 256` on the new file.
+
 ### Follow-up Fase E — note post-M26
 
 - **macOS user paths** are macOS-only. Linux falls back to the
@@ -509,7 +531,7 @@ Ogni milestone comincia con:
 | M24 | WindowMgr gcGUI | E | ✅ | this branch (cross-platform Orbitersdk/include/gcGUI.h with legacy HWND + new ImGui overloads + OGLWindowMgr backend + clbkRenderImGuiPlugins hook + ORBITER_GCGUI_TEST smoke driver) |
 | M25 | Win32 plugins port | E | ✅ | this branch (M25.a Rcontrol verified ImGui-native + M25.b AtlantisConfig clbkRender override + M25.c Meshdebug ImGui dialog + M25.d ScnEditor ImGui port w/ State+Orientation+AngVel+Propellant+Date tabs; TrackIR excluded macOS already in M22.d) |
 | M26 | Keymap/joystick/config | E | ✅ | this branch (M26.a UserPaths.{h,cpp} → ~/Library/Application Support/Orbiter/Orbiter.cfg + ~/Library/Logs/Orbiter/Orbiter.log + M26.b Wine detection already gated + M26.c OGLKeymapEditor visual keyboard + M26.d OGLJoystickCalibration live SDL axis monitor) |
-| M27 | Missing assets | E | ☐ | — |
+| M27 | Missing assets | E | ✅ | this branch (M27.a cmake/macos_assets.cmake fetches fa-solid-900 + Lekton-Bold + ArchitectsDaughter→architext.regular under SIL OFL with pinned SHA-256; M27.b cmake/download_earth_lod8.py opt-in via ORBITER_FETCH_EARTH_BLUEMARBLE → Wikimedia Commons mirror, tile-pyramid step documented as manual offline pipeline) |
 | M28 | CI/CD macOS | E | ☐ | — |
 | M29 | Force feedback | E | ☐ | — |
 | M30 | Parity test harness | E | ☐ | — |
