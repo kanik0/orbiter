@@ -1922,9 +1922,18 @@ VOID Orbiter::Quicksave ()
 	int i;
 	char desc[256], fname[256];
 	sprintf (desc, "Orbiter saved state at T = %0.0f", td.SimT0);
+#ifdef _WIN32
+	const char sep = '\\';
+#else
+	const char sep = '/';
+#endif
 	for (i = strlen(ScenarioName)-1; i > 0; i--)
-		if (ScenarioName[i-1] == '\\') break;
+		if (ScenarioName[i-1] == sep) break;
+#ifdef _WIN32
 	sprintf (fname, "Quicksave\\%s %04d", ScenarioName+i, ++g_qsaveid);
+#else
+	sprintf (fname, "Quicksave/%s %04d", ScenarioName+i, ++g_qsaveid);
+#endif
 	if(SaveScenario (fname, desc, 0))
 		oapiAddNotification(OAPINOTIF_SUCCESS, "Scenario saved successfully", fname);
 	else
