@@ -364,6 +364,30 @@ Ogni milestone comincia con:
 - **M7.b** — ✅ **DONE**: elevation displacement via `ELEVFILEHEADER` parse (uint8/int8/uint16/int16 dtypes supported), bilinear sampling in `BuildSpherePatch`. Crack-hiding skirts + proper per-vertex normal finite-differences restano come polish pass futuro (non-blocking, visually correct as-is).
 - **M14.b** — ✅ **DONE**: OGLvBase enumera ogni base del pianeta via `oapiGetBaseCount`/`oapiGetBasePadCount`/`oapiGetBasePadEquPos`, converte a world-coords con `oapiEquToGlobal`, e emette landing pad beacons (bianchi + rossi alternati stile PAPI-like) via `OGLBeaconArray` con cutoff a 500 km. Full `.bse` mesh parser (tarmacs, hangars) resta polish futuro — il contributo visibile più forte (luci pad) è coperto.
 
+### Follow-up Fase E — note post-M26
+
+- **macOS user paths** are macOS-only. Linux falls back to the
+  legacy cwd-relative `Orbiter.log` + cwd-relative `Orbiter.cfg`.
+  Adding XDG-compliant paths
+  (`$XDG_CONFIG_HOME/Orbiter/Orbiter.cfg`,
+  `$XDG_STATE_HOME/Orbiter/log/`) for Linux is a future item if
+  the .deb / .AppImage build needs it.
+- **Keymap editor** captures via `ImGui::IsKeyPressed` so only
+  keys that ImGui maps to a named ImGuiKey are translatable to
+  OAPI_KEY_*. The numpad block, NumLock-only keys, and OS-level
+  Cmd / Win keys aren't reachable through the capture loop yet —
+  document as a follow-up if a user reports a missing key.
+- **Joystick calibration** displays the raw SDL axis state
+  already-mapped through SDLPlatform's static deadzone band; the
+  configured CfgJoystickPrm.Deadzone slider only affects
+  downstream consumers (vessel attitude). A future polish pass
+  could wire the dialog deadzone directly into SDLPlatform's
+  deadzone constant for a true round-trip preview.
+- The legacy Wine-detection block at Orbiter.cpp:553 is already
+  `#ifdef _WIN32`-gated; the macOS branch sets `bWINEenv = false`.
+  No env-var override added — Wine is irrelevant for native
+  .app builds.
+
 ### Follow-up Fase E — note post-M25
 
 - **ScnEditor on macOS** ships with the 6 most-used tabs (State /
@@ -484,7 +508,7 @@ Ogni milestone comincia con:
 | M23 | Dialogs core F3–F10 | E | ✅ | this branch (M23.a DlgHelp URL fallback + DlgOptions SDL joystick + M23.b F-key dispatch verified + M23.c case-insensitive vessel cfg lookup; all 11 ImGui dialogs already in place from earlier work) |
 | M24 | WindowMgr gcGUI | E | ✅ | this branch (cross-platform Orbitersdk/include/gcGUI.h with legacy HWND + new ImGui overloads + OGLWindowMgr backend + clbkRenderImGuiPlugins hook + ORBITER_GCGUI_TEST smoke driver) |
 | M25 | Win32 plugins port | E | ✅ | this branch (M25.a Rcontrol verified ImGui-native + M25.b AtlantisConfig clbkRender override + M25.c Meshdebug ImGui dialog + M25.d ScnEditor ImGui port w/ State+Orientation+AngVel+Propellant+Date tabs; TrackIR excluded macOS already in M22.d) |
-| M26 | Keymap/joystick/config | E | ☐ | — |
+| M26 | Keymap/joystick/config | E | ✅ | this branch (M26.a UserPaths.{h,cpp} → ~/Library/Application Support/Orbiter/Orbiter.cfg + ~/Library/Logs/Orbiter/Orbiter.log + M26.b Wine detection already gated + M26.c OGLKeymapEditor visual keyboard + M26.d OGLJoystickCalibration live SDL axis monitor) |
 | M27 | Missing assets | E | ☐ | — |
 | M28 | CI/CD macOS | E | ☐ | — |
 | M29 | Force feedback | E | ☐ | — |
