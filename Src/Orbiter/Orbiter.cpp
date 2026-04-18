@@ -1290,14 +1290,18 @@ HRESULT Orbiter::Render3DEnvironment (bool hidedialogs)
 				pConfig->CfgCmdlinePrm.CaptureOut.c_str());
 			if (s_captureDone) {
 				// Trip session termination so the harness exits
-				// the moment the screenshot is on disk.
+				// the moment the screenshot is on disk. The macOS
+				// / Linux event loop drains SDL_QUIT and breaks
+				// out of Run(); on Windows the existing FrameLimit
+				// gate (set in cmdline.cpp KEY_CAPTURE_FRAME)
+				// terminates the session a few frames later.
+#ifndef _WIN32
 				if (m_pSDL) {
-					// Posting an SDL_QUIT walks the standard
-					// shutdown path next iteration.
 					SDL_Event ev{};
 					ev.type = SDL_QUIT;
 					SDL_PushEvent(&ev);
 				}
+#endif
 			}
 		}
 
