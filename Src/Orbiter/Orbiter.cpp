@@ -1273,6 +1273,17 @@ HRESULT Orbiter::Render3DEnvironment (bool hidedialogs)
 			gclient->clbkImGuiRenderDrawData();
 		else if (ImGui::GetCurrentContext())
 			ImGui::EndFrame(); // Ensure frame is always ended
+
+		// Rendering parity harness (M30): capture the current
+		// backbuffer to disk on the requested frame, then drive
+		// session termination via the existing FrameLimit gate.
+		if (pConfig->CfgCmdlinePrm.CaptureFrame > 0 &&
+		    td.FrameCount() == pConfig->CfgCmdlinePrm.CaptureFrame &&
+		    !pConfig->CfgCmdlinePrm.CaptureOut.empty()) {
+			gclient->clbkSaveScreenshot(
+				pConfig->CfgCmdlinePrm.CaptureOut.c_str());
+		}
+
 		gclient->clbkDisplayFrame ();
 	}
 	// Mark frame boundary for when using the profiler

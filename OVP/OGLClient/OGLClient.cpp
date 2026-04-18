@@ -143,6 +143,52 @@ void OGLClient::clbkRenderImGuiPlugins() {
 	ogl::OGLWindowMgr::Instance().RenderAll();
 }
 
+// stb_image_write — vendored under OVP/OGLClient/stb_image_write.h.
+// Define implementation in this TU so the writer is linked once.
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
+bool OGLClient::clbkSaveScreenshot(const char *path, int w, int h) {
+	if (!path || !*path) return false;
+	int vw = w, vh = h;
+	if (vw <= 0 || vh <= 0) {
+		if (m_sdlWindow) {
+			SDL_GL_GetDrawableSize(m_sdlWindow, &vw, &vh);
+		} else {
+			GLint vp[4] = {0};
+			glGetIntegerv(GL_VIEWPORT, vp);
+			vw = vp[2]; vh = vp[3];
+		}
+	}
+	if (vw <= 0 || vh <= 0) return false;
+
+	std::vector<unsigned char> pixels((size_t)vw * vh * 4);
+	glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	// glReadBuffer is not allowed in core profile for default
+	// framebuffer reads of GL_BACK on macOS — but glReadPixels
+	// against the default framebuffer reads from GL_BACK by default
+	// after a draw, so we can skip the explicit glReadBuffer call.
+	glReadPixels(0, 0, vw, vh, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
+	// Flip vertically: OpenGL origin is bottom-left, PNG / image
+	// loaders treat origin as top-left.
+	std::vector<unsigned char> flipped((size_t)vw * vh * 4);
+	const size_t row = (size_t)vw * 4;
+	for (int y = 0; y < vh; ++y) {
+		std::memcpy(flipped.data() + (size_t)y * row,
+		            pixels.data()  + (size_t)(vh - 1 - y) * row,
+		            row);
+	}
+
+	int rc = stbi_write_png(path, vw, vh, 4, flipped.data(), (int)row);
+	if (!rc) {
+		fprintf(stderr, "[OGLClient] screenshot write failed: %s\n", path);
+		return false;
+	}
+	fprintf(stderr, "[OGLClient] screenshot saved: %s (%dx%d)\n", path, vw, vh);
+	return true;
+}
+
 // ============================================================================
 // Render scene — delegates to OGLScene
 // ============================================================================

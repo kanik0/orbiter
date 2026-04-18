@@ -78,7 +78,10 @@ namespace orbiter {
 			KEY_MAXSYSTIME,
 			KEY_MAXSIMTIME,
 			KEY_FRAMECOUNT,
-			KEY_PLUGIN
+			KEY_PLUGIN,
+			// Rendering parity harness (M30): capture frame N then exit.
+			KEY_CAPTURE_FRAME,
+			KEY_CAPTURE_OUT
 		};
 
 	protected:

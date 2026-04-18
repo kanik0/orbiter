@@ -41,6 +41,7 @@ public:
 	void clbkImGuiRenderDrawData() override;
 	uint64_t clbkImGuiSurfaceTexture(SURFHANDLE surf) override;
 	void clbkRenderImGuiPlugins() override;
+	bool clbkSaveScreenshot(const char *path, int w = 0, int h = 0) override;
 
 	// === Session lifecycle ===
 
