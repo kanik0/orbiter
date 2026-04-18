@@ -21,7 +21,7 @@
 
 #include <Shlwapi.h>   // for PathFileExists
 #include <string.h>
-#include <atlstr.h>
+#include "XRString.h"
 
 // Constructor
 // pDefaultFilename = path to default config file; may be relative to Orbiter root or absolute

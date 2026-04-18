@@ -13,7 +13,7 @@
 #include <Windows.h>
 #include <stdio.h>
 
-#include <atlstr.h>		// for CString
+#include "XRString.h"
 #include <fstream>      // for ifstream
 
 const int MAX_LINE_LENGTH = 1024;

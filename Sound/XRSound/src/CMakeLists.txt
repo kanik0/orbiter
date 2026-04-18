@@ -21,6 +21,7 @@ set_target_properties(XRSound_dll PROPERTIES
 
 target_include_directories(XRSound_dll PUBLIC
 	${ORBITER_SOURCE_SDK_INCLUDE_DIR}
+	${CMAKE_CURRENT_SOURCE_DIR}
 	${CMAKE_CURRENT_SOURCE_DIR}/Utils
 	${IRRKLANG_DIR}/include
 )
