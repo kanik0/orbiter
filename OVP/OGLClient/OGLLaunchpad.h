@@ -139,6 +139,11 @@ private:
 	bool m_scenariosLoaded = false;
 	bool m_draggingScnSplitter = false;
 
+	// Last observed Launchpad window geometry — captured every frame so
+	// SyncToConfig can persist it via Config::rLaunchpad.
+	float m_lastLpadX = 0, m_lastLpadY = 0;
+	float m_lastLpadW = 0, m_lastLpadH = 0;
+
 	ScenarioTabState m_scn;
 	OptionsTabState  m_opt;
 	VideoTabState    m_vid;

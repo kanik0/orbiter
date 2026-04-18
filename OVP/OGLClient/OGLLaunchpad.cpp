@@ -24,6 +24,10 @@
 // already been called by SDLPlatform before the Launchpad runs.
 #include <SDL.h>
 
+// about.hpp is generated from about.hpp.in at configure time and lives
+// in the build directory. OGLClient's include path picks it up.
+#include "about.hpp"
+
 // OpenGL — needed for direct texture upload of scenario thumbnails into the
 // pre-game ImGui frame.
 #if defined(__APPLE__)
@@ -1251,20 +1255,64 @@ void OGLLaunchpad::RenderTabExtra(float availH)
 	ImGui::EndChild();
 }
 
+// Open a URL in the platform browser. macOS goes through `open`; falls
+// back to no-op silently if the system command is missing so the
+// Launchpad never crashes from a click.
+static void OpenURL(const char *url)
+{
+	char cmd[1024];
+	snprintf(cmd, sizeof(cmd), "open '%s' >/dev/null 2>&1 &", url);
+	if (std::system(cmd) != 0) {
+		fprintf(stderr, "[OGLLaunchpad] Failed to open URL: %s\n", url);
+	}
+}
+
 void OGLLaunchpad::RenderTabAbout(float availH)
 {
 	ImGui::BeginChild("AboutContent", ImVec2(0, availH), false);
 	ImGui::Spacing();
-	ImGui::Text("Orbiter Space Flight Simulator");
-	ImGui::Text("macOS / Apple Silicon Port");
+
+	ImGui::PushFont(nullptr); // default font; left for future bigger title font
+	ImGui::Text("%s", NAME1);
+	ImGui::PopFont();
+
+	ImGui::Text("%s", SIG4);
+	ImGui::Text("%s", SIG1B);
+	ImGui::Spacing();
+	ImGui::TextDisabled("macOS / Apple Silicon port");
+	ImGui::Text("OpenGL Client: OGLClient (OpenGL 4.1 Core Profile + SDL2 + ImGui)");
+
 	ImGui::Spacing();
 	ImGui::Separator();
 	ImGui::Spacing();
-	ImGui::Text("Original: Martin Schweiger");
-	ImGui::Text("OpenGL Client: OGLClient (OpenGL 4.1 + SDL2 + ImGui)");
+
+	ImGui::TextDisabled("Components");
+	ImGui::BulletText("D3D9Client (Win32 reference) — Jarmo Nikkanen, Peter Schneider");
+	ImGui::BulletText("XRSound — Doug Beachy");
+	ImGui::BulletText("ImGui — Omar Cornut & contributors");
+	ImGui::BulletText("OpenAL Soft — Chris Robinson");
+	ImGui::BulletText("stb_image — Sean Barrett");
+	ImGui::BulletText("SDL2 — Sam Lantinga & contributors");
+
 	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::Spacing();
+
+	ImGui::TextDisabled("Online resources");
+	if (ImGui::Button("Project homepage")) OpenURL("http://" SIG2);
+	ImGui::SameLine();
+	if (ImGui::Button("Forum"))            OpenURL("https://" SIG5);
+	ImGui::SameLine();
+	if (ImGui::Button("YouTube channel")) OpenURL("https://" SIG6);
+
+	ImGui::Spacing();
+	ImGui::Separator();
+	ImGui::Spacing();
+
 	ImGui::TextWrapped("Orbiter is a realistic spaceflight simulation that lets you "
-		"experience manned and unmanned space missions from the pilot's perspective.");
+		"experience manned and unmanned space missions from the pilot's perspective. "
+		"Free, non-commercial, distributed without warranty.");
+
 	ImGui::EndChild();
 }
 
@@ -1276,12 +1324,31 @@ bool OGLLaunchpad::Render(bool &quit)
 	ImGuiViewport *viewport = ImGui::GetMainViewport();
 	ImVec2 center = viewport->GetCenter();
 
-	float winW = viewport->Size.x * 0.7f;
-	float winH = viewport->Size.y * 0.8f;
-	if (winW < 700) winW = 700;
-	if (winH < 500) winH = 500;
+	// Restore previous Launchpad geometry from Config (encoded as the
+	// Win32 RECT rLaunchpad). Falls back to a centred 70%×80% layout
+	// the first time the user runs Orbiter.
+	float winW, winH, winX, winY;
+	bool haveSaved = false;
+	if (m_cfg) {
+		const RECT &r = m_cfg->rLaunchpad;
+		if (r.right > r.left && r.bottom > r.top) {
+			winW = (float)(r.right - r.left);
+			winH = (float)(r.bottom - r.top);
+			winX = (float)r.left;
+			winY = (float)r.top;
+			haveSaved = true;
+		}
+	}
+	if (!haveSaved) {
+		winW = viewport->Size.x * 0.7f;
+		winH = viewport->Size.y * 0.8f;
+		if (winW < 700) winW = 700;
+		if (winH < 500) winH = 500;
+		winX = center.x - winW * 0.5f;
+		winY = center.y - winH * 0.5f;
+	}
 
-	ImGui::SetNextWindowPos(ImVec2(center.x - winW * 0.5f, center.y - winH * 0.5f), ImGuiCond_Once);
+	ImGui::SetNextWindowPos(ImVec2(winX, winY), ImGuiCond_Once);
 	ImGui::SetNextWindowSize(ImVec2(winW, winH), ImGuiCond_Once);
 
 	ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
@@ -1341,6 +1408,15 @@ bool OGLLaunchpad::Render(bool &quit)
 		ImGui::SameLine();
 		if (ImGui::Button("Exit", ImVec2(bw, 0)))
 			quit = true;
+
+		// Capture current window geometry while the window is still
+		// the active context, so we can restore it on the next launch.
+		ImVec2 lpadPos  = ImGui::GetWindowPos();
+		ImVec2 lpadSize = ImGui::GetWindowSize();
+		m_lastLpadX = lpadPos.x;
+		m_lastLpadY = lpadPos.y;
+		m_lastLpadW = lpadSize.x;
+		m_lastLpadH = lpadSize.y;
 	}
 	ImGui::End();
 
@@ -1349,6 +1425,15 @@ bool OGLLaunchpad::Render(bool &quit)
 	if (s_pendingLaunch && !m_selectedScenario.empty()) {
 		s_pendingLaunch = false;
 		launch = true;
+	}
+
+	if ((launch || quit) && m_cfg) {
+		// Persist the geometry into rLaunchpad (Win32 RECT-encoded);
+		// the loader uses the same struct on next start.
+		m_cfg->rLaunchpad.left   = (LONG)m_lastLpadX;
+		m_cfg->rLaunchpad.top    = (LONG)m_lastLpadY;
+		m_cfg->rLaunchpad.right  = (LONG)(m_lastLpadX + m_lastLpadW);
+		m_cfg->rLaunchpad.bottom = (LONG)(m_lastLpadY + m_lastLpadH);
 	}
 
 	if (launch) SyncToConfig();

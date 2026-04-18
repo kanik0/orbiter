@@ -47,6 +47,8 @@ if(NOT WIN32)
 		PUBLIC ${CMAKE_SOURCE_DIR}/Orbitersdk/include
 		PUBLIC ${CMAKE_SOURCE_DIR}/OVP/OGLClient
 		PUBLIC ${CMAKE_SOURCE_DIR}/Src/Orbiter
+		# Generated headers (about.hpp built from about.hpp.in by Src/Orbiter)
+		PUBLIC ${CMAKE_BINARY_DIR}/Src/Orbiter
 		PUBLIC ${SDL2_INCLUDE_DIRS}
 		PUBLIC ${imgui_SOURCE_DIR}
 		PUBLIC ${imgui_SOURCE_DIR}/backends
