@@ -364,6 +364,29 @@ Ogni milestone comincia con:
 - **M7.b** — ✅ **DONE**: elevation displacement via `ELEVFILEHEADER` parse (uint8/int8/uint16/int16 dtypes supported), bilinear sampling in `BuildSpherePatch`. Crack-hiding skirts + proper per-vertex normal finite-differences restano come polish pass futuro (non-blocking, visually correct as-is).
 - **M14.b** — ✅ **DONE**: OGLvBase enumera ogni base del pianeta via `oapiGetBaseCount`/`oapiGetBasePadCount`/`oapiGetBasePadEquPos`, converte a world-coords con `oapiEquToGlobal`, e emette landing pad beacons (bianchi + rossi alternati stile PAPI-like) via `OGLBeaconArray` con cutoff a 500 km. Full `.bse` mesh parser (tarmacs, hangars) resta polish futuro — il contributo visibile più forte (luci pad) è coperto.
 
+### Follow-up Fase E — note post-M23
+
+- **All 11 ImGui dialogs were already present** from earlier work
+  (DlgInfo / DlgMap / DlgCamera / DlgHelp / DlgFocus / DlgRecorder /
+  DlgTacc / DlgCapture / DlgFunction / DlgOptions / DlgMenuCfg ≈
+  5800 lines). M23 reduced to: cross-platform URL fallback in
+  DlgHelp, SDL joystick enumeration in DlgOptions, and a
+  case-insensitive vessel-cfg lookup so the dispatch path that was
+  already wired in `Orbiter::KbdInputBuffered_System` could
+  actually reach a running scenario without aborting on
+  Deltaglider.cfg-vs-DeltaGlider.cfg.
+- **Case-insensitive lookup** is plumbed through
+  `OpenFileIgnoreCase()` and currently wired only into
+  `Vessel::OpenConfigFile`. Other CONFIGDIR-relative loads (mesh,
+  texture, base, scenario) may surface similar mismatches as more
+  scenarios are exercised; switch them to the helper as needed.
+- **Build infra debt** — vessel module dylibs are not built by the
+  default `--target Orbiter` invocation; the user has to enumerate
+  vessels (`DeltaGlider ShuttleA Atlantis ...`) manually. M22.d's
+  pattern (centralised CMakeLists wiring) should be extended to
+  include vessel modules under `--target macos-bundle` so the .app
+  ships with the full set without manual target listing.
+
 ### Follow-up Fase E — note post-M22
 
 - **M22.f / Extra API extension** — `LaunchpadItem::clbkRender()` is a
@@ -416,7 +439,7 @@ Ogni milestone comincia con:
 | M20 | XRSound core integration | D | ✅ | this branch (CMake platform switch + XRPlatform.h POSIX shims + dlsym RTLD_DEFAULT bridge + libXRSound.dylib 1.1 MB) |
 | M21 | Default sounds pack | D | ✅ | this branch (XRSound_assets install verified 302 files, xrsound_openal_smoke CTest target + API round-trip) |
 | M22 | Launchpad 6 tab | E | ✅ | this branch (M22.a scaffold + M22.b Scenario w/ thumbnails+desc+splitter + M22.c Video + M22.d Modules+`.info` infra + M22.e Options 12 pages + M22.f Extra+`clbkRender` API + M22.g 15 builtin extras ImGui + M22.h About+geometry persist) |
-| M23 | Dialogs core F3–F10 | E | ☐ | — |
+| M23 | Dialogs core F3–F10 | E | ✅ | this branch (M23.a DlgHelp URL fallback + DlgOptions SDL joystick + M23.b F-key dispatch verified + M23.c case-insensitive vessel cfg lookup; all 11 ImGui dialogs already in place from earlier work) |
 | M24 | WindowMgr gcGUI | E | ☐ | — |
 | M25 | Win32 plugins port | E | ☐ | — |
 | M26 | Keymap/joystick/config | E | ☐ | — |
