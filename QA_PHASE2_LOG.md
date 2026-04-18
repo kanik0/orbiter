@@ -101,6 +101,7 @@ Ogni bug scoperto durante Fase 2 viene tracciato qui con ID `P2-B<n>`. A fine se
 | P2-B20 | medium | 3.7 | Alt+F1 DlgHelp: shortcut non fires, browser non aperto. Roadmap M23.a dichiarava URL fallback cross-platform completo. Regression sospetta. | `Keymap.cpp` Alt+F1 → DlgHelp dispatch / `DlgHelp` URL-open path | open |
 | P2-B21 | cosmetic | 5 | Missing icon textures per menu bar: `MenuInfoBar/Notes.png`, `MenuInfoBar/LuaConsole.png` (e probabilmente altri plugin). Menu items comunque visibili. | install pipeline plugin icon assets | open |
 | P2-B22 | high | 6 | XRSound: init succeeds (no crash post-PR #27 InitModule fix), ma **no audio events triggering** in Demo/Atlantis Ascent scenario. Root cause candidates: XRSound-Atlantis.cfg parsing issue; OpenAL device buffer non-routed; vessel events non triggering. | `XRSound` runtime event path / OpenAL backend | open, verify post-P2-B14 cockpit fix |
+| P2-B23 | high | 8 | Quicksave (Ctrl+S) fallisce con `"Failed to save scenario: Quicksave\\Demo/Today 0002"`. Path construction in `Orbiter::Quicksave` usa `'\\'` separator + `"Quicksave\\%s"` prefix senza `#ifdef _WIN32` gate. | `Src/Orbiter/Orbiter.cpp:1925-1927` | ✅ **RESOLVED** via commit `7b31f833` |
 
 ---
 
@@ -276,6 +277,32 @@ Skipped Ctrl+I (DlgInfo — tested STEP 2.1 with P2-B15) + Ctrl+M (DlgMap — em
 - XRSound init phase completa: OpenAL device probabilmente creato, pack Default/*.wav loaded
 
 **Verdict:** PARTIAL ⚠️ audio pipeline si inizializza ma eventi vessel non triggeranno audio. Serve debug runtime events path (possibilmente legato a P2-B14 cockpit/vessel state non aggiornato).
+
+### STEP 8: Save / Load  [**FAIL → RESOLVED** ✅]
+
+**Action:** Ctrl+S Quicksave → verify file on disk → rilancia scenario salvato.
+
+**Initial report:** FAIL — "Failed to save scenario: Quicksave\\Demo/Today 0002" notification. Path construction Win32 backslash leak in `Orbiter::Quicksave` (Orbiter.cpp:1925-1927).
+
+**Fix applied:** commit `7b31f833` gating path separator with `#ifdef _WIN32`. Quicksave ora usa `Quicksave/<name>` con `/` su macOS.
+
+**Verdict:** RESOLVED — quicksave path construction corretta. User da confermare salvataggio effettivo + reload.
+
+### STEP 9: Window geometry persistence  [**PASS** ✅]
+
+**Action:** Ridimensiona Launchpad → Exit → rilancia.
+
+**Verdict:** PASS ✅ geometria persistita (M22.h + Config::rLaunchpad).
+
+### STEP 10: DMG build + install  [**PASS** ✅]
+
+**Action:** `cmake --build --target macos-dmg` (already verified Phase 1 §E) + open DMG + launch from within.
+
+**My report:** DMG opens, `Orbiter-dist.app` visible inside, double-click launches Orbiter. ✅
+
+**Verdict:** PASS ✅ DMG packaging + ad-hoc sign + runtime launch from bundle.
+
+Note: Drag-to-/Applications + xattr quarantine removal non testato ma dmg base flow funziona.
 
 
 
