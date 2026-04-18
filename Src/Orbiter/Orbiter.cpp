@@ -669,6 +669,18 @@ HRESULT Orbiter::Create (HINSTANCE hInstance)
 #else
 	LoadModules("Modules/Plugin", pConfig->CfgCmdlinePrm.LoadPlugins);
 	LoadModules("Modules/Plugin", pConfig->GetActiveModules());
+
+	// macOS / Linux: Register the built-in Launchpad Extra items
+	// (Physics / Instruments / Vessel configuration / Planet configuration /
+	// Debug containers + their leaf items) into LaunchpadRegistry BEFORE
+	// the startup plugins load — otherwise plugins that call
+	// oapiFindLaunchpadItem("Vessel configuration") from their InitModule
+	// (e.g. AtlantisConfig) find the registry empty, receive NULL parent,
+	// and their registration results in orphan items that never render in
+	// the Extra tab tree. The function is idempotent (early-out if
+	// s_items is non-empty) so a later re-call when the Launchpad UI is
+	// about to draw is a safe no-op.
+	orbiter::RegisterBuiltinLaunchpadItems(pConfig);
 #endif
 
 	// preload startup plugin modules
