@@ -147,6 +147,17 @@ void OGLLaunchpad::SyncToConfig()
 	// Persist splitter positions (encoded as 0..1000)
 	m_cfg->CfgWindowPos.LaunchpadScnListWidth = (int)(m_scn.splitterPos * 1000.0f);
 	m_cfg->CfgWindowPos.LaunchpadExtListWidth = (int)(m_ext.splitterPos * 1000.0f);
+
+	// Persist module activation state. Diff against the current Config
+	// list so we add the newly checked modules and drop the unchecked
+	// ones — locked modules (cmdline) stay regardless of UI state.
+	if (m_mod.scanned) {
+		for (const auto &m : m_mod.modules) {
+			bool was = m_cfg->IsActiveModule(m.name);
+			if (m.active && !was) m_cfg->AddActiveModule(m.name);
+			else if (!m.active && was && !m.locked) m_cfg->DelActiveModule(m.name);
+		}
+	}
 }
 
 void OGLLaunchpad::ScanScenarios(const std::string &scenarioDir)
@@ -155,6 +166,91 @@ void OGLLaunchpad::ScanScenarios(const std::string &scenarioDir)
 	ScanDirectory(scenarioDir, "", m_root);
 	m_scenariosLoaded = true;
 	fprintf(stderr, "[OGLLaunchpad] Scanned scenarios from '%s'\n", scenarioDir.c_str());
+}
+
+void OGLLaunchpad::ParseModuleInfo(const std::string &infoPath, ModuleEntry &entry)
+{
+	std::ifstream f(infoPath);
+	if (!f.is_open()) return;
+
+	enum Section { S_NONE, S_CATEGORY, S_DESCRIPTION } sec = S_NONE;
+	std::string line, desc;
+	std::string cat;
+	while (std::getline(f, line)) {
+		if (!line.empty() && line.back() == '\r') line.pop_back();
+		if (line == "[Category]")    { sec = S_CATEGORY;    continue; }
+		if (line == "[Description]") { sec = S_DESCRIPTION; continue; }
+		if (sec == S_CATEGORY) {
+			if (cat.empty() && !line.empty()) cat = line;
+		} else if (sec == S_DESCRIPTION) {
+			if (!desc.empty()) desc += '\n';
+			desc += line;
+		}
+	}
+	if (!cat.empty())  entry.category    = cat;
+	if (!desc.empty()) entry.description = desc;
+}
+
+void OGLLaunchpad::ScanModules(const std::string &pluginDir)
+{
+	m_mod.modules.clear();
+	m_mod.scanned = true;
+	m_mod.pluginDir = pluginDir;
+	m_mod.selected = -1;
+
+	DIR *d = opendir(pluginDir.c_str());
+	if (!d) {
+		fprintf(stderr, "[OGLLaunchpad] Modules/Plugin directory not found: %s\n",
+			pluginDir.c_str());
+		return;
+	}
+
+	struct dirent *entry;
+	while ((entry = readdir(d)) != nullptr) {
+		if (entry->d_name[0] == '.') continue;
+
+		std::string fname = entry->d_name;
+		// Accept Linux/macOS/Windows shared-library suffixes; strip the
+		// "lib" prefix that the GNU toolchains add so the logical module
+		// name matches Win32 conventions stored in Config.
+		std::string base, ext;
+		size_t dot = fname.rfind('.');
+		if (dot == std::string::npos) continue;
+		ext = fname.substr(dot);
+		base = fname.substr(0, dot);
+		if (ext != ".dylib" && ext != ".so" && ext != ".dll") continue;
+		if (base.compare(0, 3, "lib") == 0) base = base.substr(3);
+
+		ModuleEntry me;
+		me.name     = base;
+		me.filePath = pluginDir + "/" + fname;
+		me.category = "Miscellaneous";
+
+		// Look for the sibling <base>.info file written by
+		// cmake/orbiter_module_info.cmake.
+		ParseModuleInfo(pluginDir + "/" + base + ".info", me);
+
+		// Seed initial activation state from the Config that was bound
+		// in InitFromConfig(). We tolerate Bind() not having been called
+		// yet — defaults stay false.
+		if (m_cfg) {
+			if (m_cfg->IsActiveModule(me.name)) me.active = true;
+			for (const auto &p : m_cfg->CfgCmdlinePrm.LoadPlugins) {
+				if (p == me.name) { me.active = true; me.locked = true; break; }
+			}
+		}
+		m_mod.modules.push_back(std::move(me));
+	}
+	closedir(d);
+
+	std::sort(m_mod.modules.begin(), m_mod.modules.end(),
+		[](const ModuleEntry &a, const ModuleEntry &b) {
+			if (a.category != b.category) return a.category < b.category;
+			return a.name < b.name;
+		});
+
+	fprintf(stderr, "[OGLLaunchpad] Scanned %zu modules from '%s'\n",
+		m_mod.modules.size(), pluginDir.c_str());
 }
 
 void OGLLaunchpad::ScanDirectory(const std::string &dir, const std::string &relPath, ScenarioEntry &parent)
@@ -506,7 +602,82 @@ void OGLLaunchpad::RenderTabOptions(float availH)
 void OGLLaunchpad::RenderTabModules(float availH)
 {
 	ImGui::BeginChild("ModulesContent", ImVec2(0, availH), false);
-	ImGui::TextDisabled("Modules tab — implemented in M22.d");
+
+	if (!m_mod.scanned) {
+		ImGui::TextDisabled("Modules/Plugin/ has not been scanned yet.");
+		ImGui::EndChild();
+		return;
+	}
+
+	const float footerH = ImGui::GetFrameHeightWithSpacing() + 6.0f;
+	float listH = availH - footerH;
+	if (listH < 60.0f) listH = 60.0f;
+
+	float listW = ImGui::GetContentRegionAvail().x * 0.5f;
+	if (listW < 200.0f) listW = 200.0f;
+
+	// Left pane: categorised tree of plugins with checkboxes.
+	ImGui::BeginChild("ModList", ImVec2(listW, listH), true);
+	if (m_mod.modules.empty()) {
+		ImGui::TextDisabled("(no plugin modules found)");
+	} else {
+		std::string lastCat;
+		bool catOpen = false;
+		for (size_t i = 0; i < m_mod.modules.size(); ++i) {
+			ModuleEntry &m = m_mod.modules[i];
+			if (m.category != lastCat) {
+				if (!lastCat.empty() && catOpen) ImGui::Unindent();
+				lastCat = m.category;
+				catOpen = ImGui::CollapsingHeader(m.category.c_str(),
+					ImGuiTreeNodeFlags_DefaultOpen);
+				if (catOpen) ImGui::Indent();
+			}
+			if (!catOpen) continue;
+
+			ImGui::PushID((int)i);
+			bool active = m.active;
+			bool disabled = m.locked;
+			if (disabled) ImGui::BeginDisabled();
+			if (ImGui::Checkbox(m.name.c_str(), &active) && !disabled)
+				m.active = active;
+			if (disabled) ImGui::EndDisabled();
+			if (ImGui::IsItemClicked())
+				m_mod.selected = (int)i;
+			ImGui::PopID();
+		}
+		if (catOpen) ImGui::Unindent();
+	}
+	ImGui::EndChild();
+
+	ImGui::SameLine();
+
+	// Right pane: description of the selected module.
+	ImGui::BeginChild("ModDesc", ImVec2(0, listH), true);
+	if (m_mod.selected >= 0 && m_mod.selected < (int)m_mod.modules.size()) {
+		const ModuleEntry &m = m_mod.modules[m_mod.selected];
+		ImGui::TextWrapped("Module: %s", m.name.c_str());
+		ImGui::Text("Category: %s", m.category.c_str());
+		if (m.locked) ImGui::TextColored(ImVec4(1,0.7f,0.3f,1),
+			"(locked active by --plugin command-line flag)");
+		ImGui::Separator();
+		if (!m.description.empty())
+			ImGui::TextWrapped("%s", m.description.c_str());
+		else
+			ImGui::TextDisabled("(no description — module ships without a .info sidecar)");
+	} else {
+		ImGui::TextDisabled("Select a module to see its description.\n\n"
+			"Optional Orbiter plugin modules.\n"
+			"Check or uncheck items to activate the corresponding modules.");
+	}
+	ImGui::EndChild();
+
+	// Footer: action buttons.
+	if (ImGui::Button("Deactivate all")) {
+		for (auto &m : m_mod.modules) if (!m.locked) m.active = false;
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Rescan")) ScanModules(m_mod.pluginDir);
+
 	ImGui::EndChild();
 }
 

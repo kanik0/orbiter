@@ -1,6 +1,13 @@
 # Copyright (c) Martin Schweiger
 # Licensed under the MIT License
 
+# TrackIR depends on the Windows-only NaturalPoint NPClient driver.
+# Skip the build entirely on non-Windows platforms so the Launchpad
+# does not list a non-functional entry. (See Fase E roadmap M25.)
+if(NOT WIN32)
+	return()
+endif()
+
 add_library(TrackIR SHARED
 	TrackIR.cpp
 	TrackIR.rc

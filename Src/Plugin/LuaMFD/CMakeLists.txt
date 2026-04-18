@@ -36,3 +36,8 @@ install(TARGETS LuaMFD
 	RUNTIME
 	DESTINATION ${ORBITER_INSTALL_PLUGIN_DIR}
 )
+
+orbiter_module_info(LuaMFD
+	CATEGORY "MFD modes"
+	DESCRIPTION "TERMINAL MFD:\n\nAdds the \"Terminal\" MFD mode — allows the execution of Lua commands and scripts from a spacecraft's MFD instrument."
+)

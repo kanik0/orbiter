@@ -39,3 +39,8 @@ install(TARGETS LuaConsole
 install(FILES LuaConsole.png
 	DESTINATION ${ORBITER_INSTALL_TEXTURES_DIR}/MenuInfoBar
 )
+
+orbiter_module_info(LuaConsole
+	CATEGORY "Script tools and drivers"
+	DESCRIPTION "LUA CONSOLE:\n\nInteractive Lua interpreter window. Execute Lua commands and scripts at runtime to inspect or manipulate the simulation state, vessels, planets and modules."
+)

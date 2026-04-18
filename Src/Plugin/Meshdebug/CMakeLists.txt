@@ -31,3 +31,8 @@ install(TARGETS Meshdebug
 	RUNTIME
 	DESTINATION ${ORBITER_INSTALL_PLUGIN_DIR}
 )
+
+orbiter_module_info(Meshdebug
+	CATEGORY "Developer resources and samples"
+	DESCRIPTION "MESH DEBUG:\n\nA small utility for developers. Meshdebug can be used to visually identify a mesh group in a vessel mesh. Set the camera focus on the vessel whose meshes you want to inspect, then open the mesh debugger dialog from the Custom functions list (Ctrl-F4). The vessel meshes will become semi-transparent, and the selected mesh group will blink."
+)

@@ -73,15 +73,18 @@ struct VideoTabState {
 
 struct ModuleEntry {
 	std::string name;            // logical module name (filename without ext)
-	std::string filePath;        // absolute path to .dylib / .so
-	std::string description;     // first paragraph of <name>.txt sibling file
+	std::string filePath;        // absolute path to .dylib / .so / .dll
+	std::string category;        // category from .info or "Miscellaneous"
+	std::string description;     // free-form text from .info, may be empty
 	bool active = false;         // currently enabled
+	bool locked = false;         // forced active by command-line --plugin
 };
 
 struct ModulesTabState {
 	std::vector<ModuleEntry> modules;
 	bool scanned = false;
-	int  selected = -1;
+	int  selected = -1;          // index into modules, -1 = none
+	std::string pluginDir;       // absolute path to Modules/Plugin
 };
 
 struct ExtraTabState {
@@ -104,6 +107,11 @@ public:
 
 	// Scan the Scenarios/ directory and build the tree
 	void ScanScenarios(const std::string &scenarioDir);
+
+	// Scan Modules/Plugin/ for plugin .dylib / .so / .dll files and the
+	// matching <name>.info metadata sidecars. Existing active state is
+	// seeded from Config::IsActiveModule and CfgCmdlinePrm.LoadPlugins.
+	void ScanModules(const std::string &pluginDir);
 
 	// Render one frame of the launchpad UI. Returns:
 	//   true  = user clicked Launch (selectedScenario is set)
@@ -155,6 +163,11 @@ private:
 	void ReleaseThumbnail();
 	// Decode HYPERDESC HTML markup into plain text (mirrors Win32 Html2Text).
 	static std::string HtmlToPlainText(const std::string &html);
+
+	// Parse a sidecar .info file (see cmake/orbiter_module_info.cmake) into
+	// the (category, description) fields of `entry`. Missing file or
+	// parse failure leaves the entry's defaults intact.
+	static void ParseModuleInfo(const std::string &infoPath, ModuleEntry &entry);
 
 	// Tab renderers
 	void RenderTabScenario(float availH);

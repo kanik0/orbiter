@@ -57,3 +57,8 @@ install(TARGETS TransX
 install(DIRECTORY ${ORBITER_BINARY_DOC_DIR}/TransX
     DESTINATION ${ORBITER_INSTALL_DOC_DIR}
 )
+
+orbiter_module_info(TransX
+	CATEGORY "MFD modes"
+	DESCRIPTION "TRANS-X V3.14.1:\n\nA complex Orbiter navigation tool by Steve Arch and Duncan Sharpe. Activating this module enables the TransX MFD mode.\n\nSee the documents in Doc/TransX for User Manual, Quickstart reference and license."
+)

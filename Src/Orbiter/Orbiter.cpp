@@ -1247,9 +1247,13 @@ INT Orbiter::Run ()
 		launchpadUI.Bind(pConfig);
 		char cwd[1024];
 		std::string scnDir = "Scenarios";
-		if (getcwd(cwd, sizeof(cwd)))
-			scnDir = std::string(cwd) + "/Scenarios";
+		std::string pluginDir = "Modules/Plugin";
+		if (getcwd(cwd, sizeof(cwd))) {
+			scnDir    = std::string(cwd) + "/Scenarios";
+			pluginDir = std::string(cwd) + "/Modules/Plugin";
+		}
 		launchpadUI.ScanScenarios(scnDir);
+		launchpadUI.ScanModules(pluginDir);
 
 		// Dedicated Launchpad render loop using SDL+ImGui directly
 		// (no graphics client needed — just clear + ImGui overlay)
