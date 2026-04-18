@@ -368,6 +368,7 @@ Ogni milestone comincia con:
 
 - **M15 — interactive verification**: smoke tests confermano zero-crash cross-scenario ma l'acceptance visiva del ciclo F1 → VC (mesh cockpit, look-around, MFD rendering, HUD overlay, area click response) richiede sessione desktop. Da sottoporre ad human-in-the-loop prima del tag release.
 - **M15 — Area compositing su texture compresse**: `clbkBlt` su `tgt` loaded da DDS compressa (DXT) potrebbe fallire FBO completeness check (`OGLSurface::EnsureFBO` su texture DXT). Se si manifesta in scenari reali: aggiungere path di "decompress-on-first-area-bind" che ricrea la texture come RGBA8 prima del primo blit. Non-blocking: strumentale solo se VC areas risultano nere in un vessel che usa esclusivamente DDS compresse per i mesh group con area targets.
+- **M17 — Interactive MFD acceptance**: smoke tests confermano zero-crash su 4 scenari, ma la parità visiva (Orbit trace, Map coastline, HSI needle, Docking crosshair, Surface altimetry, Atmospheric autopilot HUD) richiede sessione desktop human-in-the-loop. Aspetti particolari da verificare: (a) line widths >1 su Apple M-series GL (fallback triangle-quads attivato); (b) text baseline alignment, fixed-width vs proportional fonts, `CalcWordWrapPosition` tramite default `TextBox`; (c) LuaMFD chiamando `SetBrightness` / `SetRenderParam(PRM_GAMMA)`; (d) plugin ScnEditor che usa `DrawMeshGroup` per preview 3D mini-globes.
 
 ---
 
@@ -392,7 +393,7 @@ Ogni milestone comincia con:
 | M14 | Runway lights+annotations | B | ✅ | this branch (M14 planetarium grid + M14.b pad beacons/OGLvBase) |
 | M15 | Virtual Cockpit | C | ✅ | this branch (M15.a re-enable F1 + M15.b vismode/dual-pass + M15.c MFD texture compositing + M15.d HUD overlay/click zones) |
 | M16 | 2D Panel | C | ✅ | this branch (UsrFlag skip + MFD slot resolution via GetMFDSurface + mesh-local fallback for NULL hSurf) |
-| M17 | MFD Sketchpad 100% | C | ☐ | — |
+| M17 | MFD Sketchpad 100% | C | ✅ | this branch (M17.a FBO retarget + M17.b colour transforms + M17.c blit/state/shape/text extras + M17.d transform stack / view-proj / clipping / mesh draw) |
 | M18 | IAudioBackend + OpenAL | D | ☐ | — |
 | M19 | CString + irrKlang shim | D | ☐ | — |
 | M20 | XRSound core integration | D | ☐ | — |
