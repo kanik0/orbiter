@@ -391,7 +391,7 @@ Ogni milestone comincia con:
 | M13 | Glare/corona | B | ✅ | this branch |
 | M14 | Runway lights+annotations | B | ✅ | this branch (M14 planetarium grid + M14.b pad beacons/OGLvBase) |
 | M15 | Virtual Cockpit | C | ✅ | this branch (M15.a re-enable F1 + M15.b vismode/dual-pass + M15.c MFD texture compositing + M15.d HUD overlay/click zones) |
-| M16 | 2D Panel | C | ☐ | — |
+| M16 | 2D Panel | C | ✅ | this branch (UsrFlag skip + MFD slot resolution via GetMFDSurface + mesh-local fallback for NULL hSurf) |
 | M17 | MFD Sketchpad 100% | C | ☐ | — |
 | M18 | IAudioBackend + OpenAL | D | ☐ | — |
 | M19 | CString + irrKlang shim | D | ☐ | — |
