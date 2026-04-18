@@ -1244,6 +1244,7 @@ INT Orbiter::Run ()
 	// If no scenario specified on command line, show ImGui Launchpad
 	if (pConfig->CfgCmdlinePrm.LaunchScenario.empty() && m_pSDL) {
 		ogl::OGLLaunchpad launchpadUI;
+		launchpadUI.Bind(pConfig);
 		char cwd[1024];
 		std::string scnDir = "Scenarios";
 		if (getcwd(cwd, sizeof(cwd)))
