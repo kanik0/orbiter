@@ -1,13 +1,17 @@
 #version 410 core
 
-// Three render modes share one program so Sketchpad never has to swap
+// Render modes share one program so Sketchpad never has to swap
 // programs in the middle of a frame:
 //   0 = solid colour fill (Pen/Brush primitives)
 //   1 = textured modulate (CopyRect/StretchRect family)
 //   2 = alpha-mask text  (ImGui font atlas is single-channel alpha)
+//   3 = horizontal gradient (uColor .. uColor2, interpolated by vUV.x)
+//   4 = vertical gradient   (uColor .. uColor2, interpolated by vUV.y)
 in vec2 vUV;
 
 uniform vec4 uColor;
+uniform vec4 uColor2;       // gradient end colour (modes 3/4)
+uniform vec4 uColorKey;     // .rgb = key colour, .a = 1 enables discard
 uniform int  uMode;
 uniform sampler2D uTexture;
 
@@ -33,13 +37,22 @@ void main() {
     if (uMode == 0) {
         c = uColor;
     } else if (uMode == 1) {
-        c = texture(uTexture, vUV) * uColor;
-    } else {
+        vec4 tex = texture(uTexture, vUV);
+        if (uColorKey.a > 0.5) {
+            vec3 d = tex.rgb - uColorKey.rgb;
+            if (dot(d, d) < 1e-4) discard;
+        }
+        c = tex * uColor;
+    } else if (uMode == 2) {
         // ImGui atlas: the glyph alpha sits in the r channel for the
         // alpha-8 path and in a (as RGBA32) for the RGBA path. Sampling
         // .a gives us the right mask in both cases.
         float a = texture(uTexture, vUV).a;
         c = vec4(uColor.rgb, uColor.a * a);
+    } else if (uMode == 3) {
+        c = mix(uColor, uColor2, clamp(vUV.x, 0.0, 1.0));
+    } else {
+        c = mix(uColor, uColor2, clamp(vUV.y, 0.0, 1.0));
     }
 
     c *= uBrightness;

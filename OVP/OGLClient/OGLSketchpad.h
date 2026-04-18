@@ -97,6 +97,43 @@ public:
 	                         const oapi::FVECTOR4 *data = nullptr) override;
 	oapi::FVECTOR4 GetRenderParam(RenderParam param) override;
 
+	// -- Quick resource + pen/brush helpers --
+	void QuickPen(DWORD color, float width = 1.0f, DWORD style = 1) override;
+	void QuickBrush(DWORD color) override;
+	void SetGlobalLineScale(float width = 1.0f, float pattern = 1.0f) override;
+	void ColorCompatibility(bool bEnable) override;
+
+	// -- State --
+	void SetBlendState(BlendState state = (BlendState)(BlendState::ALPHABLEND |
+	                                                   BlendState::FILTER_LINEAR)) override;
+	void DepthEnable(bool enable) override;
+	void Clear(DWORD color = 0, bool bColor = true, bool bDepth = true) override;
+
+	// -- Fills --
+	void ColorFill(DWORD color, const LPRECT tgt) override;
+	void GradientFillRect(const LPRECT tgt, DWORD c1, DWORD c2,
+	                      bool bVertical = false) override;
+	void FillTetragon(DWORD color, const oapi::FVECTOR2 pt[4]) override;
+
+	// -- Blits --
+	void CopyRect(const SURFHANDLE hSrc, const LPRECT src, int tx, int ty) override;
+	void StretchRect(const SURFHANDLE hSrc, const LPRECT src = nullptr,
+	                 const LPRECT tgt = nullptr) override;
+	void RotateRect(const SURFHANDLE hSrc, const LPRECT src,
+	                int cx, int cy, float angle = 0.0f,
+	                float sw = 1.0f, float sh = 1.0f) override;
+	void ColorKey(const SURFHANDLE hSrc, const LPRECT src, int tx, int ty) override;
+	void CopyTetragon(const SURFHANDLE hSrc, const LPRECT sr,
+	                  const oapi::FVECTOR2 pt[4]) override;
+	void StretchRegion(const skpRegion *rgn, const SURFHANDLE hSrc,
+	                   const LPRECT out) override;
+
+	// -- Misc primitives --
+	void Lines(const oapi::FVECTOR2 *pt1, int nlines) override;
+	bool TextW(int x, int y, const LPWSTR str, int len) override;
+	void TextEx(float x, float y, const char *str,
+	            float scale = 1.0f, float angle = 0.0f) override;
+
 	// -- Shared GL resource lifecycle --
 	static void InitShared(ShaderMgr *sm);
 	static void ReleaseShared();
@@ -117,8 +154,10 @@ private:
 	void DrawTexturedQuads(const float *xyuv, int nVerts,
 	                       GLuint tex, DWORD col, Mode mode);
 
-	// Packs Orbiter's 0xBBGGRR (+ optional alpha) into a vec4 for the shader.
-	static void PackColor(DWORD col, float out[4]);
+	// Packs Orbiter's 0xBBGGRR (+ optional alpha) into a vec4 for the
+	// shader. Honours m_colourCompat — when true (default) alpha==0 is
+	// rewritten to 0xFF, matching historical D3D9 semantics.
+	void PackColor(DWORD col, float out[4]) const;
 
 	// Target surface state.
 	OGLSurface *m_surf;
@@ -154,6 +193,8 @@ private:
 	static GLint  s_locColorMat;
 	static GLint  s_locGamma;
 	static GLint  s_locNoise;
+	static GLint  s_locColor2;
+	static GLint  s_locColorKey;
 	static bool   s_sharedInitialized;
 
 	// Colour-transform state. Defaults are identity so a Sketchpad that
@@ -166,6 +207,22 @@ private:
 	// Shadow of the last SetColorMatrix call so GetColorMatrix() can
 	// return a pointer with the same lifetime as the Sketchpad.
 	oapi::FMATRIX4 m_colorMatShadow;
+
+	// SetGlobalLineScale multipliers — applied to m_pen->width (and, in
+	// the future, to dashed pattern repeats) when stroking primitives.
+	float m_lineScale;
+	float m_patternScale;
+
+	// Transient Pen/Brush owned by QuickPen / QuickBrush — the public
+	// API lets callers skip the create-set-release dance. Destroyed
+	// when the Sketchpad is released.
+	OGLPen   *m_quickPen;
+	OGLBrush *m_quickBrush;
+
+	// Colour compatibility toggle (ColorCompatibility). When true the
+	// alpha=0 byte of every input colour is rewritten to 255 — matches
+	// the legacy D3D9 "alpha 0 means opaque" default.
+	bool m_colourCompat;
 };
 
 } // namespace ogl
