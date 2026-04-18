@@ -100,6 +100,9 @@ set(common_src
 	Memstat.cpp
 	Util.cpp
 	ZTreeMgr.cpp
+	# Cross-platform default vtable for the LaunchpadItem API
+	LaunchpadItem.cpp
+	LaunchpadRegistry.cpp
 )
 
 # Platform-specific sources

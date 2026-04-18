@@ -2376,6 +2376,23 @@ public:
 	*/
 	virtual int clbkWriteConfig ();
 
+	/**
+	* \brief Render the addon's editor inside the Orbiter Launchpad while the
+	*  user has the item "open".
+	* \return \e true to keep the editor open for the next frame, \e false to
+	*  close it.
+	* \details This callback is invoked once per frame by the cross-platform
+	*  Launchpad implementations (e.g. the macOS / Linux ImGui-based
+	*  Launchpad) when the user double-clicks the item or selects "Edit".
+	*  The implementation should issue ImGui calls — typically inside the
+	*  popup modal opened by the Launchpad — to draw the editor body.
+	* \n\n <b>Default action:</b> Returns false. Items that only support the
+	*  legacy Win32 \ref clbkOpen path (HWND-based dialog) will not display
+	*  any editor under cross-platform Launchpads — those addons should be
+	*  migrated to override this method to expose their UI everywhere.
+	*/
+	virtual bool clbkRender ();
+
 	LAUNCHPADITEM_HANDLE hItem;
 };
 

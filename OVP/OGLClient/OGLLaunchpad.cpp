@@ -5,6 +5,8 @@
 
 #include "OGLLaunchpad.h"
 #include "Config.h"
+#include "LaunchpadRegistry.h"
+#include "OrbiterAPI.h"
 #include "imgui.h"
 #include <dirent.h>
 #include <sys/stat.h>
@@ -137,6 +139,11 @@ void OGLLaunchpad::SyncToConfig()
 			else if (!m.active && was && !m.locked) m_cfg->DelActiveModule(m.name);
 		}
 	}
+
+	// Allow every Extra item to write its addon-specific config file
+	// before the simulation session starts. Mirrors Win32
+	// LaunchpadDialog::WriteExtraParams (Launchpad.cpp:583).
+	orbiter::LaunchpadRegistry::Instance().WriteConfigAll();
 }
 
 void OGLLaunchpad::ScanScenarios(const std::string &scenarioDir)
@@ -1116,10 +1123,131 @@ void OGLLaunchpad::RenderTabVideo(float availH)
 	ImGui::EndChild();
 }
 
+// Recursive renderer for the Extra tree. Draws every entry whose
+// `parent` matches `parentH`, recurses into children when the user
+// expands the node, and tracks selection in m_ext.selectedItem.
+static void RenderExtraTree(const std::vector<orbiter::LaunchpadEntry> &entries,
+	orbiter::LpadHandle parentH, ExtraTabState &state,
+	orbiter::LpadHandle &openItem)
+{
+	for (size_t i = 0; i < entries.size(); ++i) {
+		const auto &e = entries[i];
+		if (e.parent != parentH) continue;
+
+		const char *name = e.item->Name();
+		if (!name || !*name) name = "(unnamed)";
+
+		// Check whether this entry has any children to decide between
+		// a leaf node and an expandable folder.
+		bool hasChildren = false;
+		for (const auto &c : entries) {
+			if (c.parent == e.handle) { hasChildren = true; break; }
+		}
+
+		ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow;
+		if (!hasChildren) flags |= ImGuiTreeNodeFlags_Leaf
+			| ImGuiTreeNodeFlags_NoTreePushOnOpen;
+		if (state.selectedItem == (int)e.handle)
+			flags |= ImGuiTreeNodeFlags_Selected;
+
+		bool nodeOpen = ImGui::TreeNodeEx((const void*)(intptr_t)e.handle,
+			flags, "%s", name);
+		if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
+			state.selectedItem = (int)e.handle;
+		if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
+			openItem = e.handle;
+
+		if (nodeOpen && hasChildren) {
+			RenderExtraTree(entries, e.handle, state, openItem);
+			ImGui::TreePop();
+		}
+	}
+}
+
 void OGLLaunchpad::RenderTabExtra(float availH)
 {
 	ImGui::BeginChild("ExtraContent", ImVec2(0, availH), false);
-	ImGui::TextDisabled("Extra Parameters — implemented in M22.f/.g");
+
+	const auto &entries = orbiter::LaunchpadRegistry::Instance().Entries();
+	if (entries.empty()) {
+		ImGui::TextDisabled("No additional parameters registered.\n\n"
+			"Built-in items (Physics, Instruments, Debug, ...) are added at "
+			"Orbiter startup. Plugin modules can register their own items via "
+			"oapiRegisterLaunchpadItem().");
+		ImGui::EndChild();
+		return;
+	}
+
+	float availW = ImGui::GetContentRegionAvail().x;
+	float leftW  = availW * m_ext.splitterPos;
+	if (leftW < 180.0f) leftW = 180.0f;
+
+	orbiter::LpadHandle openItem = 0;
+
+	ImGui::BeginChild("ExtTree", ImVec2(leftW, availH), true);
+	RenderExtraTree(entries, 0, m_ext, openItem);
+	ImGui::EndChild();
+
+	VerticalSplitter("##ExtSplit", availW, availH, m_ext.splitterPos, m_draggingScnSplitter);
+	ImGui::SameLine();
+
+	ImGui::BeginChild("ExtDesc", ImVec2(0, availH), true);
+	const orbiter::LaunchpadEntry *sel = nullptr;
+	for (const auto &e : entries) {
+		if ((int)e.handle == m_ext.selectedItem) { sel = &e; break; }
+	}
+	if (sel) {
+		const char *name = sel->item->Name(); if (!name) name = "(unnamed)";
+		ImGui::TextWrapped("%s", name);
+		ImGui::Separator();
+		const char *desc = sel->item->Description();
+		if (desc && *desc)
+			ImGui::TextWrapped("%s", desc);
+		else
+			ImGui::TextDisabled("(no description)");
+		ImGui::Spacing();
+		if (ImGui::Button("Edit...")) openItem = sel->handle;
+	} else {
+		ImGui::TextDisabled("Select an item to see its description.\n"
+			"Double-click an item (or use the Edit button) to open its editor.");
+	}
+	ImGui::EndChild();
+
+	// Modal popup for the selected item's clbkRender(). The popup stays
+	// alive while the item's clbkRender() returns true.
+	static orbiter::LpadHandle activeItem = 0;
+	static LaunchpadItem *activePtr = nullptr;
+	if (openItem) {
+		for (const auto &e : entries) {
+			if (e.handle == openItem) {
+				activeItem = openItem;
+				activePtr = e.item;
+				ImGui::OpenPopup("##ExtraEdit");
+				break;
+			}
+		}
+	}
+	ImVec2 vp = ImGui::GetMainViewport()->Size;
+	ImGui::SetNextWindowSize(ImVec2(vp.x * 0.5f, vp.y * 0.6f), ImGuiCond_Appearing);
+	ImGui::SetNextWindowPos(ImVec2(vp.x * 0.5f, vp.y * 0.5f),
+		ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+	if (ImGui::BeginPopupModal("##ExtraEdit", nullptr, ImGuiWindowFlags_None)) {
+		const char *name = activePtr ? activePtr->Name() : nullptr;
+		ImGui::TextUnformatted(name && *name ? name : "Edit");
+		ImGui::Separator();
+
+		bool keepOpen = activePtr ? activePtr->clbkRender() : false;
+
+		ImGui::Separator();
+		if (ImGui::Button("Close")) keepOpen = false;
+		if (!keepOpen) {
+			ImGui::CloseCurrentPopup();
+			activeItem = 0;
+			activePtr  = nullptr;
+		}
+		ImGui::EndPopup();
+	}
+
 	ImGui::EndChild();
 }
 

@@ -1631,36 +1631,6 @@ INT_PTR CALLBACK ExtraLogfileOptions::DlgProc (HWND hWnd, UINT uMsg, WPARAM wPar
 // Interface in OrbiterAPI.h
 //-----------------------------------------------------------------------------
 
-LaunchpadItem::LaunchpadItem ()
-{
-	hItem = 0;
-}
-
-LaunchpadItem::~LaunchpadItem ()
-{}
-
-char *LaunchpadItem::Name ()
-{
-	return 0;
-}
-
-char *LaunchpadItem::Description ()
-{
-	return 0;
-}
-
-bool LaunchpadItem::OpenDialog (HINSTANCE hInst, HWND hLaunchpad, int resId, DLGPROC pDlg)
-{
-	DialogBoxParam (hInst, MAKEINTRESOURCE (resId), hLaunchpad, pDlg, (LPARAM)this);
-	return true;
-}
-
-bool LaunchpadItem::clbkOpen (HWND hLaunchpad)
-{
-	return false;
-}
-
-int LaunchpadItem::clbkWriteConfig ()
-{
-	return 0;
-}
+// LaunchpadItem default implementations have been moved to
+// Src/Orbiter/LaunchpadItem.cpp so the macOS / Linux Launchpad
+// (OGLLaunchpad) can link the same vtable.
