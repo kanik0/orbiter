@@ -23,6 +23,16 @@ endif()
 set(_XRSOUND_SRC ${CMAKE_SOURCE_DIR}/Sound/XRSound/src)
 add_library(XRSound_backend_openal STATIC
 	${_XRSOUND_SRC}/OpenALBackend.cpp
+	${_XRSOUND_SRC}/external/decoders_impl.cpp
+)
+
+# Suppress the long list of benign warnings that ship with single-header
+# audio decoders. These are vendored-in third-party code we audit via
+# pinned URLs but don't actively maintain.
+set_source_files_properties(
+	${_XRSOUND_SRC}/external/decoders_impl.cpp
+	PROPERTIES COMPILE_OPTIONS
+	"-Wno-unused-function;-Wno-unused-variable;-Wno-unused-parameter;-Wno-sign-compare;-Wno-implicit-fallthrough;-Wno-missing-braces;-Wno-shift-negative-value"
 )
 
 target_include_directories(XRSound_backend_openal

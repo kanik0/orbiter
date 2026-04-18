@@ -4,11 +4,29 @@
 #if !defined(_WIN32) || !defined(XRSOUND_DLL_BUILD)
 
 #include "OpenALBackend.h"
+
+// Decoders — declarations only. The implementation bodies live in
+// external/decoders_impl.cpp so we don't pay the inlining cost in
+// every TU that talks to the audio backend.
+#include "external/dr_wav.h"
+#include "external/dr_mp3.h"
+
+// stb_vorbis ships as a single .c file (no separate .h). Forward-declare
+// the handful of symbols OpenALBackend needs so we don't re-include the
+// implementation TU here.
+extern "C" {
+	extern int stb_vorbis_decode_filename(const char *filename,
+	                                      int *channels, int *sample_rate,
+	                                      short **output);
+}
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <string>
 
 namespace xrsound {
 
@@ -173,58 +191,99 @@ const char *OpenALEngine::getDriverName() { return m_driverName.c_str(); }
 
 void OpenALEngine::update() { /* OpenAL has no per-frame work */ }
 
+// Returns true and populates `data`/channels/sampleRate/bitsPerSample
+// on success. Caller is responsible for ensuring data ends up as
+// interleaved PCM matching an OpenAL mono/stereo 8 or 16-bit format.
+static bool DecodeWav(const char *filename, std::vector<uint8_t> &data,
+                      int &channels, int &sampleRate, int &bitsPerSample)
+{
+	drwav wav;
+	if (!drwav_init_file(&wav, filename, nullptr)) return false;
+
+	channels   = (int)wav.channels;
+	sampleRate = (int)wav.sampleRate;
+
+	// OpenAL core only understands 8-bit and 16-bit PCM integer samples.
+	// dr_wav can transparently convert float / 24-bit / 32-bit int input
+	// to 16-bit PCM, which is the widest format OpenAL accepts.
+	bitsPerSample = 16;
+	const drwav_uint64 totalFrames = wav.totalPCMFrameCount;
+	const size_t sampleCount = (size_t)totalFrames * wav.channels;
+	data.resize(sampleCount * sizeof(int16_t));
+	drwav_uint64 framesRead = drwav_read_pcm_frames_s16(
+		&wav, totalFrames, reinterpret_cast<drwav_int16 *>(data.data()));
+	drwav_uninit(&wav);
+	if (framesRead != totalFrames) {
+		data.resize((size_t)framesRead * wav.channels * sizeof(int16_t));
+	}
+	return !data.empty();
+}
+
+// MP3 → s16 interleaved PCM. dr_mp3 allocates on its heap; we copy into
+// our std::vector so the cache's ownership is self-contained and the
+// caller doesn't have to track drmp3_free.
+static bool DecodeMp3(const char *filename, std::vector<uint8_t> &data,
+                      int &channels, int &sampleRate, int &bitsPerSample)
+{
+	drmp3_config cfg{};
+	drmp3_uint64 frameCount = 0;
+	drmp3_int16 *pcm = drmp3_open_file_and_read_pcm_frames_s16(
+		filename, &cfg, &frameCount, nullptr);
+	if (!pcm || !frameCount) return false;
+
+	channels      = (int)cfg.channels;
+	sampleRate    = (int)cfg.sampleRate;
+	bitsPerSample = 16;
+
+	const size_t bytes = (size_t)frameCount * cfg.channels * sizeof(int16_t);
+	data.assign(reinterpret_cast<uint8_t *>(pcm),
+	            reinterpret_cast<uint8_t *>(pcm) + bytes);
+	drmp3_free(pcm, nullptr);
+	return true;
+}
+
+// OGG Vorbis → s16 interleaved via stb_vorbis_decode_filename. stb_vorbis
+// returns a malloc'd buffer we copy + free; avoids exposing the C API
+// heap to the rest of the codebase.
+static bool DecodeOgg(const char *filename, std::vector<uint8_t> &data,
+                      int &channels, int &sampleRate, int &bitsPerSample)
+{
+	int ch = 0, sr = 0;
+	short *pcm = nullptr;
+	int frames = stb_vorbis_decode_filename(filename, &ch, &sr, &pcm);
+	if (frames <= 0 || !pcm) {
+		if (pcm) std::free(pcm);
+		return false;
+	}
+	channels      = ch;
+	sampleRate    = sr;
+	bitsPerSample = 16;
+	const size_t bytes = (size_t)frames * ch * sizeof(int16_t);
+	data.assign(reinterpret_cast<uint8_t *>(pcm),
+	            reinterpret_cast<uint8_t *>(pcm) + bytes);
+	std::free(pcm);
+	return true;
+}
+
+// Wrapper kept for backwards compatibility — picks the right decoder
+// from the filename extension.
 bool OpenALEngine::ParseWav(const char *filename, std::vector<uint8_t> &data,
                             int &channels, int &sampleRate, int &bitsPerSample)
 {
-	std::ifstream file(filename, std::ios::binary);
-	if (!file.is_open()) return false;
-
-	char riff[4];
-	file.read(riff, 4);
-	if (std::memcmp(riff, "RIFF", 4) != 0) return false;
-
-	uint32_t fileSize;
-	file.read((char*)&fileSize, 4);
-
-	char wave[4];
-	file.read(wave, 4);
-	if (std::memcmp(wave, "WAVE", 4) != 0) return false;
-
-	bool foundFmt = false, foundData = false;
-	while (file && !file.eof()) {
-		char chunkId[4];
-		uint32_t chunkSize;
-		file.read(chunkId, 4);
-		if (file.gcount() < 4) break;
-		file.read((char*)&chunkSize, 4);
-
-		if (std::memcmp(chunkId, "fmt ", 4) == 0) {
-			uint16_t audioFormat, numChannels;
-			uint32_t sr, byteRate;
-			uint16_t blockAlign, bps;
-			file.read((char*)&audioFormat, 2);
-			file.read((char*)&numChannels, 2);
-			file.read((char*)&sr, 4);
-			file.read((char*)&byteRate, 4);
-			file.read((char*)&blockAlign, 2);
-			file.read((char*)&bps, 2);
-			channels      = numChannels;
-			sampleRate    = (int)sr;
-			bitsPerSample = bps;
-			if (chunkSize > 16)
-				file.seekg(chunkSize - 16, std::ios::cur);
-			foundFmt = true;
-		} else if (std::memcmp(chunkId, "data", 4) == 0) {
-			data.resize(chunkSize);
-			file.read((char*)data.data(), chunkSize);
-			foundData = true;
-			break;
-		} else {
-			file.seekg(chunkSize, std::ios::cur);
-		}
+	if (!filename) return false;
+	std::string f(filename);
+	std::string ext;
+	const size_t dot = f.find_last_of('.');
+	if (dot != std::string::npos) {
+		ext = f.substr(dot + 1);
+		std::transform(ext.begin(), ext.end(), ext.begin(),
+		               [](unsigned char c){ return std::tolower(c); });
 	}
-
-	return foundFmt && foundData && !data.empty();
+	if (ext == "mp3") return DecodeMp3(filename, data, channels, sampleRate, bitsPerSample);
+	if (ext == "ogg") return DecodeOgg(filename, data, channels, sampleRate, bitsPerSample);
+	// Default: assume WAV / RIFF. dr_wav also handles W64 / RF64, so
+	// unusual extensions (.w64) fall through here correctly.
+	return DecodeWav(filename, data, channels, sampleRate, bitsPerSample);
 }
 
 ALuint OpenALEngine::LoadFile(const char *filename, float *outDurationSec)
