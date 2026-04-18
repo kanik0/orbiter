@@ -1,100 +1,99 @@
 // Copyright (c) Martin Schweiger
 // Licensed under the MIT License
 
-// OpenAL audio backend for XRSound on macOS/Linux
-// Replaces irrKlang with Apple's built-in OpenAL framework
+// OpenAL audio backend for XRSound on macOS/Linux.
+//
+// Implements xrsound::IAudioBackend / xrsound::IAudioSound against
+// OpenAL Soft (Homebrew `openal-soft` on macOS, `libopenal-dev` on
+// Linux). Apple's bundled <OpenAL/al.h> framework is deprecated; we
+// intentionally link against the portable `openal-soft` distribution
+// both for feature parity (EFX, multi-channel) and to silence the
+// deprecation warnings in the macOS 14+ SDK.
 
 #ifndef __OPENALBACKEND_H
 #define __OPENALBACKEND_H
 
-#ifndef _WIN32
+#if !defined(_WIN32) || !defined(XRSOUND_DLL_BUILD)
 
-#ifdef __APPLE__
-#include <OpenAL/al.h>
-#include <OpenAL/alc.h>
-#else
+#include "IAudioBackend.h"
 #include <AL/al.h>
 #include <AL/alc.h>
-#endif
-
-#include <string>
-#include <map>
-#include <vector>
 #include <cstdint>
+#include <map>
+#include <string>
+#include <vector>
 
 namespace xrsound {
 
-// A loaded audio buffer
-struct AudioBuffer {
-	ALuint bufferId;
-	int channels;
-	int sampleRate;
-	int bitsPerSample;
-	float duration; // seconds
-};
-
-// An active sound source
-struct AudioSource {
-	ALuint sourceId;
-	ALuint bufferId;
-	bool isLooping;
-	float volume;
-	bool isPaused;
-};
-
-class OpenALEngine {
+// Concrete playback handle. OpenAL's source/buffer split maps 1:1 onto
+// irrKlang's ISound: one buffer (shared, keyed by filename), one source
+// per play2D invocation. Destruction frees the source but leaves the
+// cached buffer alive for subsequent plays of the same file.
+class OpenALSound : public IAudioSound {
 public:
-	OpenALEngine();
-	~OpenALEngine();
+	OpenALSound(ALuint source, ALuint buffer, float durationSeconds);
+	~OpenALSound() override;
 
-	// Initialize the OpenAL device and context
-	bool Init();
+	void drop() override;
+	void stop() override;
+	bool isFinished() override;
 
-	// Shutdown and release all resources
-	void Shutdown();
+	void setVolume(float volume) override;
+	void setIsLooped(bool loop) override;
+	void setIsPaused(bool pause) override;
 
-	// Load a WAV file into an OpenAL buffer. Returns buffer ID or 0 on failure.
-	ALuint LoadWav(const char *filename);
+	void  setPan(float pan) override;
+	float getPan() override;
 
-	// Play a loaded buffer. Returns source ID or 0 on failure.
-	ALuint Play(ALuint bufferId, bool loop, float volume);
+	bool  setPlaybackSpeed(float speed) override;
+	float getPlaybackSpeed() override;
 
-	// Stop a playing source
-	void Stop(ALuint sourceId);
-
-	// Set volume [0-1]
-	void SetVolume(ALuint sourceId, float volume);
-
-	// Pause/resume
-	void Pause(ALuint sourceId);
-	void Resume(ALuint sourceId);
-
-	// Check if source has finished playing
-	bool IsFinished(ALuint sourceId);
-
-	// Per-frame update (cleanup finished sources)
-	void Update();
-
-	// Get driver name
-	const char *GetDriverName() const { return "OpenAL"; }
+	bool         setPlayPosition(unsigned int positionMs) override;
+	unsigned int getPlayPosition() override;
 
 private:
-	ALCdevice *m_device;
-	ALCcontext *m_context;
-	bool m_initialized;
+	ALuint m_source;
+	ALuint m_buffer;      // kept for size reporting; not owned
+	float  m_durationSec;
+	float  m_pan;
+	float  m_volume;
+};
 
-	// Cached buffers: filename → buffer ID
-	std::map<std::string, ALuint> m_bufferCache;
+class OpenALEngine : public IAudioBackend {
+public:
+	OpenALEngine();
+	~OpenALEngine() override;
 
-	// Active sources
-	std::vector<ALuint> m_activeSources;
+	// Open device + context; must be called before any play2D.
+	bool init();
 
-	// Parse WAV file header and return PCM data
+	// IAudioBackend overrides ---------------------------------------------
+	void         drop() override;
+	IAudioSound *play2D(const char *filename, bool loop = false,
+	                    bool startPaused = false,
+	                    bool track = false) override;
+	void         update() override;
+	const char  *getDriverName() override;
+
+private:
+	// Shared WAV buffer cache (filename → AL buffer id). Each play2D
+	// creates a fresh AL source that references an entry here.
+	ALuint LoadFile(const char *filename, float *outDurationSec);
+
+	// Parse a RIFF/WAVE file into raw PCM. Returns false on any header
+	// mismatch or IO failure; leaves outputs untouched.
 	bool ParseWav(const char *filename, std::vector<uint8_t> &data,
 	              int &channels, int &sampleRate, int &bitsPerSample);
+
+	ALCdevice  *m_device;
+	ALCcontext *m_context;
+	bool        m_initialized;
+
+	std::string m_driverName;  // cached from alcGetString(ALC_DEVICE_SPECIFIER)
+	std::map<std::string, ALuint> m_bufferCache;
 };
 
 } // namespace xrsound
 
-#endif // !_WIN32
+#endif // !_WIN32 || !XRSOUND_DLL_BUILD
 #endif // __OPENALBACKEND_H
