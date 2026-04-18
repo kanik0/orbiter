@@ -659,8 +659,14 @@ OGLTexture *OGLTexture::LoadTEX(const char *path) {
 // ============================================================================
 
 #define STB_IMAGE_IMPLEMENTATION
+// Enable the formats Orbiter actually consumes: PNG for in-game textures and
+// PNG/JPG/BMP for Launchpad scenario thumbnails. STBI_NO_STDIO keeps file
+// I/O in our own code paths (we read into a buffer and call
+// stbi_load_from_memory).
 #define STBI_ONLY_PNG
-#define STBI_NO_STDIO  // we do our own file I/O
+#define STBI_ONLY_JPEG
+#define STBI_ONLY_BMP
+#define STBI_NO_STDIO
 #include "stb_image.h"
 
 OGLTexture *OGLTexture::LoadPNG(const char *path) {

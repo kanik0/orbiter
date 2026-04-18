@@ -35,6 +35,13 @@ struct ScenarioEntry {
 	std::vector<ScenarioEntry> children;
 };
 
+// Lazy-loaded RGBA thumbnail uploaded as a GL texture and shown via ImGui::Image.
+struct ScenarioThumbnail {
+	unsigned int texId = 0;  // GLuint, 0 = not loaded / no thumbnail available
+	int width = 0, height = 0;
+	bool tried = false;      // already attempted load (prevents retry on miss)
+};
+
 // Per-tab state structures kept in OGLLaunchpad so they survive across frames.
 struct ScenarioTabState {
 	float splitterPos = 0.45f;   // left pane fraction of width (0..1)
@@ -122,8 +129,11 @@ private:
 	std::string m_selectedScenario;
 	std::string m_selectedScenarioFull;
 	std::string m_selectedDescription;
+	bool m_selectionIsFolder = false;
+	ScenarioThumbnail m_selectedThumb;
 	bool m_startPaused = false;
 	bool m_scenariosLoaded = false;
+	bool m_draggingScnSplitter = false;
 
 	ScenarioTabState m_scn;
 	OptionsTabState  m_opt;
@@ -135,7 +145,16 @@ private:
 	// Helpers
 	void ScanDirectory(const std::string &dir, const std::string &relPath, ScenarioEntry &parent);
 	void RenderTree(ScenarioEntry &entry);
-	void LoadDescription(const std::string &fullPath);
+	// Load description text for the currently selected entry. For a scenario file
+	// the BEGIN_DESC block of the .scn file is parsed; for a folder, the sibling
+	// Description.txt is parsed (DESC, then HYPERDESC fallback with HTML stripped).
+	void LoadDescription(const std::string &fullPath, bool isFolder);
+	// Try to load <scenario>.{jpg,png,bmp} sibling, upload to a GL texture and
+	// store the handle in m_selectedThumb. Releases any previously held thumb.
+	void LoadThumbnail(const std::string &scenarioFullPath);
+	void ReleaseThumbnail();
+	// Decode HYPERDESC HTML markup into plain text (mirrors Win32 Html2Text).
+	static std::string HtmlToPlainText(const std::string &html);
 
 	// Tab renderers
 	void RenderTabScenario(float availH);

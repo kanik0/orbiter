@@ -14,6 +14,19 @@
 #include <cstring>
 #include <cstdio>
 
+// stb_image — implementation lives in OGLTexture.cpp; here we only need the
+// public interface to decode scenario thumbnails.
+#include "stb_image.h"
+
+// OpenGL — needed for direct texture upload of scenario thumbnails into the
+// pre-game ImGui frame.
+#if defined(__APPLE__)
+#  define GL_SILENCE_DEPRECATION
+#  include <OpenGL/gl3.h>
+#else
+#  include <GL/gl.h>
+#endif
+
 namespace ogl {
 
 OGLLaunchpad::OGLLaunchpad()
@@ -23,7 +36,10 @@ OGLLaunchpad::OGLLaunchpad()
 	m_root.isOpen = true;
 }
 
-OGLLaunchpad::~OGLLaunchpad() {}
+OGLLaunchpad::~OGLLaunchpad()
+{
+	ReleaseThumbnail();
+}
 
 void OGLLaunchpad::Bind(Config *cfg)
 {
@@ -160,50 +176,243 @@ void OGLLaunchpad::ScanDirectory(const std::string &dir, const std::string &relP
 	for (auto &f : files) parent.children.push_back(std::move(f));
 }
 
-void OGLLaunchpad::LoadDescription(const std::string &fullPath)
+// Read a BEGIN_<block>/END_<block> block from the input stream and return its
+// concatenated body. Mirrors Win32 ScanFileDesc() (TabScenario.cpp:316).
+static std::string ScanBlock(std::istream &is, const std::string &blockName)
 {
-	m_selectedDescription.clear();
-	std::ifstream file(fullPath);
-	if (!file.is_open()) return;
+	std::string out;
+	std::string begin = "BEGIN_" + blockName;
+	std::string end   = "END_"   + blockName;
 
 	std::string line;
-	bool inDesc = false;
-	while (std::getline(file, line)) {
-		if (line.find("BEGIN_DESC") != std::string::npos) {
-			inDesc = true;
+	bool inBlock = false;
+	while (std::getline(is, line)) {
+		// strip trailing CR (Windows line endings) so prefix comparison works
+		if (!line.empty() && line.back() == '\r') line.pop_back();
+
+		if (!inBlock) {
+			if (line.compare(0, begin.size(), begin) == 0) {
+				inBlock = true;
+			}
 			continue;
 		}
-		if (line.find("END_DESC") != std::string::npos) break;
-		if (inDesc) {
-			if (!m_selectedDescription.empty())
-				m_selectedDescription += "\n";
-			m_selectedDescription += line;
+		if (line.compare(0, end.size(), end) == 0)
+			break;
+		if (!out.empty()) out += '\n';
+		out += line;
+	}
+	return out;
+}
+
+std::string OGLLaunchpad::HtmlToPlainText(const std::string &html)
+{
+	std::string s;
+	s.reserve(html.size());
+	// 1. Convert paragraph and heading closers to blank lines (mirrors Html2Text).
+	std::string in = html;
+	auto replaceAll = [](std::string &str, const std::string &from, const std::string &to) {
+		size_t pos = 0;
+		while ((pos = str.find(from, pos)) != std::string::npos) {
+			str.replace(pos, from.size(), to);
+			pos += to.size();
+		}
+	};
+	replaceAll(in, "</h1>", "\n\n");
+	replaceAll(in, "</p>",  "\n\n");
+	replaceAll(in, "<br />", "\n");
+	replaceAll(in, "<br/>",  "\n");
+	replaceAll(in, "<br>",   "\n");
+
+	// 2. Strip remaining tags.
+	bool inTag = false;
+	for (char c : in) {
+		if (c == '<') { inTag = true; continue; }
+		if (c == '>') { inTag = false; continue; }
+		if (!inTag) s += c;
+	}
+
+	// 3. Decode common HTML entities.
+	replaceAll(s, "&gt;",  ">");
+	replaceAll(s, "&lt;",  "<");
+	replaceAll(s, "&ge;",  ">=");
+	replaceAll(s, "&le;",  "<=");
+	replaceAll(s, "&nbsp;", " ");
+	replaceAll(s, "&amp;", "&"); // last so we don't double-decode
+
+	// 4. Collapse runs of more than two consecutive newlines.
+	std::string out;
+	out.reserve(s.size());
+	int nl = 0;
+	for (char c : s) {
+		if (c == '\n') {
+			if (++nl <= 2) out += c;
+		} else {
+			nl = 0;
+			out += c;
 		}
 	}
+	return out;
 }
+
+void OGLLaunchpad::LoadDescription(const std::string &fullPath, bool isFolder)
+{
+	m_selectedDescription.clear();
+	if (isFolder) {
+		// Folders get their description from a sibling Description.txt with the
+		// same DESC / HYPERDESC blocks used by the Windows Launchpad.
+		std::ifstream f(fullPath + "/Description.txt");
+		if (!f.is_open()) return;
+		std::string desc = ScanBlock(f, "DESC");
+		if (desc.empty()) {
+			f.clear();
+			f.seekg(0);
+			std::string hyper = ScanBlock(f, "HYPERDESC");
+			if (!hyper.empty()) desc = HtmlToPlainText(hyper);
+		}
+		m_selectedDescription = desc;
+	} else {
+		std::ifstream f(fullPath);
+		if (!f.is_open()) return;
+		m_selectedDescription = ScanBlock(f, "DESC");
+	}
+}
+
+void OGLLaunchpad::ReleaseThumbnail()
+{
+	if (m_selectedThumb.texId) {
+		GLuint t = (GLuint)m_selectedThumb.texId;
+		glDeleteTextures(1, &t);
+	}
+	m_selectedThumb = ScenarioThumbnail{};
+}
+
+void OGLLaunchpad::LoadThumbnail(const std::string &scenarioFullPath)
+{
+	ReleaseThumbnail();
+
+	// Strip .scn extension and try common image suffixes next to the file.
+	std::string base = scenarioFullPath;
+	if (base.size() > 4 && base.compare(base.size() - 4, 4, ".scn") == 0)
+		base.resize(base.size() - 4);
+
+	const char *exts[] = { ".jpg", ".jpeg", ".png", ".bmp" };
+	std::string found;
+	for (const char *e : exts) {
+		std::string p = base + e;
+		struct stat st;
+		if (stat(p.c_str(), &st) == 0 && S_ISREG(st.st_mode)) {
+			found = p;
+			break;
+		}
+	}
+	m_selectedThumb.tried = true;
+	if (found.empty()) return;
+
+	// Read whole file into memory — OGLClient builds stb_image with
+	// STBI_NO_STDIO so we cannot use stbi_load() directly.
+	std::ifstream ifs(found, std::ios::binary | std::ios::ate);
+	if (!ifs) return;
+	std::streamsize sz = ifs.tellg();
+	if (sz <= 0) return;
+	ifs.seekg(0, std::ios::beg);
+	std::vector<unsigned char> bytes((size_t)sz);
+	if (!ifs.read(reinterpret_cast<char*>(bytes.data()), sz)) return;
+
+	int w, h, comp;
+	stbi_set_flip_vertically_on_load(0);
+	unsigned char *pix = stbi_load_from_memory(
+		bytes.data(), (int)bytes.size(), &w, &h, &comp, 4);
+	if (!pix) return;
+
+	GLuint tex = 0;
+	glGenTextures(1, &tex);
+	glBindTexture(GL_TEXTURE_2D, tex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pix);
+	stbi_image_free(pix);
+
+	m_selectedThumb.texId  = tex;
+	m_selectedThumb.width  = w;
+	m_selectedThumb.height = h;
+}
+
+// pendingLaunch is set true if the user double-clicked a scenario leaf.
+static bool s_pendingLaunch = false;
 
 void OGLLaunchpad::RenderTree(ScenarioEntry &entry)
 {
 	for (auto &child : entry.children) {
 		if (child.isFolder) {
 			ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow;
-			if (ImGui::TreeNodeEx(child.name.c_str(), flags)) {
+			bool isSelected = (m_selectionIsFolder && m_selectedScenarioFull == child.fullPath);
+			if (isSelected) flags |= ImGuiTreeNodeFlags_Selected;
+			bool nodeOpen = ImGui::TreeNodeEx(child.name.c_str(), flags);
+			if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+				m_selectionIsFolder = true;
+				m_selectedScenarioFull = child.fullPath;
+				m_selectedScenario.clear();
+				LoadDescription(child.fullPath, true);
+				ReleaseThumbnail();
+			}
+			if (nodeOpen) {
 				RenderTree(child);
 				ImGui::TreePop();
 			}
 		} else {
 			ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-			bool isSelected = (m_selectedScenario == child.path);
+			bool isSelected = (!m_selectionIsFolder && m_selectedScenario == child.path);
 			if (isSelected) flags |= ImGuiTreeNodeFlags_Selected;
 
 			ImGui::TreeNodeEx(child.name.c_str(), flags);
 			if (ImGui::IsItemClicked()) {
+				m_selectionIsFolder = false;
 				m_selectedScenario = child.path;
 				m_selectedScenarioFull = child.fullPath;
-				LoadDescription(child.fullPath);
+				LoadDescription(child.fullPath, false);
+				LoadThumbnail(child.fullPath);
+			}
+			if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+				m_selectionIsFolder = false;
+				m_selectedScenario = child.path;
+				m_selectedScenarioFull = child.fullPath;
+				s_pendingLaunch = true;
 			}
 		}
 	}
+}
+
+// Vertical splitter helper — draws an invisible button between two panes that
+// the user can drag to repartition. Stores the new fraction (0.15 .. 0.85) in
+// `frac`. Returns true while the user is actively dragging.
+static bool VerticalSplitter(const char *id, float availW, float availH,
+	float &frac, bool &dragging)
+{
+	const float thickness = 6.0f;
+	float leftW = availW * frac;
+	if (leftW < 120.0f) { leftW = 120.0f; frac = leftW / availW; }
+	ImGui::SameLine();
+	ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_Separator));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::GetStyleColorVec4(ImGuiCol_SeparatorHovered));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImGui::GetStyleColorVec4(ImGuiCol_SeparatorActive));
+	ImGui::Button(id, ImVec2(thickness, availH));
+	ImGui::PopStyleColor(3);
+	if (ImGui::IsItemActive()) {
+		dragging = true;
+		float dx = ImGui::GetIO().MouseDelta.x;
+		float newFrac = frac + dx / availW;
+		if (newFrac < 0.15f) newFrac = 0.15f;
+		if (newFrac > 0.85f) newFrac = 0.85f;
+		frac = newFrac;
+	} else if (ImGui::IsMouseReleased(0)) {
+		dragging = false;
+	}
+	if (ImGui::IsItemHovered() || ImGui::IsItemActive())
+		ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+	return dragging;
 }
 
 void OGLLaunchpad::RenderTabScenario(float availH)
@@ -216,18 +425,38 @@ void OGLLaunchpad::RenderTabScenario(float availH)
 	RenderTree(m_root);
 	ImGui::EndChild();
 
+	VerticalSplitter("##ScnSplit", availW, availH, m_scn.splitterPos, m_draggingScnSplitter);
 	ImGui::SameLine();
 
 	ImGui::BeginChild("ScenarioDesc", ImVec2(0, availH), true);
-	if (!m_selectedScenario.empty()) {
+	if (m_selectionIsFolder && !m_selectedScenarioFull.empty()) {
+		const char *name = strrchr(m_selectedScenarioFull.c_str(), '/');
+		ImGui::TextWrapped("Folder: %s", name ? name + 1 : m_selectedScenarioFull.c_str());
+		ImGui::Separator();
+		if (!m_selectedDescription.empty())
+			ImGui::TextWrapped("%s", m_selectedDescription.c_str());
+		else
+			ImGui::TextDisabled("(no Description.txt in this folder)");
+	} else if (!m_selectedScenario.empty()) {
 		ImGui::TextWrapped("Scenario: %s", m_selectedScenario.c_str());
 		ImGui::Separator();
+		if (m_selectedThumb.texId) {
+			float pw = ImGui::GetContentRegionAvail().x;
+			float aspect = (m_selectedThumb.height > 0)
+				? (float)m_selectedThumb.width / (float)m_selectedThumb.height
+				: 1.0f;
+			float th = pw / aspect;
+			float maxH = availH * 0.4f;
+			if (th > maxH) { th = maxH; pw = th * aspect; }
+			ImGui::Image((ImTextureID)(intptr_t)m_selectedThumb.texId, ImVec2(pw, th));
+			ImGui::Separator();
+		}
 		if (!m_selectedDescription.empty())
 			ImGui::TextWrapped("%s", m_selectedDescription.c_str());
 		else
 			ImGui::TextDisabled("(no description)");
 	} else {
-		ImGui::TextDisabled("Select a scenario to launch");
+		ImGui::TextDisabled("Select a scenario to launch — double-click to start immediately.");
 	}
 	ImGui::EndChild();
 }
@@ -354,6 +583,11 @@ bool OGLLaunchpad::Render(bool &quit)
 	ImGui::End();
 
 	if (!open) quit = true;
+
+	if (s_pendingLaunch && !m_selectedScenario.empty()) {
+		s_pendingLaunch = false;
+		launch = true;
+	}
 
 	if (launch) SyncToConfig();
 
