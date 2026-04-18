@@ -364,6 +364,26 @@ Ogni milestone comincia con:
 - **M7.b** — ✅ **DONE**: elevation displacement via `ELEVFILEHEADER` parse (uint8/int8/uint16/int16 dtypes supported), bilinear sampling in `BuildSpherePatch`. Crack-hiding skirts + proper per-vertex normal finite-differences restano come polish pass futuro (non-blocking, visually correct as-is).
 - **M14.b** — ✅ **DONE**: OGLvBase enumera ogni base del pianeta via `oapiGetBaseCount`/`oapiGetBasePadCount`/`oapiGetBasePadEquPos`, converte a world-coords con `oapiEquToGlobal`, e emette landing pad beacons (bianchi + rossi alternati stile PAPI-like) via `OGLBeaconArray` con cutoff a 500 km. Full `.bse` mesh parser (tarmacs, hangars) resta polish futuro — il contributo visibile più forte (luci pad) è coperto.
 
+### Follow-up Fase E — note post-M29
+
+- **HapticFX targets gamepads** (SDL_GameController). Older
+  joysticks that present as raw SDL_Joystick handles without a
+  GameController mapping won't get rumble. Adding SDL_Haptic
+  fallback for the legacy SDL_Joystick path is a future polish
+  item; the GameController mapping covers every modern Xbox / PS /
+  generic 8BitDo controller out of the box.
+- **No Config UI for haptic intensity yet** — effects fire at
+  hard-coded levels (Touchdown 0.7, EngineIgnite scaled to throttle,
+  AtmosphericBuffet 5..50 kPa linear). When user feedback surfaces
+  the right need, expose a `CfgJoystickPrm.HapticGain` slider in
+  the Joystick calibration dialog from M26.d.
+- **Touchdown intensity is fixed**: ideally we would scale by the
+  vertical descent rate at impact, but Vesselbase doesn't expose
+  the velocity at the precise transition frame. A future revision
+  can sample altitude from the previous frame and derive vz; for
+  the smoke target ("vibrazione on landing gear touchdown") the
+  fixed 0.7 level is sufficient.
+
 ### Follow-up Fase E — note post-M28
 
 - **Notarization secrets** are not committed to the repo. The
@@ -554,5 +574,5 @@ Ogni milestone comincia con:
 | M26 | Keymap/joystick/config | E | ✅ | this branch (M26.a UserPaths.{h,cpp} → ~/Library/Application Support/Orbiter/Orbiter.cfg + ~/Library/Logs/Orbiter/Orbiter.log + M26.b Wine detection already gated + M26.c OGLKeymapEditor visual keyboard + M26.d OGLJoystickCalibration live SDL axis monitor) |
 | M27 | Missing assets | E | ✅ | this branch (M27.a cmake/macos_assets.cmake fetches fa-solid-900 + Lekton-Bold + ArchitectsDaughter→architext.regular under SIL OFL with pinned SHA-256; M27.b cmake/download_earth_lod8.py opt-in via ORBITER_FETCH_EARTH_BLUEMARBLE → Wikimedia Commons mirror, tile-pyramid step documented as manual offline pipeline) |
 | M28 | CI/CD macOS | E | ✅ | this branch (cmake/codesign.cmake + Orbiter.entitlements.plist + macos-bundle-distributable + macos-codesign + macos-dmg targets; .github/workflows/reusable-build-macos.yml + on-push-macos.yml + pr-build-macos.yml + extended release.yml with macOS DMG job) |
-| M29 | Force feedback | E | ☐ | — |
+| M29 | Force feedback | E | ✅ | this branch (HapticFX module wraps SDL_GameControllerRumble; SDLPlatform owns the channel and binds it on Initialize; Orbiter::EndTimeStep emits Touchdown / EngineIgnite / AtmosphericBuffet effects from focus-vessel state edges) |
 | M30 | Parity test harness | E | ☐ | — |
