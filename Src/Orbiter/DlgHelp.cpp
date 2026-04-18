@@ -18,12 +18,15 @@
 #include <cstring>
 #include <cstdlib>
 #include <string>
-#include <unistd.h>
 
 #ifdef _WIN32
 #  include <windows.h>
 #  include <htmlhelp.h>
 #  include <io.h>
+#else
+// POSIX: getcwd / access live in <unistd.h>; the macOS / Linux
+// browser fallback below uses both. Only the !_WIN32 path needs them.
+#  include <unistd.h>
 #endif
 
 DlgHelp::DlgHelp() : ImGuiDialog("Orbiter: Help") {}
