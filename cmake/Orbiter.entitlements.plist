@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+	"http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+		Hardened-runtime entitlements for the Orbiter macOS bundle.
+		Required for notarization. Defaults to the minimum surface
+		Orbiter actually needs:
+
+		* allow-jit / allow-unsigned-executable-memory: enables Lua
+		  JIT in the LuaInterpreter plugin. Drop these if Lua is
+		  excluded from the build.
+		* disable-library-validation: lets us dlopen() user-installed
+		  third-party Modules/Plugin/*.dylib that are signed by other
+		  developers (or unsigned ad-hoc) without breaking the
+		  hardened runtime.
+
+		No camera/microphone/network/file-access entitlements — Orbiter
+		runs strictly local. Add narrowly-scoped temporary-exception
+		entries here if a future plugin really needs them.
+	-->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>

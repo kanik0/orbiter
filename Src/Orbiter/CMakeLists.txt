@@ -304,7 +304,14 @@ string(TIMESTAMP DATE "%d %b %Y")
 string(TIMESTAMP VERSION "%y%m%d")
 configure_file(about.hpp.in about.hpp @ONLY)
 
-# macOS .app bundle target
+# macOS .app bundle + DMG packaging
+if(APPLE)
+	# Code-signing helper + macos-bundle-distributable + macos-dmg
+	# targets. Pulls in APPLE_CODESIGN_IDENTITY +
+	# APPLE_NOTARIZATION_KEYCHAIN_PROFILE cache vars.
+	include(${CMAKE_SOURCE_DIR}/cmake/codesign.cmake)
+endif()
+
 if(APPLE)
 	set(ORBITER_VERSION "${VERSION}")
 	configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in ${CMAKE_BINARY_DIR}/Info.plist @ONLY)

@@ -1,0 +1,36 @@
+name: On Push (macOS)
+
+# Triggered by direct pushes to main. Builds debug + release for the
+# Apple Silicon runner and runs the Launchpad smoke test on each.
+# No artifacts uploaded (use the release workflow for that).
+#
+# All ${{ }} expansions resolve to inputs / matrix values defined in
+# this file or in the reusable workflow_call schema; no untrusted
+# user-controlled strings reach `run:` commands.
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'Doc/**'
+      - 'Flights/**'
+      - 'Html/**'
+      - 'Images/**'
+      - 'Localdoc/**'
+      - 'Scenarios/**'
+      - 'Textures/**'
+      - 'Textures2/**'
+
+jobs:
+  build:
+    name: Push macOS
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [debug, release]
+    uses: ./.github/workflows/reusable-build-macos.yml
+    with:
+      configuration: ${{ matrix.configuration }}
+      smoke: true
+      upload: false

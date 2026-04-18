@@ -1,0 +1,33 @@
+name: PR Build (macOS)
+
+# Triggered by pull requests targeting main. Builds the debug
+# configuration only (faster turnaround for review iteration) and
+# runs the Launchpad smoke test. No upload — the .app artifact is
+# reserved for release builds.
+#
+# All ${{ }} expansions resolve to inputs validated by the reusable
+# workflow_call schema; no untrusted user-controlled strings reach
+# `run:` commands.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - 'Doc/**'
+      - 'Flights/**'
+      - 'Html/**'
+      - 'Images/**'
+      - 'Localdoc/**'
+      - 'Scenarios/**'
+      - 'Textures/**'
+      - 'Textures2/**'
+
+jobs:
+  build:
+    name: PR macOS
+    uses: ./.github/workflows/reusable-build-macos.yml
+    with:
+      configuration: debug
+      smoke: true
+      upload: false

@@ -20,7 +20,7 @@ env:
 
 jobs:
   build:
-    name: Build
+    name: Build Windows
     uses: ./.github/workflows/reusable-build.yml
     strategy:
       fail-fast: false
@@ -31,9 +31,18 @@ jobs:
       upload: true
       docs: true
 
+  build-macos:
+    name: Build macOS arm64
+    uses: ./.github/workflows/reusable-build-macos.yml
+    with:
+      configuration: release
+      smoke: true
+      upload: true
+      dmg: true
+
   package:
     name: Package
-    needs: [build]
+    needs: [build, build-macos]
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -49,12 +58,19 @@ jobs:
         name: Orbiter-x64
         path: Orbiter-x64
 
+    - uses: actions/download-artifact@v8
+      with:
+        name: Orbiter-macos-arm64-release-dmg
+        path: Orbiter-macos-arm64
+
     - run: |
         find .
         mv Orbiter-x86/Orbiter.zip Orbiter-x86.zip
         mv Orbiter-x64/Orbiter.zip Orbiter-x64.zip
+        mv Orbiter-macos-arm64/Orbiter-macos-arm64.dmg \
+           Orbiter-macos-arm64.dmg
 
-    - name: "Create nightly release"
+    - name: "Create release"
       uses: softprops/action-gh-release@v2
       with:
         body: https://cdn.openorbiter.space/orbiter-releases/Orbiter-${{ inputs.version }}.zip
@@ -66,3 +82,4 @@ jobs:
         files: |
           Orbiter-x86.zip
           Orbiter-x64.zip
+          Orbiter-macos-arm64.dmg
