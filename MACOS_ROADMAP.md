@@ -364,6 +364,29 @@ Ogni milestone comincia con:
 - **M7.b** — ✅ **DONE**: elevation displacement via `ELEVFILEHEADER` parse (uint8/int8/uint16/int16 dtypes supported), bilinear sampling in `BuildSpherePatch`. Crack-hiding skirts + proper per-vertex normal finite-differences restano come polish pass futuro (non-blocking, visually correct as-is).
 - **M14.b** — ✅ **DONE**: OGLvBase enumera ogni base del pianeta via `oapiGetBaseCount`/`oapiGetBasePadCount`/`oapiGetBasePadEquPos`, converte a world-coords con `oapiEquToGlobal`, e emette landing pad beacons (bianchi + rossi alternati stile PAPI-like) via `OGLBeaconArray` con cutoff a 500 km. Full `.bse` mesh parser (tarmacs, hangars) resta polish futuro — il contributo visibile più forte (luci pad) è coperto.
 
+### Follow-up Fase E — note post-M24
+
+- **Two gcGUI.h headers** coexist: the legacy
+  `OVP/D3D9Client/gcGUI.h` (Win32-only, internal D3D9Client client)
+  and the new `Orbitersdk/include/gcGUI.h` (cross-platform, the
+  canonical addon-facing header). Win32 plugins that include
+  `<gcGUI.h>` from the SDK now get the new file with the legacy
+  HWND virtuals still present, so source compatibility is
+  preserved. Future cleanup: collapse to a single header once the
+  D3D9Client port is itself updated to the new ABI.
+- **Existing Win32 D3D9 plugins** that override the legacy HWND
+  registration on the new gcGUIBase will compile with virtual
+  pure errors only if they implement `gcGUIBase` themselves
+  (not the typical case — addons only override `gcGUIApp` which
+  is unchanged). Verified D3D9Client itself (its `WindowManager`
+  class) lives outside this build and is not affected.
+- **OGLWindowMgr is intentionally simple** — single-window per
+  application, ImGui CollapsingHeaders for sub-sections, no
+  custom dock pane. The Win32 docked side bar is a deliberate
+  feature gap on macOS; users get standalone draggable / resizable
+  ImGui windows instead. Future polish (real dock zone with
+  per-app pinning) can be layered on without API changes.
+
 ### Follow-up Fase E — note post-M23
 
 - **All 11 ImGui dialogs were already present** from earlier work
@@ -440,7 +463,7 @@ Ogni milestone comincia con:
 | M21 | Default sounds pack | D | ✅ | this branch (XRSound_assets install verified 302 files, xrsound_openal_smoke CTest target + API round-trip) |
 | M22 | Launchpad 6 tab | E | ✅ | this branch (M22.a scaffold + M22.b Scenario w/ thumbnails+desc+splitter + M22.c Video + M22.d Modules+`.info` infra + M22.e Options 12 pages + M22.f Extra+`clbkRender` API + M22.g 15 builtin extras ImGui + M22.h About+geometry persist) |
 | M23 | Dialogs core F3–F10 | E | ✅ | this branch (M23.a DlgHelp URL fallback + DlgOptions SDL joystick + M23.b F-key dispatch verified + M23.c case-insensitive vessel cfg lookup; all 11 ImGui dialogs already in place from earlier work) |
-| M24 | WindowMgr gcGUI | E | ☐ | — |
+| M24 | WindowMgr gcGUI | E | ✅ | this branch (cross-platform Orbitersdk/include/gcGUI.h with legacy HWND + new ImGui overloads + OGLWindowMgr backend + clbkRenderImGuiPlugins hook + ORBITER_GCGUI_TEST smoke driver) |
 | M25 | Win32 plugins port | E | ☐ | — |
 | M26 | Keymap/joystick/config | E | ☐ | — |
 | M27 | Missing assets | E | ☐ | — |
