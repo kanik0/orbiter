@@ -93,10 +93,18 @@ public:
 	// New ImGui-based API. The render callback is invoked every frame
 	// while the node is open; the host wraps it in a child window and
 	// handles the title bar, dock state and close button.
+	//
+	// Non-pure with a no-op default so existing Win32 backends
+	// (D3D9Client::WindowManager) that only implement the legacy
+	// HWND API keep compiling unchanged. macOS / Linux backends
+	// (OGLWindowMgr) override both pairs.
 	virtual HNODE RegisterApplicationImGui(gcGUIApp *pApp, const char *label,
-		gcGUIRender render, DWORD docked, DWORD color) = 0;
+		gcGUIRender render, DWORD docked, DWORD color)
+	{ (void)pApp; (void)label; (void)render; (void)docked; (void)color;
+	  return (HNODE)0; }
 	virtual HNODE RegisterSubsectionImGui(HNODE hNode, const char *label,
-		gcGUIRender render, DWORD color) = 0;
+		gcGUIRender render, DWORD color)
+	{ (void)hNode; (void)label; (void)render; (void)color; return (HNODE)0; }
 
 	// -----------------------------------------------------------------
 	// State queries / mutators (cross-platform)
