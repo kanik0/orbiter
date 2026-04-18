@@ -5,6 +5,31 @@
 **Preset:** `macos-arm64-debug` + `-DORBITER_BUILD_XRSOUND=ON -DORBITER_MAKE_TESTS=ON`
 **Host:** Darwin 25.4.0 / Apple M2 / OpenGL 4.1 Metal-90.5
 
+> ⚠️ **ERRATA CORRIGE — 2026-04-18 post-Phase 2 STEP 1.2**
+>
+> La sezione C (Runtime smoke battery, "14/14 PASS") di questo report
+> era un **falso positivo**. Il criterio di accettazione `PNG > 50 KB`
+> + `0 TERMIN/critical/fatal nel log` era soddisfatto solo dal peso dei
+> glyph HUD ImGui: ispezione visiva dei PNG in Phase 2 ha rivelato che
+> **tutti e 14 gli scenari renderizzavano scene completamente nera**
+> con solo l'overlay HUD sovrapposto. La M11 post-process pipeline era
+> rotta da tre bug stacked (OGLEnvMap FBO clobber, GL_RGBA16F silently
+> broken su Apple Silicon Metal, ACES tonemap clamp-to-zero su LDR).
+>
+> **Risolto in [PR #24](https://github.com/kanik0/orbiter/pull/24)**
+> (commit `c0ac8442`, merged in main `174ec0a6`). Rendering ora visibile
+> (Earth + ISS + stars) ma ancora degradato visivamente — bug separati
+> filati come [#25](https://github.com/kanik0/orbiter/issues/25)
+> (red channel missing) e [#26](https://github.com/kanik0/orbiter/issues/26)
+> (M4 atmospheric scattering not visible).
+>
+> L'errata non invalida le sezioni A (grep), B (cross-ref), D (ctest),
+> E (DMG), F (plugin .info), G (follow-up roadmap), H (ad-hoc) e le
+> estensioni K-N (Fasi A-D) — quelle si basavano su analisi statica o
+> runtime checks che non dipendevano dall'ispezione visiva del render.
+> La tabella smoke battery §C resta come riferimento di **stabilità
+> runtime** (0 crash, 0 TERMIN): quella parte rimane valida.
+
 ---
 
 ## TL;DR (post-estensione Fasi A-D)
