@@ -57,19 +57,6 @@ void OGLLaunchpad::InitFromConfig()
 
 	m_startPaused = m_cfg->CfgLogicPrm.bStartPaused;
 
-	// Options tab
-	m_opt.flightModelLevel = m_cfg->CfgLogicPrm.FlightModelLevel;
-	m_opt.damageSetting    = m_cfg->CfgLogicPrm.DamageSetting;
-	m_opt.bLimitedFuel     = m_cfg->CfgLogicPrm.bLimitedFuel;
-	m_opt.bPadRefuel       = m_cfg->CfgLogicPrm.bPadRefuel;
-	m_opt.mfdSize          = m_cfg->CfgLogicPrm.MFDSize;
-	m_opt.mfdMapVersion    = m_cfg->CfgLogicPrm.MFDMapVersion;
-	m_opt.bMfdTransparent  = m_cfg->CfgLogicPrm.bMfdTransparent;
-	m_opt.bGlasspitCompact = m_cfg->CfgLogicPrm.bGlasspitCompact;
-	m_opt.instrUpdDT       = m_cfg->CfgLogicPrm.InstrUpdDT;
-	m_opt.panelScale       = m_cfg->CfgLogicPrm.PanelScale;
-	m_opt.panelScrollSpeed = m_cfg->CfgLogicPrm.PanelScrollSpeed;
-
 	// Video tab
 	m_vid.bFullscreen = m_cfg->CfgDevPrm.bFullscreen;
 	m_vid.bNoVsync    = m_cfg->CfgDevPrm.bNoVsync;
@@ -122,19 +109,11 @@ void OGLLaunchpad::SyncToConfig()
 {
 	if (!m_cfg) return;
 
-	// Logic
-	m_cfg->CfgLogicPrm.bStartPaused      = m_startPaused;
-	m_cfg->CfgLogicPrm.FlightModelLevel  = m_opt.flightModelLevel;
-	m_cfg->CfgLogicPrm.DamageSetting     = m_opt.damageSetting;
-	m_cfg->CfgLogicPrm.bLimitedFuel      = m_opt.bLimitedFuel;
-	m_cfg->CfgLogicPrm.bPadRefuel        = m_opt.bPadRefuel;
-	m_cfg->CfgLogicPrm.MFDSize           = m_opt.mfdSize;
-	m_cfg->CfgLogicPrm.MFDMapVersion     = m_opt.mfdMapVersion;
-	m_cfg->CfgLogicPrm.bMfdTransparent   = m_opt.bMfdTransparent;
-	m_cfg->CfgLogicPrm.bGlasspitCompact  = m_opt.bGlasspitCompact;
-	m_cfg->CfgLogicPrm.InstrUpdDT        = m_opt.instrUpdDT;
-	m_cfg->CfgLogicPrm.PanelScale        = m_opt.panelScale;
-	m_cfg->CfgLogicPrm.PanelScrollSpeed  = m_opt.panelScrollSpeed;
+	// Logic — only the Start-paused checkbox lives outside the Options
+	// tab. All other CFG_LOGICPRM / CFG_PHYSICSPRM / CFG_VISUALPRM
+	// fields are edited directly through m_cfg by the Options page
+	// renderers and need no further sync.
+	m_cfg->CfgLogicPrm.bStartPaused = m_startPaused;
 
 	// Video
 	m_cfg->CfgDevPrm.bFullscreen = m_vid.bFullscreen;
@@ -592,10 +571,395 @@ void OGLLaunchpad::RenderTabScenario(float availH)
 	ImGui::EndChild();
 }
 
+// ----------------------------------------------------------------------
+// Options tab — 12 pages mirroring Win32 OptionsPages.{h,cpp}.
+//
+// Each Render*Page function reads/writes its CFG fields directly. The
+// Win32 equivalent lives in Src/Orbiter/OptionsPages.cpp; control IDs
+// referenced in the Win32 sources are documented inline so a maintainer
+// can locate the equivalent dialog control.
+// ----------------------------------------------------------------------
+
+namespace {
+
+// Convenience helpers — keep call sites short.
+inline bool BitFlagCheckbox(const char *label, int &flags, int bit) {
+	bool v = (flags & bit) != 0;
+	if (ImGui::Checkbox(label, &v)) {
+		if (v) flags |= bit; else flags &= ~bit;
+		return true;
+	}
+	return false;
+}
+
+inline bool DwordCheckbox(const char *label, DWORD *p) {
+	bool v = (*p != 0);
+	if (ImGui::Checkbox(label, &v)) { *p = v ? 1 : 0; return true; }
+	return false;
+}
+
+void RenderVisualPage(Config *c)
+{
+	ImGui::TextDisabled("Surface and atmosphere");
+	ImGui::Checkbox("Vessel ground shadows",   &c->CfgVisualPrm.bVesselShadows);
+	ImGui::Checkbox("Surface base shadows",    &c->CfgVisualPrm.bShadows);
+	ImGui::Checkbox("Cloud layers",            &c->CfgVisualPrm.bClouds);
+	ImGui::Checkbox("Cloud shadows",           &c->CfgVisualPrm.bCloudShadows);
+	ImGui::Checkbox("Night-side city lights",  &c->CfgVisualPrm.bNightlights);
+	ImGui::Checkbox("Reflective water surface",&c->CfgVisualPrm.bWaterreflect);
+	ImGui::Checkbox("Specular water ripples",  &c->CfgVisualPrm.bSpecularRipple);
+	ImGui::Checkbox("Atmospheric haze",        &c->CfgVisualPrm.bHaze);
+	ImGui::Checkbox("Distance fog",            &c->CfgVisualPrm.bFog);
+	ImGui::Checkbox("Specular reflections",    &c->CfgVisualPrm.bSpecular);
+	ImGui::Checkbox("Reentry flames",          &c->CfgVisualPrm.bReentryFlames);
+	ImGui::Checkbox("Particle streams",        &c->CfgVisualPrm.bParticleStreams);
+	ImGui::Checkbox("Local light sources",     &c->CfgVisualPrm.bLocalLight);
+
+	ImGui::Spacing();
+	ImGui::TextDisabled("Limits");
+	int maxLight = (int)c->CfgVisualPrm.MaxLight;
+	if (ImGui::SliderInt("Max light sources", &maxLight, 0, 8))
+		c->CfgVisualPrm.MaxLight = (DWORD)maxLight;
+	int ambient = (int)c->CfgVisualPrm.AmbientLevel;
+	if (ImGui::SliderInt("Ambient light level", &ambient, 0, 255))
+		c->CfgVisualPrm.AmbientLevel = (DWORD)ambient;
+	int planetMaxLevel = (int)c->CfgVisualPrm.PlanetMaxLevel;
+	if (ImGui::SliderInt("Planet max LOD level", &planetMaxLevel, 1, SURF_MAX_PATCHLEVEL2))
+		c->CfgVisualPrm.PlanetMaxLevel = (DWORD)planetMaxLevel;
+	float patchRes = (float)c->CfgVisualPrm.PlanetPatchRes;
+	if (ImGui::SliderFloat("Planet patch resolution scale", &patchRes, 0.5f, 4.0f, "%.2f"))
+		c->CfgVisualPrm.PlanetPatchRes = patchRes;
+	float lightBright = (float)c->CfgVisualPrm.LightBrightness;
+	if (ImGui::SliderFloat("Night-light brightness", &lightBright, 0.0f, 2.0f, "%.2f"))
+		c->CfgVisualPrm.LightBrightness = lightBright;
+
+	const char *elevModes[] = { "None", "Linear", "Cubic spline" };
+	if (c->CfgVisualPrm.ElevMode < 0) c->CfgVisualPrm.ElevMode = 0;
+	if (c->CfgVisualPrm.ElevMode > 2) c->CfgVisualPrm.ElevMode = 2;
+	ImGui::Combo("Elevation interpolation", &c->CfgVisualPrm.ElevMode,
+		elevModes, IM_ARRAYSIZE(elevModes));
+}
+
+void RenderPhysicsPage(Config *c)
+{
+	ImGui::TextDisabled("Forces and propagation");
+	ImGui::Checkbox("Distributed mass model",     &c->CfgPhysicsPrm.bDistributedMass);
+	ImGui::Checkbox("Non-spherical gravity",      &c->CfgPhysicsPrm.bNonsphericalGrav);
+	ImGui::Checkbox("Solar radiation pressure",   &c->CfgPhysicsPrm.bRadiationPressure);
+	ImGui::Checkbox("Atmospheric wind",           &c->CfgPhysicsPrm.bAtmWind);
+	ImGui::Checkbox("Encke orbit stabilisation",  &c->CfgPhysicsPrm.bOrbitStabilise);
+
+	ImGui::Spacing();
+	ImGui::TextDisabled("Stabilisation thresholds");
+	double pl = c->CfgPhysicsPrm.Stabilise_PLimit;
+	if (ImGui::InputDouble("Perturbation limit", &pl, 0.0, 0.0, "%.4g"))
+		c->CfgPhysicsPrm.Stabilise_PLimit = pl;
+	double sl = c->CfgPhysicsPrm.Stabilise_SLimit;
+	if (ImGui::InputDouble("Step-size limit", &sl, 0.0, 0.0, "%.4g"))
+		c->CfgPhysicsPrm.Stabilise_SLimit = sl;
+
+	ImGui::Spacing();
+	ImGui::TextDisabled("Linear propagation");
+	ImGui::SliderInt("Active levels", &c->CfgPhysicsPrm.nLPropLevel, 1, MAX_PROP_LEVEL);
+	const char *propMethods[NPROP_METHOD] = {
+		"RK2","RK4","RK5","RK6","RK7","RK8","SY2","SY4","SY6","SY8"
+	};
+	for (int i = 0; i < c->CfgPhysicsPrm.nLPropLevel; ++i) {
+		ImGui::PushID(i);
+		ImGui::Text("Level %d", i+1);
+		ImGui::SameLine();
+		ImGui::PushItemWidth(80.0f);
+		ImGui::Combo("##m", &c->CfgPhysicsPrm.PropMode[i], propMethods, NPROP_METHOD);
+		ImGui::PopItemWidth();
+		ImGui::SameLine();
+		ImGui::PushItemWidth(120.0f);
+		ImGui::InputDouble("Δt##t", &c->CfgPhysicsPrm.PropTTgt[i], 0.0, 0.0, "%.3g");
+		ImGui::SameLine();
+		ImGui::InputDouble("max##l", &c->CfgPhysicsPrm.PropTLim[i], 0.0, 0.0, "%.3g");
+		ImGui::PopItemWidth();
+		ImGui::PopID();
+	}
+}
+
+void RenderInstrumentPage(Config *c)
+{
+	ImGui::TextDisabled("MFD instruments");
+	ImGui::SliderInt("MFD generic-view size", &c->CfgLogicPrm.MFDSize, 1, 12);
+	const char *mfdMap[] = { "Legacy", "New" };
+	ImGui::Combo("MFD Map style", &c->CfgLogicPrm.MFDMapVersion, mfdMap, IM_ARRAYSIZE(mfdMap));
+	ImGui::Checkbox("Transparent MFD background", &c->CfgLogicPrm.bMfdTransparent);
+
+	ImGui::Spacing();
+	ImGui::TextDisabled("Instrument refresh");
+	ImGui::InputDouble("Update interval [s]", &c->CfgLogicPrm.InstrUpdDT, 0.0, 0.0, "%.3f");
+
+	ImGui::Spacing();
+	ImGui::TextDisabled("Pow2 textures");
+	const char *pow2Mode[] = { "No", "Yes", "Auto" };
+	if (c->CfgInstrumentPrm.bMfdPow2 < 0 || c->CfgInstrumentPrm.bMfdPow2 > 2)
+		c->CfgInstrumentPrm.bMfdPow2 = 2;
+	ImGui::Combo("Force pow2 MFD textures", &c->CfgInstrumentPrm.bMfdPow2,
+		pow2Mode, IM_ARRAYSIZE(pow2Mode));
+	ImGui::SliderInt("Pow2 hi-res threshold", &c->CfgInstrumentPrm.MfdHiresThreshold, 64, 1024);
+	const char *texSizes[] = { "256", "512", "1024", "2048" };
+	auto sizeIdx = [](int v){
+		switch (v) { case 256: return 0; case 512: return 1;
+			case 1024: return 2; case 2048: return 3; }
+		return 1;
+	};
+	auto idxSize = [](int i){
+		const int s[] = {256, 512, 1024, 2048}; return s[i];
+	};
+	int panelIdx = sizeIdx(c->CfgInstrumentPrm.PanelMFDHUDSize);
+	if (ImGui::Combo("2D panel MFD/HUD size", &panelIdx, texSizes, IM_ARRAYSIZE(texSizes)))
+		c->CfgInstrumentPrm.PanelMFDHUDSize = idxSize(panelIdx);
+	int vcIdx = sizeIdx(c->CfgInstrumentPrm.VCMFDSize);
+	if (ImGui::Combo("Virtual cockpit MFD size", &vcIdx, texSizes, IM_ARRAYSIZE(texSizes)))
+		c->CfgInstrumentPrm.VCMFDSize = idxSize(vcIdx);
+
+	ImGui::Spacing();
+	ImGui::TextDisabled("2D panel layout");
+	float scale = (float)c->CfgLogicPrm.PanelScale;
+	if (ImGui::SliderFloat("Panel scale", &scale, 0.25f, 4.0f, "%.2f"))
+		c->CfgLogicPrm.PanelScale = scale;
+	float scrollSpeed = (float)c->CfgLogicPrm.PanelScrollSpeed;
+	if (ImGui::SliderFloat("Panel scroll speed [px/s]", &scrollSpeed, 50.0f, 1000.0f, "%.0f"))
+		c->CfgLogicPrm.PanelScrollSpeed = scrollSpeed;
+	ImGui::Checkbox("Compact glass cockpit (widescreen)", &c->CfgLogicPrm.bGlasspitCompact);
+}
+
+void RenderVesselPage(Config *c)
+{
+	ImGui::TextDisabled("Flight model");
+	const char *flight[] = { "Simplified", "Realistic" };
+	ImGui::Combo("Flight model fidelity", &c->CfgLogicPrm.FlightModelLevel,
+		flight, IM_ARRAYSIZE(flight));
+	const char *damage[] = { "No damage model", "Allow damage" };
+	ImGui::Combo("Damage model", &c->CfgLogicPrm.DamageSetting,
+		damage, IM_ARRAYSIZE(damage));
+
+	ImGui::Spacing();
+	ImGui::TextDisabled("Fuel and refuelling");
+	ImGui::Checkbox("Limited fuel",         &c->CfgLogicPrm.bLimitedFuel);
+	ImGui::Checkbox("Auto-refuel on pad",   &c->CfgLogicPrm.bPadRefuel);
+}
+
+void RenderUIPage(Config *c)
+{
+	ImGui::TextDisabled("Mouse focus");
+	const char *focus[] = { "Click required", "Click for child", "Follow mouse" };
+	ImGui::Combo("Window focus mode", &c->CfgUIPrm.MouseFocusMode,
+		focus, IM_ARRAYSIZE(focus));
+
+	ImGui::Spacing();
+	ImGui::TextDisabled("Menubar / Infobar");
+	const char *visMode[] = { "Show", "Hide", "Auto-hide" };
+	ImGui::Combo("Menubar mode", &c->CfgUIPrm.MenuMode, visMode, IM_ARRAYSIZE(visMode));
+	ImGui::Combo("Infobar mode", &c->CfgUIPrm.InfoMode, visMode, IM_ARRAYSIZE(visMode));
+	ImGui::Checkbox("Always show menu labels", &c->CfgUIPrm.bMenuLabelAlways);
+	ImGui::Checkbox("Always show time-warp",   &c->CfgUIPrm.bWarpAlways);
+
+	ImGui::SliderInt("Menubar opacity (0-10)", &c->CfgUIPrm.MenuOpacity, 0, 10);
+	ImGui::SliderInt("Infobar opacity (0-20)", &c->CfgUIPrm.InfoOpacity, 0, 20);
+	ImGui::SliderInt("Menubar scroll speed",   &c->CfgUIPrm.MenuScrollspeed, 1, 20);
+	ImGui::SliderInt("Menu button size",        &c->CfgUIPrm.MenuButtonSize, 12, 64);
+	ImGui::SliderInt("Menu button hover size",  &c->CfgUIPrm.MenuButtonHoverSize, 12, 96);
+	ImGui::SliderInt("Menu button spacing",     &c->CfgUIPrm.MenuButtonSpacing, 0, 32);
+
+	ImGui::Spacing();
+	ImGui::TextDisabled("FPS overlay");
+	const char *fpsMode[] = { "Hidden", "Left", "Right" };
+	ImGui::Combo("FPS counter", &c->CfgUIPrm.FPS, fpsMode, IM_ARRAYSIZE(fpsMode));
+}
+
+void RenderJoystickPage(Config *c)
+{
+	ImGui::TextDisabled("Device");
+	int joyIdx = (int)c->CfgJoystickPrm.Joy_idx;
+	if (ImGui::InputInt("Joystick index (0 = disabled)", &joyIdx)) {
+		if (joyIdx < 0) joyIdx = 0;
+		c->CfgJoystickPrm.Joy_idx = (DWORD)joyIdx;
+	}
+
+	ImGui::Spacing();
+	ImGui::TextDisabled("Calibration");
+	ImGui::SliderInt("Central deadzone (0-10000)",
+		&c->CfgJoystickPrm.Deadzone, 0, 10000);
+	const char *throttleAxis[] = { "None", "Z-axis", "Slider 0", "Slider 1" };
+	int axisIdx = (int)c->CfgJoystickPrm.ThrottleAxis;
+	if (axisIdx < 0 || axisIdx >= IM_ARRAYSIZE(throttleAxis)) axisIdx = 0;
+	if (ImGui::Combo("Throttle axis", &axisIdx, throttleAxis, IM_ARRAYSIZE(throttleAxis)))
+		c->CfgJoystickPrm.ThrottleAxis = (DWORD)axisIdx;
+	ImGui::SliderInt("Throttle saturation (0-10000)",
+		&c->CfgJoystickPrm.ThrottleSaturation, 0, 10000);
+	ImGui::Checkbox("Ignore initial throttle position",
+		&c->CfgJoystickPrm.bThrottleIgnore);
+}
+
+void RenderCelSpherePage(Config *c)
+{
+	ImGui::TextDisabled("Stars");
+	ImGui::Checkbox("Render as pixels",  &c->CfgVisualPrm.bUseStarDots);
+	ImGui::Checkbox("Render as image",   &c->CfgVisualPrm.bUseStarImage);
+	ImGui::InputText("Starlist image path",
+		c->CfgVisualPrm.StarImagePath, sizeof(c->CfgVisualPrm.StarImagePath));
+
+	ImGui::Spacing();
+	ImGui::TextDisabled("Background image");
+	ImGui::Checkbox("Render background", &c->CfgVisualPrm.bUseBgImage);
+	ImGui::InputText("Background path",
+		c->CfgVisualPrm.CSphereBgPath, sizeof(c->CfgVisualPrm.CSphereBgPath));
+	float bgI = (float)c->CfgVisualPrm.CSphereBgIntens;
+	if (ImGui::SliderFloat("Background intensity", &bgI, 0.0f, 2.0f, "%.2f"))
+		c->CfgVisualPrm.CSphereBgIntens = bgI;
+
+	ImGui::Spacing();
+	ImGui::TextDisabled("Star magnitude mapping");
+	float minMag = c->CfgVisualPrm.StarPrm.mag_lo;
+	float maxMag = c->CfgVisualPrm.StarPrm.mag_hi;
+	if (ImGui::SliderFloat("Min magnitude (faintest)", &minMag, -2.0f, 12.0f, "%.2f"))
+		c->CfgVisualPrm.StarPrm.mag_lo = minMag;
+	if (ImGui::SliderFloat("Max magnitude (brightest)", &maxMag, -2.0f, 12.0f, "%.2f"))
+		c->CfgVisualPrm.StarPrm.mag_hi = maxMag;
+	float br = c->CfgVisualPrm.StarPrm.brt_min;
+	if (ImGui::SliderFloat("Min star brightness", &br, 0.0f, 1.0f, "%.2f"))
+		c->CfgVisualPrm.StarPrm.brt_min = br;
+	const char *map[] = { "Linear", "Exponential" };
+	int curMap = c->CfgVisualPrm.StarPrm.map_log ? 1 : 0;
+	if (ImGui::Combo("Magnitude→brightness mapping", &curMap, map, IM_ARRAYSIZE(map)))
+		c->CfgVisualPrm.StarPrm.map_log = (curMap != 0);
+}
+
+void RenderVisHelperPage(Config *c)
+{
+	ImGui::TextDisabled("Visual helpers (Ctrl-F9 in flight)");
+	BitFlagCheckbox("Planetarium mode",  c->CfgVisHelpPrm.flagPlanetarium, 0x0001);
+	BitFlagCheckbox("Surface markers",   c->CfgVisHelpPrm.flagMarkers, 0x0001);
+	ImGui::Separator();
+	ImGui::TextWrapped("Detail toggles for grids, constellations, body markers, force "
+		"vectors and frame axes are on the dedicated sub-pages.");
+}
+
+void RenderPlanetariumPage(Config *c)
+{
+	ImGui::TextDisabled("Planetarium overlay (bitfield)");
+	int &f = c->CfgVisHelpPrm.flagPlanetarium;
+	BitFlagCheckbox("Enabled",                  f, 0x0001);
+	BitFlagCheckbox("Celestial grid",           f, 0x0002);
+	BitFlagCheckbox("Ecliptic grid",            f, 0x0004);
+	BitFlagCheckbox("Galactic grid",            f, 0x0008);
+	BitFlagCheckbox("Equator of current target",f, 0x0010);
+	BitFlagCheckbox("Constellation patterns",   f, 0x0020);
+	BitFlagCheckbox("Constellation labels",     f, 0x0040);
+	BitFlagCheckbox("Long constellation names", f, 0x0080);
+	BitFlagCheckbox("Constellation boundaries", f, 0x0100);
+	BitFlagCheckbox("Celestial sphere markers", f, 0x0200);
+}
+
+void RenderLabelsPage(Config *c)
+{
+	ImGui::TextDisabled("Surface and object markers (bitfield)");
+	int &f = c->CfgVisHelpPrm.flagMarkers;
+	BitFlagCheckbox("Enabled",                f, 0x0001);
+	BitFlagCheckbox("Solar-system bodies",    f, 0x0002);
+	BitFlagCheckbox("Vessels",                f, 0x0004);
+	BitFlagCheckbox("Surface bases",          f, 0x0008);
+	BitFlagCheckbox("VOR transmitters",       f, 0x0010);
+	BitFlagCheckbox("Surface features",       f, 0x0020);
+}
+
+void RenderForcesPage(Config *c)
+{
+	ImGui::TextDisabled("Body force vectors (bitfield)");
+	int &f = c->CfgVisHelpPrm.flagBodyForce;
+	BitFlagCheckbox("Enabled",         f, 0x0001);
+	BitFlagCheckbox("Weight",          f, 0x0002);
+	BitFlagCheckbox("Thrust",          f, 0x0004);
+	BitFlagCheckbox("Lift",            f, 0x0008);
+	BitFlagCheckbox("Drag",            f, 0x0010);
+	BitFlagCheckbox("Total",           f, 0x0020);
+	BitFlagCheckbox("Torque",          f, 0x0040);
+	BitFlagCheckbox("Linear / per-N",  f, 0x0080);
+
+	ImGui::Spacing();
+	ImGui::SliderFloat("Vector scale",   &c->CfgVisHelpPrm.scaleBodyForce, 0.1f, 5.0f, "%.2f");
+	ImGui::SliderFloat("Vector opacity", &c->CfgVisHelpPrm.opacBodyForce, 0.0f, 1.0f, "%.2f");
+}
+
+void RenderAxesPage(Config *c)
+{
+	ImGui::TextDisabled("Object frame axes (bitfield)");
+	int &f = c->CfgVisHelpPrm.flagFrameAxes;
+	BitFlagCheckbox("Enabled",        f, 0x0001);
+	BitFlagCheckbox("Vessels",        f, 0x0002);
+	BitFlagCheckbox("Celestial bodies", f, 0x0004);
+	BitFlagCheckbox("Surface bases",  f, 0x0008);
+	BitFlagCheckbox("Negative axes",  f, 0x0010);
+
+	ImGui::Spacing();
+	ImGui::SliderFloat("Axis scale",   &c->CfgVisHelpPrm.scaleFrameAxes, 0.1f, 5.0f, "%.2f");
+	ImGui::SliderFloat("Axis opacity", &c->CfgVisHelpPrm.opacFrameAxes, 0.0f, 1.0f, "%.2f");
+}
+
+} // namespace
+
 void OGLLaunchpad::RenderTabOptions(float availH)
 {
 	ImGui::BeginChild("OptionsContent", ImVec2(0, availH), false);
-	ImGui::TextDisabled("Options tab — implemented in M22.e");
+
+	if (!m_cfg) {
+		ImGui::TextDisabled("Config not bound — Options unavailable.");
+		ImGui::EndChild();
+		return;
+	}
+
+	struct Page { const char *label; int idx; };
+	static const Page pages[] = {
+		{"Visual",         0},
+		{"Physics",        1},
+		{"Instruments",    2},
+		{"Vessel",         3},
+		{"User interface", 4},
+		{"Joystick",       5},
+		{"Celestial sphere", 6},
+		{"Visual helpers", 7},
+		{"  └ Planetarium",  8},
+		{"  └ Labels",       9},
+		{"  └ Forces",      10},
+		{"  └ Frame axes",  11},
+	};
+
+	float availW = ImGui::GetContentRegionAvail().x;
+	float listW  = availW * m_opt.splitterPos;
+	if (listW < 160.0f) listW = 160.0f;
+
+	ImGui::BeginChild("OptPages", ImVec2(listW, availH), true);
+	for (auto &p : pages) {
+		bool sel = (m_opt.currentPage == p.idx);
+		if (ImGui::Selectable(p.label, sel))
+			m_opt.currentPage = p.idx;
+	}
+	ImGui::EndChild();
+
+	ImGui::SameLine();
+
+	ImGui::BeginChild("OptForm", ImVec2(0, availH), true);
+	switch (m_opt.currentPage) {
+		case 0:  RenderVisualPage(m_cfg);     break;
+		case 1:  RenderPhysicsPage(m_cfg);    break;
+		case 2:  RenderInstrumentPage(m_cfg); break;
+		case 3:  RenderVesselPage(m_cfg);     break;
+		case 4:  RenderUIPage(m_cfg);         break;
+		case 5:  RenderJoystickPage(m_cfg);   break;
+		case 6:  RenderCelSpherePage(m_cfg);  break;
+		case 7:  RenderVisHelperPage(m_cfg);  break;
+		case 8:  RenderPlanetariumPage(m_cfg);break;
+		case 9:  RenderLabelsPage(m_cfg);     break;
+		case 10: RenderForcesPage(m_cfg);     break;
+		case 11: RenderAxesPage(m_cfg);       break;
+	}
+	ImGui::EndChild();
+
 	ImGui::EndChild();
 }
 

@@ -47,18 +47,14 @@ struct ScenarioTabState {
 	float splitterPos = 0.45f;   // left pane fraction of width (0..1)
 };
 
+// Options tab UI state. Page editors read and write Config fields
+// directly through m_cfg; only navigation lives here.
 struct OptionsTabState {
-	int  flightModelLevel = 0;
-	int  damageSetting = 0;
-	bool bLimitedFuel = false;
-	bool bPadRefuel = true;
-	int  mfdSize = 6;
-	int  mfdMapVersion = 1;
-	bool bMfdTransparent = false;
-	bool bGlasspitCompact = false;
-	double instrUpdDT = 1.0;
-	double panelScale = 1.0;
-	double panelScrollSpeed = 200.0;
+	int currentPage = 0;          // 0..11 → Visual / Physics / Instrument /
+	                              // Vessel / UI / Joystick / CelSphere /
+	                              // VisHelper / Planetarium / Labels /
+	                              // Forces / Axes
+	float splitterPos = 0.30f;    // left navigation list width fraction
 };
 
 struct VideoTabState {
