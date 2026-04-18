@@ -48,3 +48,30 @@ set_target_properties(XRSound_backend_openal PROPERTIES
 	FOLDER Sound
 	POSITION_INDEPENDENT_CODE ON
 )
+
+# Smoke test — a tiny executable that boots the OpenAL backend, loads
+# three shipping default sounds and verifies the irrKlang-parity API
+# round-trips. CTest picks it up automatically when ORBITER_BUILD_XRSOUND
+# is ON.
+add_executable(xrsound_openal_smoke
+	${_XRSOUND_SRC}/xrsound_openal_smoke.cpp
+)
+target_link_libraries(xrsound_openal_smoke
+	PRIVATE XRSound_backend_openal
+)
+set_target_properties(xrsound_openal_smoke PROPERTIES
+	FOLDER Sound
+	RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/Sound
+)
+
+include(CTest)
+if(BUILD_TESTING)
+	add_test(
+		NAME xrsound_openal_smoke
+		COMMAND xrsound_openal_smoke
+		WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+	)
+	set_tests_properties(xrsound_openal_smoke PROPERTIES
+		ENVIRONMENT "XRSOUND_SMOKE_ASSET_DIR=${CMAKE_BINARY_DIR}/XRSound/Default"
+	)
+endif()

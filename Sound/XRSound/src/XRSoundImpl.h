@@ -7,7 +7,9 @@
 
 #pragma once
 
+#ifdef _WIN32
 #include <windows.h>
+#endif
 
 #include "XRSound.h"   
 #include "XRSoundEngine.h" 
