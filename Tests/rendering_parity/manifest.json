@@ -1,0 +1,41 @@
+{
+  "_comment": [
+    "Rendering parity manifest (M30) — list of scenarios the harness",
+    "loads, captures and SSIM-compares against a baseline. Each entry:",
+    "  name        unique slug (used for the captured PNG filename)",
+    "  scenario    --scenario value passed to ./Orbiter",
+    "  frame       --capture-frame value (skip past load-time noise)",
+    "  baseline    relative path under baselines/ for the reference PNG",
+    "  atmospheric true → use the looser 0.85 SSIM threshold (cloud /",
+    "              haze noise is unavoidable). Default 0.92.",
+    "  threshold   override the per-class default if needed.",
+    "",
+    "Baselines marked with empty (0-byte) files are placeholders for",
+    "future captures — the harness records them as 'skipped' rather",
+    "than failing. Drop a real PNG into baselines/<file> to start",
+    "gating that scenario in CI."
+  ],
+  "scenarios": [
+    {
+      "name":        "earth_orbit_default",
+      "scenario":    "Demo/Earth",
+      "frame":       120,
+      "baseline":    "earth_orbit_default.png",
+      "atmospheric": false
+    },
+    {
+      "name":        "atlantis_iss_dock",
+      "scenario":    "Demo/Docked at ISS",
+      "frame":       120,
+      "baseline":    "atlantis_iss_dock.png",
+      "atmospheric": false
+    },
+    {
+      "name":        "today_solar_system",
+      "scenario":    "Demo/Today",
+      "frame":       120,
+      "baseline":    "today_solar_system.png",
+      "atmospheric": false
+    }
+  ]
+}

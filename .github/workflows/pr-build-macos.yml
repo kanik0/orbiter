@@ -1,9 +1,11 @@
 name: PR Build (macOS)
 
 # Triggered by pull requests targeting main. Builds the debug
-# configuration only (faster turnaround for review iteration) and
-# runs the Launchpad smoke test. No upload — the .app artifact is
-# reserved for release builds.
+# configuration only (faster turnaround for review iteration),
+# runs the Launchpad smoke test, and the rendering-parity ctest
+# target as a best-effort gate (continue-on-error: failed parity
+# captures are reported but don't block the merge until enough
+# baselines are checked in to make the signal trustworthy).
 #
 # All ${{ }} expansions resolve to inputs validated by the reusable
 # workflow_call schema; no untrusted user-controlled strings reach
@@ -30,4 +32,5 @@ jobs:
     with:
       configuration: debug
       smoke: true
+      parity: true
       upload: false

@@ -1277,11 +1277,28 @@ HRESULT Orbiter::Render3DEnvironment (bool hidedialogs)
 		// Rendering parity harness (M30): capture the current
 		// backbuffer to disk on the requested frame, then drive
 		// session termination via the existing FrameLimit gate.
+		// We use a >= comparison plus a one-shot latch because the
+		// renderer can skip frames under load (BeginTimeStep may
+		// fail for a frame), so the exact target frame number can
+		// be missed.
+		static bool s_captureDone = false;
 		if (pConfig->CfgCmdlinePrm.CaptureFrame > 0 &&
-		    td.FrameCount() == pConfig->CfgCmdlinePrm.CaptureFrame &&
+		    !s_captureDone &&
+		    td.FrameCount() >= pConfig->CfgCmdlinePrm.CaptureFrame &&
 		    !pConfig->CfgCmdlinePrm.CaptureOut.empty()) {
-			gclient->clbkSaveScreenshot(
+			s_captureDone = gclient->clbkSaveScreenshot(
 				pConfig->CfgCmdlinePrm.CaptureOut.c_str());
+			if (s_captureDone) {
+				// Trip session termination so the harness exits
+				// the moment the screenshot is on disk.
+				if (m_pSDL) {
+					// Posting an SDL_QUIT walks the standard
+					// shutdown path next iteration.
+					SDL_Event ev{};
+					ev.type = SDL_QUIT;
+					SDL_PushEvent(&ev);
+				}
+			}
 		}
 
 		gclient->clbkDisplayFrame ();

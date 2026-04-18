@@ -33,6 +33,10 @@ on:
         description: Run the simulation smoke test?
         type: boolean
         default: true
+      parity:
+        description: Run the rendering parity ctest target?
+        type: boolean
+        default: false
 
 run-name: Build macOS arm64 ${{ inputs.configuration }}
 
@@ -57,9 +61,16 @@ jobs:
         brew update >/dev/null
         brew install sdl2 openal-soft || true
 
+    - name: Install Python deps for parity harness
+      if: ${{ inputs.parity }}
+      run: |
+        python3 -m pip install --user --break-system-packages \
+          scikit-image Pillow numpy
+
     - name: Configure
       run: cmake --preset "macos-arm64-${CONFIGURATION}"
         -DORBITER_BUILD_XRSOUND=ON
+        -DORBITER_MAKE_TESTS=ON
 
     - name: Build core + plugins
       run: |
@@ -105,6 +116,18 @@ jobs:
           exit 1
         fi
 
+    - name: Rendering parity (ctest)
+      if: ${{ inputs.parity }}
+      # Best-effort: the macos-14 runner has a window-server but the
+      # framebuffer captures are highly OS-version sensitive. The
+      # ctest target skips scenarios whose baselines are placeholder
+      # 0-byte files (the default in the repo), so a green CI run
+      # only proves the pipeline plumbing — adding real baselines
+      # tightens the gate without touching this workflow.
+      continue-on-error: true
+      run: ctest --test-dir "out/build/macos-arm64-${CONFIGURATION}"
+        -R rendering_parity --output-on-failure
+
     - name: Build .dmg disk image
       if: ${{ inputs.dmg }}
       run: cmake --build "out/build/macos-arm64-${CONFIGURATION}"
@@ -125,3 +148,12 @@ jobs:
         name: Orbiter-macos-arm64-${{ inputs.configuration }}-dmg
         path: out/build/macos-arm64-${{ inputs.configuration }}/Orbiter-macos-arm64.dmg
         retention-days: 14
+
+    - name: Upload parity captures (debug)
+      if: ${{ inputs.parity && always() }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: Orbiter-parity-captures-${{ inputs.configuration }}
+        path: out/build/macos-arm64-${{ inputs.configuration }}/Testing/parity/
+        retention-days: 7
+        if-no-files-found: ignore
