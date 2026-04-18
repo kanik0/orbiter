@@ -88,6 +88,8 @@ Ogni bug scoperto durante Fase 2 viene tracciato qui con ID `P2-B<n>`. A fine se
 | P2-B7 | cosmetic | 1.3 | Tree-expand icons renderizzate come `?` nella sidebar "Visual helpers" (4 sub-item Planetarium/Labels/Forces/Frame axes). Simile a P2-B1 ma glyph differente (tree marker ▶/▼ vs em-dash). | font/glyph set ImGui | open |
 | P2-B8 | low | 1.4 | AscentMFD (SDK sample) esposto in Modules tab sotto "Miscellaneous" (post-fix B1 ora builda). Dovrebbe essere hidden dall'UI utente OPPURE avere `.info` "Samples"/dev category. UX cosmetic. | `Orbitersdk/samples/AscentMFD/CMakeLists.txt` (add orbiter_module_info) | open |
 | P2-B9 | medium | 1.4 | XRSound manca di `.info` sidecar → appare in Modules tab come "Miscellaneous" generico senza description. Utenti audio non sanno cosa attivare. Dovrebbe avere category "Audio" + description "OpenAL-backed audio engine for vessel sounds". | `Sound/XRSound/src/CMakeLists.txt` (add orbiter_module_info) | open |
+| P2-B10 | medium | 1.5 | Video tab: Width field mostra `20310460` e Height field `0` (valori garbage / uninitialized). Resolution dropdown funziona correttamente ("2560 x 1664"), ma i due campi numerici sotto hanno binding sbagliato a variabili non inizializzate. UX confondente. | `OGLLaunchpad::RenderTabVideo` Width/Height `ImGui::InputInt` binding | open |
+| P2-B11 | low | 1.5 | Video tab: mancante MSAA/multisample antialias combo (0x/2x/4x/8x) che Win32 Video tab espone. Possibile by-design macOS (Metal MSAA autonomo) o regression M22.c. | `OGLLaunchpad::RenderTabVideo` | open, verify intent |
 
 ---
 
@@ -162,5 +164,23 @@ Ogni bug scoperto durante Fase 2 viene tracciato qui con ID `P2-B<n>`. A fine se
 **Findings:** P2-B8 (AscentMFD expose), P2-B9 (XRSound no .info).
 
 **Verdict:** PASS ✅. Tutti i plugin previsti + category. Side-effect dei fix Phase 1 (AscentMFD/XRSound in misc) da polishare ma non-bloccanti.
+
+### STEP 1.5: Tab Video  [**PARTIAL** ⚠️]
+
+**Action:** click Video tab, inspect controls.
+
+**Expected:** Graphics engine header + Resolution dropdown + fullscreen/vsync/stencil toggles + eventualmente MSAA.
+
+**My report:**
+- Graphics engine: "OGLClient (OpenGL 4.1 Core Profile, SDL2)" + "built-in / single client on macOS" ✅
+- Resolution dropdown: "2560 x 1664" (native retina) ✅
+- Fullscreen, VSync (checked), Try stencil buffer, Stereo (anaglyph) — tutti presenti ✅
+- ❌ Width input field: `20310460` (garbage), Height input field: `0`
+- MSAA toggle non presente
+- Testo hint con `?` artifact (P2-B1)
+
+**Findings:** P2-B10 (width/height garbage), P2-B11 (no MSAA).
+
+**Verdict:** PARTIAL ⚠️ layout e controlli principali presenti e funzionanti; campi Width/Height corrotti creano confusione.
 
 
