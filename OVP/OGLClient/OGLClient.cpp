@@ -636,7 +636,56 @@ bool OGLClient::clbkBlt(SURFHANDLE tgt, DWORD tgtx, DWORD tgty, SURFHANDLE src,
 	if (!src) return false;
 	OGLSurface *srcS = (OGLSurface*)src;
 	OGLSurface *tgtS = (OGLSurface*)tgt;
+
+	// Self-blit fast path (see issue #62): when copying within the same
+	// surface, both sides share one orientation regardless of whether the
+	// content was originally BMP-uploaded or FBO-rendered. BlitQuad's NDC
+	// math assumes the dst is OGL-native (NDC y=+1 is visual top), which
+	// is correct for a pure FBO surface but wrong for a hybrid surface
+	// like HUD::hudTex that ships with a BMP-uploaded font atlas AND is
+	// later sampled with BMP-convention UVs by the HUD mesh. The rasterised
+	// glyphs landed in texture memory rows 0..dy instead of rows
+	// tgty..tgty+dy, so the mesh drew the pre-baked default atlas tile
+	// every time regardless of the blit. Using glBlitFramebuffer for the
+	// self-blit case gives a raw pixel copy in absolute texture coordinates
+	// and side-steps the NDC/UV convention question entirely.
+	if (tgtS && srcS == tgtS && !(flag & BLT_SRCCOLORKEY)) {
+		return BlitFramebufferSelf(srcS, srcx, srcy, tgtx, tgty, w, h);
+	}
+
 	BlitQuad(tgtS, tgtx, tgty, w, h, srcS, srcx, srcy, w, h, flag);
+	return true;
+}
+
+bool OGLClient::BlitFramebufferSelf(OGLSurface *surf,
+                                     DWORD srcx, DWORD srcy,
+                                     DWORD tgtx, DWORD tgty,
+                                     DWORD w, DWORD h) const
+{
+	if (!surf) return false;
+	GLuint fbo = surf->EnsureFBO();
+	if (!fbo) return false;
+
+	GLint prevReadFBO = 0, prevDrawFBO = 0;
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prevReadFBO);
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prevDrawFBO);
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+
+	// Pixel coordinates are in texture-memory space (row 0 = first row
+	// uploaded by glTexImage2D = visual BMP top). glBlitFramebuffer treats
+	// the FBO like a viewport, and since the FBO attachment maps y=0 to
+	// texture row 0, feeding BMP-convention tgtx/tgty directly lands the
+	// pixels at the expected rows. Non-overlapping src/dst rects so the
+	// same-FBO read+draw binding is well-defined.
+	glBlitFramebuffer(
+		(GLint)srcx, (GLint)srcy, (GLint)(srcx + w), (GLint)(srcy + h),
+		(GLint)tgtx, (GLint)tgty, (GLint)(tgtx + w), (GLint)(tgty + h),
+		GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)prevReadFBO);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)prevDrawFBO);
 	return true;
 }
 
