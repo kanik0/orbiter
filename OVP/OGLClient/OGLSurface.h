@@ -56,6 +56,10 @@ public:
 	DWORD  GetWidth() const { return m_width; }
 	DWORD  GetHeight() const { return m_height; }
 	DWORD  GetAttrib() const { return m_attrib; }
+	// Merge additional attribute flags into m_attrib. Used by clbkLoadSurface
+	// to promote a file-loaded (wrapped) texture to render-target usage so
+	// EnsureFBO() attaches the depth renderbuffer required by the FBO.
+	void   AddAttrib(DWORD extra) { m_attrib |= extra; }
 	bool   IsRenderTarget() const { return m_fbo != 0 || m_msaaFbo != 0; }
 	int    GetSamples() const { return m_samples; }
 	bool   HasStencil() const { return m_hasStencil; }
@@ -109,6 +113,7 @@ private:
 	int   m_samples;
 	bool  m_hasStencil;
 	bool  m_ownsTexture;
+	bool  m_fboFailed;      // set when EnsureFBO() has failed once; skip retries
 
 	DWORD m_colorKey;
 	bool  m_hasColorKey;

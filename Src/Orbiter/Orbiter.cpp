@@ -375,7 +375,12 @@ int main (int argc, char *argv[])
 
 	g_pOrbiter->Run ();
 	delete g_pOrbiter;
-	return 0;
+	// On macOS dyld4 RTLD_LOCAL dlclose() is often a no-op, so runtime-loaded
+	// plugins stay mapped until exit() fires __cxa_finalize_ranges. Some of
+	// their global destructors reference state ~Orbiter already tore down,
+	// which SIGSEGVs inside __cxa_finalize_ranges. Skip C++ destructors
+	// altogether — the process is dying anyway and the OS reclaims resources.
+	_exit(0);
 }
 #endif // _WIN32
 
