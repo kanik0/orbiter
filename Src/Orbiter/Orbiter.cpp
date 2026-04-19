@@ -2892,7 +2892,18 @@ void Orbiter::KbdInputBuffered_System (char *kstate, DIDEVICEOBJECTDATA *dod, DW
 			CFG_UIPRM &prm = g_pOrbiter->Cfg()->CfgUIPrm;
 			prm.MenuMode = prm.MenuMode == 0 ? 2:0;
 		}
-		else if (keymap.IsLogicalKey(key, kstate, OAPI_LKEY_DlgHelp))              pDlgMgr->EnsureEntry<DlgHelp>();
+		else if (keymap.IsLogicalKey(key, kstate, OAPI_LKEY_DlgHelp)) {
+#ifdef _WIN32
+			pDlgMgr->EnsureEntry<DlgHelp>();
+#else
+			// DlgHelp::Display()/OnDraw() are intentionally no-ops on POSIX
+			// (the help viewer is the platform browser, not an ImGui window).
+			// Bypass the empty dialog and launch the manual index directly
+			// via the cross-platform "open" / "xdg-open" fallback (#43).
+			HELPCONTEXT hc = {(char*)"html/orbiter.chm", (char*)"/intro.htm", nullptr, nullptr};
+			DlgHelp tmp; tmp.OpenHelp(&hc);
+#endif
+		}
 		else if (keymap.IsLogicalKey(key, kstate, OAPI_LKEY_DlgCamera))            pDlgMgr->EnsureEntry<DlgCamera>();
 		else if (keymap.IsLogicalKey(key, kstate, OAPI_LKEY_DlgSimspeed))          pDlgMgr->EnsureEntry<DlgTacc>();
 		else if (keymap.IsLogicalKey(key, kstate, OAPI_LKEY_DlgCustomCmd))         pDlgMgr->EnsureEntry<DlgFunction>();
