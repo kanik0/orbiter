@@ -33,7 +33,16 @@ function(orbiter_module_info target)
 	# allow callers to embed literal \n
 	string(REPLACE "\\n" "\n" _desc "${_desc}")
 
-	set(_info_path "${ORBITER_BINARY_PLUGIN_DIR}/${target}.info")
+	# The Launchpad parser (OGLLaunchpad::ScanModules) strips the "lib"
+	# prefix and file extension to build a <base>.info lookup. For
+	# targets that override OUTPUT_NAME — e.g. "XRSound_dll" → libXRSound
+	# — the sidecar must be named after the output, not the CMake target.
+	get_target_property(_out_name ${target} OUTPUT_NAME)
+	if(NOT _out_name)
+		set(_out_name "${target}")
+	endif()
+
+	set(_info_path "${ORBITER_BINARY_PLUGIN_DIR}/${_out_name}.info")
 
 	# Stage the file content via configure_file (preserves newlines that
 	# the cmake -E echo dance loses) and copy it next to the dylib at
