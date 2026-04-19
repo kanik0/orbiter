@@ -118,7 +118,15 @@ void main() {
     }
 
     // --- Ambient / IBL ---
-    float ambientFloor = 0.03;
+    // The original 0.03 ambient floor assumed IBL would always land on
+    // top to carry the shadowed side. When matHasEnvMap is 0 the floor
+    // alone has to do the work — and a DG in Earth shadow with
+    // albedo ≈ 0.1 got about 0.003 across the hull, Reinhard-compressed
+    // to pure black, which read as transparent against the near-black
+    // space backdrop (#69). 0.12 keeps the shadowed side visible without
+    // blowing out sunlit reads; worlds that do provide a prefiltered
+    // env cubemap add on top and dominate naturally.
+    float ambientFloor = (matHasEnvMap != 0) ? 0.03 : 0.12;
     vec3  ambientColor = albedo.rgb * ambientFloor * (1.0 - metalness * 0.5);
     if (matHasEnvMap != 0) {
         vec3 R = reflect(-V, N);

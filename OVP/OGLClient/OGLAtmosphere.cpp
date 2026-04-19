@@ -157,13 +157,21 @@ void OGLAtmosphere::Render(const float *vp,
 	// standard "sky-over-surface" compositing with alpha = 1 - transmittance.
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	// Depth test off so the quad still paints haze on the planet surface
+	// (closer than z=1) at the limb. Depth writes off so the fullscreen
+	// quad's z=1 isn't smeared across the buffer — otherwise vessels
+	// rendered later would fight a synthetic "far plane" depth at every
+	// pixel the atmosphere touched (halo visibly overlapping the DG wing
+	// along Earth's limb, #69 follow-on).
 	glDisable(GL_DEPTH_TEST);
+	glDepthMask(GL_FALSE);
 	glDisable(GL_CULL_FACE);
 
 	glBindVertexArray(m_quadVAO);
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	glBindVertexArray(0);
 
+	glDepthMask(GL_TRUE);
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_CULL_FACE);
 	glDisable(GL_BLEND);
