@@ -241,7 +241,19 @@ inline HWND GetDesktopWindow() { return nullptr; }
 inline BOOL GetWindowRect(HWND, RECT*) { return FALSE; }
 inline BOOL GetClientRect(HWND, RECT*) { return FALSE; }
 inline int GetSystemMetrics(int) { return 0; }
-inline BOOL GetCursorPos(POINT* p) { if(p) { p->x = 0; p->y = 0; } return FALSE; }
+// Last known cursor position in drawable pixels (SDL window-local, scaled for
+// Retina). SDLPlatform::HandleMouse{Motion,Button} updates these; the pane's
+// per-frame hit-test (DefaultPanel::GetButtonState) queries GetCursorPos to
+// decide whether a held MFD function button should keep firing. Defined in
+// SDLPlatform.cpp.
+extern int g_posixCursorX;
+extern int g_posixCursorY;
+inline BOOL GetCursorPos(POINT* p) {
+	if (!p) return FALSE;
+	p->x = g_posixCursorX;
+	p->y = g_posixCursorY;
+	return TRUE;
+}
 inline BOOL SetCursorPos(int, int) { return FALSE; }
 inline BOOL ScreenToClient(HWND, POINT*) { return FALSE; }
 inline BOOL ClientToScreen(HWND, POINT*) { return FALSE; }

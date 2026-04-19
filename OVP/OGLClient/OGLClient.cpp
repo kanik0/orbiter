@@ -528,11 +528,25 @@ void OGLClient::BlitQuad(OGLSurface *tgt, DWORD tgtx, DWORD tgty, DWORD tgtw, DW
 	float x1 = (float)(tgtx + tgtw) / tw * 2.0f - 1.0f;
 	float y1 = 1.0f - (float)tgty / th * 2.0f;
 
+	// UV orientation depends on whether the source has been *rendered into*
+	// (FBO-backed render target, e.g., sketchpad MFD surface) or was uploaded
+	// from an image file. FBO-rendered content stores its visual top at OGL
+	// texture v=1; file-loaded textures store their visual top at v=0. The
+	// blit must pair "NDC top of dst" with the source's visual-top v so the
+	// rendered output keeps the same orientation as the input. Without this
+	// split, chained FBO→FBO→FBO blits (MFD tapes1→surf→tex, #58) picked up
+	// an extra Y-flip per hop and the tape/horizon labels came out mirrored.
+	const DWORD rtMask = OAPISURFACE_RENDERTARGET | OAPISURFACE_SKETCHPAD |
+	                     OAPISURFACE_GDI | OAPISURFACE_RENDER3D;
+	const bool srcIsRT = (src->GetAttrib() & rtMask) != 0;
+	const float vTop = srcIsRT ? v1 : v0;
+	const float vBot = srcIsRT ? v0 : v1;
+
 	float verts[] = {
-		x0, y0, u0, v1,
-		x1, y0, u1, v1,
-		x0, y1, u0, v0,
-		x1, y1, u1, v0,
+		x0, y0, u0, vBot,
+		x1, y0, u1, vBot,
+		x0, y1, u0, vTop,
+		x1, y1, u1, vTop,
 	};
 
 	// Bind target. For a surface target use BindFBO() (which also handles MSAA
@@ -570,14 +584,19 @@ void OGLClient::BlitQuad(OGLSurface *tgt, DWORD tgtx, DWORD tgty, DWORD tgtw, DW
 		glUniform3f(m_shaderMgr->GetUniformLoc(m_blitShader, "uColorKey"), ckr, ckg, ckb);
 	}
 
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	// DX7 IDirectDrawSurface::Blt is a raw pixel copy (with optional colorkey
+	// discard), not an alpha blend. Leaving GL_BLEND on here made every blt
+	// composite src over dst, so MFD surface→texture copies (Mfd.cpp:812,
+	// after Fill(0x000000) which clears to alpha=0) retained the previous
+	// frame's content at every cleared pixel — the trail artifacts in #58.
+	// Disable blending; the frag shader's `discard` already handles the
+	// colorkey path.
+	glDisable(GL_BLEND);
 	glDisable(GL_DEPTH_TEST);
 	glViewport(0, 0, tgt->GetWidth(), tgt->GetHeight());
 
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
-	glDisable(GL_BLEND);
 	glEnable(GL_DEPTH_TEST);
 	glBindVertexArray(0);
 	glUseProgram(0);
@@ -723,6 +742,17 @@ void OGLClient::clbkRender2DPanel(SURFHANDLE *hSurf, MESHHANDLE hMesh, MATRIX3 *
 			hTex = oapiGetTextureHandle(hMesh, texIdx + 1);
 		}
 
+		// MFD textures are painted by sketchpad into an FBO, which stores the
+		// visual top at OGL v=1. The defpanel mesh's tv values assume D3D's
+		// "v=0 at top" convention, so we flip tv for MFD groups to keep the
+		// Surface MFD tape/horizon labels upright (#58). We *only* flip for
+		// MFD slots: the HUD font atlas (hudTex) is loaded with
+		// OAPISURFACE_RENDERTARGET too — but its content is a BMP, not an
+		// FBO render — so attrib-based detection would wrongly flip the
+		// HUD pitch-ladder glyphs (they came out as "ORBIT" labels because
+		// the font atlas was being sampled vertically inverted).
+		const bool isMFD = (texIdx >= TEXIDX_MFD0 && texIdx < TEXIDX_MFD0 + MAXMFD);
+		const bool flipV = isMFD;
 		if (hTex) {
 			OGLSurface *texSurf = (OGLSurface*)hTex;
 			glActiveTexture(GL_TEXTURE0);
@@ -744,7 +774,7 @@ void OGLClient::clbkRender2DPanel(SURFHANDLE *hSurf, MESHHANDLE hMesh, MATRIX3 *
 			vdata[i * 4 + 0] = grp->Vtx[i].x;
 			vdata[i * 4 + 1] = grp->Vtx[i].y;
 			vdata[i * 4 + 2] = grp->Vtx[i].tu;
-			vdata[i * 4 + 3] = grp->Vtx[i].tv;
+			vdata[i * 4 + 3] = flipV ? (1.0f - grp->Vtx[i].tv) : grp->Vtx[i].tv;
 		}
 		glBindBuffer(GL_ARRAY_BUFFER, tmpVBO);
 		glBufferData(GL_ARRAY_BUFFER, vdata.size() * sizeof(float), vdata.data(), GL_STREAM_DRAW);

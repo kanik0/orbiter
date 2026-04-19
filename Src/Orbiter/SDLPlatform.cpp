@@ -483,6 +483,8 @@ void SDLPlatform::DrawableFromWindow(int wx, int wy, int &dx, int &dy) const
 void SDLPlatform::HandleMouseMotion(const SDL_MouseMotionEvent &motion)
 {
 	DrawableFromWindow(motion.x, motion.y, m_mouseX, m_mouseY);
+	::g_posixCursorX = m_mouseX;
+	::g_posixCursorY = m_mouseY;
 }
 
 void SDLPlatform::HandleMouseButton(const SDL_MouseButtonEvent &button)
@@ -505,6 +507,8 @@ void SDLPlatform::HandleMouseButton(const SDL_MouseButtonEvent &button)
 	DrawableFromWindow(button.x, button.y, mx, my);
 	m_mouseX = mx;
 	m_mouseY = my;
+	::g_posixCursorX = mx;
+	::g_posixCursorY = my;
 
 	// Skip mouse events if ImGui wants to capture them
 	if (ImGui::GetIO().WantCaptureMouse) return;
@@ -547,5 +551,13 @@ void SDLPlatform::HandleWindowEvent(const SDL_WindowEvent &window)
 }
 
 } // namespace orbiter
+
+// Global scope — the posix GetCursorPos() stub in OrbiterPlatform.h reads
+// these directly. Updated by orbiter::SDLPlatform::HandleMouse{Motion,Button}
+// so DefaultPanel::GetButtonState's per-frame hit-test sees a live cursor
+// position (without this, side-row MFD function buttons light up on press
+// but never fire — #58 follow-on).
+int g_posixCursorX = 0;
+int g_posixCursorY = 0;
 
 #endif // !_WIN32
