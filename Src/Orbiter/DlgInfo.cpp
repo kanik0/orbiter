@@ -6,6 +6,7 @@
 // ======================================================================
 #include "DlgInfo.h"
 #include "Celbody.h"
+#include "Vessel.h"
 #include "Psys.h"
 #include "Astro.h"
 #include "Element.h"
@@ -14,10 +15,19 @@
 #include "IconsFontAwesome6.h"
 
 extern PlanetarySystem *g_psys;
+extern Vessel          *g_focusobj;
 
 DlgInfo::DlgInfo() : ImGuiDialog(ICON_FA_CIRCLE_INFO " Orbiter: Object info", {753,423}) {
 	SetHelp("html/orbiter.chm", "/objinfo.htm");
-	m_SelectedTarget = g_psys->GetStar(0)->Name();
+	// Default to the current focus vessel so Ctrl+I opens on the object
+	// the user is actually flying, not the star at the top of the tree
+	// (#38). Fall back to the primary star if the dialog is constructed
+	// before a focus vessel exists (unlikely — EnsureEntry is bound to
+	// the in-sim Info command — but cheap to guard against).
+	if (g_focusobj)
+		m_SelectedTarget = g_focusobj->Name();
+	else
+		m_SelectedTarget = g_psys->GetStar(0)->Name();
 }
 
 void DlgInfo::AddCbodyNode(const CelestialBody *cbody) {

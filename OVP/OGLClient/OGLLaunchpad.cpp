@@ -1399,11 +1399,25 @@ bool OGLLaunchpad::Render(bool &quit)
 		float total = bw * 2 + gap;
 		ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - total);
 
+		// Tooltip + explicit style override on top of BeginDisabled() —
+		// the default DisabledAlpha (0.6) left the button nearly
+		// indistinguishable from the active state against our theme (#30).
 		bool canLaunch = !m_selectedScenario.empty();
-		if (!canLaunch) ImGui::BeginDisabled();
+		if (!canLaunch) {
+			ImGui::BeginDisabled();
+			ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.25f, 0.25f, 0.28f, 1.0f));
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.28f, 1.0f));
+			ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.25f, 0.25f, 0.28f, 1.0f));
+			ImGui::PushStyleColor(ImGuiCol_Text,          ImVec4(0.55f, 0.55f, 0.58f, 1.0f));
+		}
 		if (ImGui::Button("Launch Orbiter", ImVec2(bw, 0)))
 			launch = true;
-		if (!canLaunch) ImGui::EndDisabled();
+		if (!canLaunch) {
+			ImGui::PopStyleColor(4);
+			ImGui::EndDisabled();
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+				ImGui::SetTooltip("Select a scenario from the list to enable launch.");
+		}
 
 		ImGui::SameLine();
 		if (ImGui::Button("Exit", ImVec2(bw, 0)))
