@@ -12,6 +12,8 @@ extern "C" {
 
 #include "OrbiterAPI.h"
 #include "VesselAPI.h" // for TOUCHDOWNVTX
+#include <condition_variable>
+#include <mutex>
 #include <unordered_set>
 
 class gcCore;
@@ -1146,8 +1148,16 @@ protected:
 	static int xrsound_collect(lua_State *L);
 
 private:
-	HANDLE hExecMutex; // flow control synchronisation
-	HANDLE hWaitMutex;
+	// Flow-control between the Orbiter thread and the interpreter thread.
+	// `m_execLocked` is true while *someone* holds the "execution slot"
+	// (mirroring the Win32 Mutex initially-owned semantics — the constructor
+	// leaves the slot locked on behalf of whoever created the interpreter,
+	// so the worker thread's first WaitExec blocks until the orbiter thread
+	// calls EndExec). Cross-thread release is safe because we only touch
+	// the flag under `m_execMu`; `m_execCv` wakes up waiters.
+	std::mutex              m_execMu;
+	std::condition_variable m_execCv;
+	bool                    m_execLocked;
 	static inline gcCore *pCore;
 	static inline bool gcCoreInitialized = false;
 
