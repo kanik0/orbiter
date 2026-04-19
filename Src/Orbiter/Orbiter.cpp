@@ -623,10 +623,14 @@ HRESULT Orbiter::Create (HINSTANCE hInstance)
 #else
 	bWINEenv = false;
 
-	// Initialize SDL2 platform layer
+	// Initialize SDL2 platform layer. The config bounds protect against
+	// stale uninitialised values that used to leak in via the Win32
+	// GetWindowRect stub (#34). Floor at 1024x640 so an old Orbiter.cfg
+	// produced before the #34 fix — which may have saved the 800x600
+	// fallback — doesn't open the first window uncomfortably cramped.
 	m_pSDL = new orbiter::SDLPlatform(this);
-	int sdlW = (pConfig->CfgDevPrm.WinW > 0 && pConfig->CfgDevPrm.WinW < 8192) ? pConfig->CfgDevPrm.WinW : 1280;
-	int sdlH = (pConfig->CfgDevPrm.WinH > 0 && pConfig->CfgDevPrm.WinH < 8192) ? pConfig->CfgDevPrm.WinH : 800;
+	int sdlW = (pConfig->CfgDevPrm.WinW >= 1024 && pConfig->CfgDevPrm.WinW < 8192) ? pConfig->CfgDevPrm.WinW : 1280;
+	int sdlH = (pConfig->CfgDevPrm.WinH >=  640 && pConfig->CfgDevPrm.WinH < 8192) ? pConfig->CfgDevPrm.WinH : 800;
 	if (!m_pSDL->Initialize(sdlW, sdlH))
 	{
 		LOGOUT("SDL2 initialization failed");

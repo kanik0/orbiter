@@ -860,10 +860,26 @@ void Config::SetDefaults ()
 	bEchoAll = bEchoAll_default;
 	memset (&rLaunchpad, 0, sizeof(RECT));
 
-	RECT r;
-	GetWindowRect (GetDesktopWindow(), &r);
-	CfgDevPrm_default.WinW = r.right-r.left; CfgDevPrm_default.WinH = r.bottom-r.top;
-	// use the screen size as the default render window size
+	// Use the desktop size as the default render window size. On non-Win32
+	// the posix GetWindowRect/GetDesktopWindow stubs return FALSE without
+	// touching `r` — leaving it uninitialised here populated CfgDevPrm with
+	// stack garbage that surfaced as "Width: 20310460, Height: 0" in the
+	// Launchpad Video tab (#34). Zero-init r and only overwrite the compiled
+	// 800x600 defaults when the call actually produced a usable rect.
+	RECT r = {0, 0, 0, 0};
+	if (GetWindowRect (GetDesktopWindow(), &r) && r.right > r.left && r.bottom > r.top) {
+		CfgDevPrm_default.WinW = r.right-r.left;
+		CfgDevPrm_default.WinH = r.bottom-r.top;
+	}
+#ifndef _WIN32
+	// Posix builds lose the Win32 desktop probe above, and 800x600 is too
+	// cramped for a modern render window. Match the SDLPlatform fallback
+	// (Orbiter.cpp:628-629) so the first-run window opens at a usable size.
+	else {
+		CfgDevPrm_default.WinW = 1280;
+		CfgDevPrm_default.WinH = 800;
+	}
+#endif
 
 	AmbientColour = 0x0c0c0c0c;
 

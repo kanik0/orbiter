@@ -92,14 +92,23 @@ void OGLLaunchpad::InitFromConfig()
 				return (long long)a.first * a.second > (long long)b.first * b.second;
 			});
 	}
-	// Pick the entry that matches the saved window size, fallback to entry 0.
-	m_vid.modeIndex = 0;
+	// Pick the entry that matches the saved window size. If nothing matches
+	// (e.g. first-run with the compiled 800x600 default on macOS where no
+	// SDL display mode is that small), fall back to the largest available
+	// mode and sync winW/winH to it so the "Width"/"Height" inputs mirror
+	// the Resolution combo. Without the sync the two drift out of step (#34).
+	m_vid.modeIndex = -1;
 	for (size_t i = 0; i < m_vid.modeList.size(); ++i) {
 		if (m_vid.modeList[i].first == m_vid.winW &&
 			m_vid.modeList[i].second == m_vid.winH) {
 			m_vid.modeIndex = (int)i;
 			break;
 		}
+	}
+	if (m_vid.modeIndex < 0 && !m_vid.modeList.empty()) {
+		m_vid.modeIndex = 0;
+		m_vid.winW = m_vid.modeList[0].first;
+		m_vid.winH = m_vid.modeList[0].second;
 	}
 
 	// Splitter positions persisted across runs
@@ -1099,16 +1108,32 @@ void OGLLaunchpad::RenderTabVideo(float availH)
 		ImGui::TextDisabled("(SDL display modes unavailable — using manual size)");
 	}
 
-	// Manual width / height for users who need an off-list size.
+	// Manual width / height for users who need an off-list size. After any
+	// manual edit, re-match against the mode list so the Resolution combo
+	// either snaps to the matching entry or shows "(custom)" rather than
+	// drifting stale behind the inputs (#34 acceptance criterion).
 	ImGui::PushItemWidth(120.0f);
+	bool winEdited = false;
 	if (ImGui::InputInt("Width",  &m_vid.winW, 0)) {
 		if (m_vid.winW < 320) m_vid.winW = 320;
+		winEdited = true;
 	}
 	ImGui::SameLine();
 	if (ImGui::InputInt("Height", &m_vid.winH, 0)) {
 		if (m_vid.winH < 240) m_vid.winH = 240;
+		winEdited = true;
 	}
 	ImGui::PopItemWidth();
+	if (winEdited) {
+		m_vid.modeIndex = -1;
+		for (size_t i = 0; i < m_vid.modeList.size(); ++i) {
+			if (m_vid.modeList[i].first == m_vid.winW &&
+				m_vid.modeList[i].second == m_vid.winH) {
+				m_vid.modeIndex = (int)i;
+				break;
+			}
+		}
+	}
 
 	ImGui::Spacing();
 	ImGui::TextDisabled("Mode");
