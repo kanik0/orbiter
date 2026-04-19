@@ -64,6 +64,17 @@ install(FILES ScnEdit.png
 	DESTINATION ${ORBITER_INSTALL_TEXTURES_DIR}/MenuInfoBar
 )
 
+# Also stage the icon in the build tree so the menu bar finds it
+# without requiring a full install (#44).
+add_custom_command(TARGET ScnEditor POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E make_directory
+		${ORBITER_BINARY_TEXTURES_DIR}/MenuInfoBar
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different
+		${CMAKE_CURRENT_SOURCE_DIR}/ScnEdit.png
+		${ORBITER_BINARY_TEXTURES_DIR}/MenuInfoBar/ScnEdit.png
+	VERBATIM
+)
+
 orbiter_module_info(ScnEditor
 	CATEGORY "Tools and dialogs"
 	DESCRIPTION "SCENARIO EDITOR:\n\nCreate and delete spacecraft during the simulation — edit position, orientation, orbital elements, surface location, fuel status and docking connections. Reset the simulation time.\n\nThe scenario editor can be opened by selecting \"Scenario editor\" in the Custom Functions dialog (Ctrl-F4)."

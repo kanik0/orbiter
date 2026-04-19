@@ -79,7 +79,7 @@ void OGLJoystickCalibration::OnDraw()
 	if (!joy.connected) {
 		ImGui::TextWrapped("No game controller is connected. Plug in a joystick / pad and the live readout will appear automatically.");
 	} else {
-		ImGui::TextDisabled("Live SDL_GameController state — values mapped to [-1000, +1000]");
+		ImGui::TextDisabled("Live SDL_GameController state - values mapped to [-1000, +1000]");
 		ImGui::Separator();
 		DrawAxis("L-stick X", joy.lX);
 		DrawAxis("L-stick Y", joy.lY);
@@ -110,7 +110,7 @@ void OGLJoystickCalibration::OnDraw()
 		&p.bThrottleIgnore);
 
 	ImGui::Spacing();
-	ImGui::TextWrapped("Deadzone is shown as the dim band around centre — "
+	ImGui::TextWrapped("Deadzone is shown as the dim band around centre - "
 		"axis input within that band is suppressed by SDLPlatform. "
 		"Changes take effect immediately and are persisted via the "
 		"main Config save (in-sim Options dialog → Save).");
