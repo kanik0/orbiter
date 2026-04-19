@@ -67,6 +67,16 @@ install(TARGETS XRSound_dll
 	RUNTIME DESTINATION ${ORBITER_INSTALL_PLUGIN_DIR}
 )
 
+if(NOT WIN32)
+	# Sidecar .info for the OGL Launchpad — without it XRSound falls
+	# into the default "Miscellaneous" category with no description.
+	include(${CMAKE_SOURCE_DIR}/cmake/orbiter_module_info.cmake)
+	orbiter_module_info(XRSound_dll
+		CATEGORY "Audio"
+		DESCRIPTION "XRSOUND:\n\nOpenAL-backed audio engine for vessel sounds (engine, RCS, docking, atmospheric buffet, UI cues). Enable to hear in-sim audio. Configure per-vessel sound sets under Config/XRSound/."
+	)
+endif()
+
 ## XRSound_lib
 add_library(XRSound_lib STATIC
 	XRSound.cpp

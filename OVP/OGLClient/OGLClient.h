@@ -62,6 +62,7 @@ public:
 	bool clbkGetSurfaceSize(SURFHANDLE surf, DWORD *w, DWORD *h) override;
 	void clbkIncrSurfaceRef(SURFHANDLE surf) override;
 	bool clbkSetSurfaceColourKey(SURFHANDLE surf, DWORD ckey) override;
+	bool clbkClearSurfaceColourKey(SURFHANDLE surf) override;
 	DWORD clbkGetDeviceColour(BYTE r, BYTE g, BYTE b) override;
 
 	// === Surface blitting ===
