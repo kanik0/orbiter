@@ -27,6 +27,17 @@ static std::string HomeDir()
 }
 #endif
 
+#if defined(__linux__) && !defined(__APPLE__)
+// XDG Base Directory lookup: return $envVar if set and non-empty, else
+// the $HOME/-anchored fallback defined by the XDG spec.
+// https://specifications.freedesktop.org/basedir-spec/latest/
+static std::string XdgDir(const char *envVar, const char *fallbackRel)
+{
+	if (const char *v = std::getenv(envVar); v && *v) return v;
+	return HomeDir() + "/" + fallbackRel;
+}
+#endif
+
 bool EnsureDir(const std::string &path)
 {
 #ifdef _WIN32
@@ -56,8 +67,12 @@ std::string GetUserConfigDir()
 	std::string d = HomeDir() + "/Library/Application Support/Orbiter";
 	EnsureDir(d);
 	return d + "/";
+#elif defined(__linux__)
+	std::string d = XdgDir("XDG_CONFIG_HOME", ".config") + "/Orbiter";
+	EnsureDir(d);
+	return d + "/";
 #else
-	return ""; // Windows / Linux → caller uses cwd
+	return ""; // Windows → caller uses cwd
 #endif
 }
 
@@ -65,6 +80,10 @@ std::string GetUserLogPath()
 {
 #if defined(__APPLE__)
 	std::string d = HomeDir() + "/Library/Logs/Orbiter";
+	EnsureDir(d);
+	return d + "/Orbiter.log";
+#elif defined(__linux__)
+	std::string d = XdgDir("XDG_STATE_HOME", ".local/state") + "/Orbiter/log";
 	EnsureDir(d);
 	return d + "/Orbiter.log";
 #else
