@@ -96,6 +96,7 @@ private:
 	void HandleMouseWheel(const SDL_MouseWheelEvent &wheel);
 	void HandleWindowEvent(const SDL_WindowEvent &window);
 	void UpdateKeyStateFromSDL();
+	void DrawableFromWindow(int wx, int wy, int &dx, int &dy) const;
 
 	Orbiter *m_orbiter;
 	SDL_Window *m_window;
