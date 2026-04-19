@@ -10,6 +10,7 @@ in vec2 vUV;
 
 uniform sampler2D uScene;
 uniform sampler2D uBloom;
+uniform sampler2D uSceneDepth;
 uniform float     uExposure;
 uniform float     uBloomIntensity;
 
@@ -51,7 +52,18 @@ uniform int uIsHDR;
 void main() {
     vec3 scene = texture(uScene, vUV).rgb;
     if (uBloomIntensity > 0.0) {
-        scene += texture(uBloom, vUV).rgb * uBloomIntensity;
+        // Depth-aware bloom: only apply bloom where the scene depth is
+        // at the cleared far value (1.0). Vessel pixels write their real
+        // depth during the main mesh pass (< 1.0), while planets /
+        // atmosphere / stars leave the cleared depth untouched. Without
+        // this mask the bloom blur kernel spread bright atmosphere pixels
+        // at Earth's limb into neighbouring vessel silhouettes, so the
+        // hull appeared to glow with the scatter colour (issue #71).
+        // smoothstep over a small band around 1.0 keeps the transition
+        // smooth at anti-aliased vessel edges.
+        float depth = texture(uSceneDepth, vUV).r;
+        float bloomMask = smoothstep(0.9995, 0.9999, depth);
+        scene += texture(uBloom, vUV).rgb * uBloomIntensity * bloomMask;
     }
 
     vec3 mapped;

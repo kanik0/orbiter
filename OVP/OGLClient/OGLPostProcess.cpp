@@ -20,7 +20,7 @@ OGLPostProcess::OGLPostProcess(ShaderMgr *shaderMgr)
 	  // that the uniform plumbing lands correctly. Caller can override via
 	  // SetExposure() for HDR scenes or user preference.
 	  m_bloomThreshold(0.8f), m_bloomIntensity(0.5f), m_exposure(1.0f),
-	  m_sceneFBO(0), m_sceneColorTex(0), m_sceneDepthRBO(0),
+	  m_sceneFBO(0), m_sceneColorTex(0), m_sceneDepthTex(0),
 	  m_thresholdShader(0), m_blurShader(0), m_compositeShader(0), m_flareShader(0),
 	  m_quadVAO(0), m_quadVBO(0)
 {
@@ -55,7 +55,7 @@ bool OGLPostProcess::Init(int width, int height)
 	// Create HDR scene FBO (full resolution, float16)
 	glGenFramebuffers(1, &m_sceneFBO);
 	glGenTextures(1, &m_sceneColorTex);
-	glGenRenderbuffers(1, &m_sceneDepthRBO);
+	glGenTextures(1, &m_sceneDepthTex);
 
 	glBindTexture(GL_TEXTURE_2D, m_sceneColorTex);
 	// macOS OpenGL 4.1-via-Metal silently drops fragment writes to
@@ -87,12 +87,24 @@ bool OGLPostProcess::Init(int width, int height)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-	glBindRenderbuffer(GL_RENDERBUFFER, m_sceneDepthRBO);
-	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
+	// Attach depth as a texture (GL_DEPTH_COMPONENT24) rather than a
+	// renderbuffer so the tonemap composite shader can sample it to mask
+	// bloom contribution at foreground pixels (issue #71). Atmospheric
+	// pixels are drawn with depth writes off so they keep the cleared
+	// 1.0 depth; vessels write their actual depth. A depth check in the
+	// composite can therefore distinguish "far / atm / sun" from
+	// "foreground / vessel" and only apply bloom to the former.
+	glBindTexture(GL_TEXTURE_2D, m_sceneDepthTex);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24,
+	             width, height, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, m_sceneFBO);
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_sceneColorTex, 0);
-	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, m_sceneDepthRBO);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_sceneDepthTex, 0);
 
 	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
 		fprintf(stderr, "[PostProcess] Scene FBO incomplete\n");
@@ -126,7 +138,7 @@ void OGLPostProcess::Release()
 {
 	if (m_sceneFBO) { glDeleteFramebuffers(1, &m_sceneFBO); m_sceneFBO = 0; }
 	if (m_sceneColorTex) { glDeleteTextures(1, &m_sceneColorTex); m_sceneColorTex = 0; }
-	if (m_sceneDepthRBO) { glDeleteRenderbuffers(1, &m_sceneDepthRBO); m_sceneDepthRBO = 0; }
+	if (m_sceneDepthTex) { glDeleteTextures(1, &m_sceneDepthTex); m_sceneDepthTex = 0; }
 	for (int i = 0; i < 2; i++) {
 		if (m_bloomFBO[i]) { glDeleteFramebuffers(1, &m_bloomFBO[i]); m_bloomFBO[i] = 0; }
 		if (m_bloomTex[i]) { glDeleteTextures(1, &m_bloomTex[i]); m_bloomTex[i] = 0; }
@@ -243,6 +255,16 @@ void OGLPostProcess::EndScene(float sunScreenX, float sunScreenY, bool sunVisibl
 	glActiveTexture(GL_TEXTURE1);
 	glBindTexture(GL_TEXTURE_2D, m_bloomEnabled ? m_bloomTex[0] : 0);
 	glUniform1i(m_shaderMgr->GetUniformLoc(m_compositeShader, "uBloom"), 1);
+
+	// Scene depth (issue #71): foreground pixels (written by the vessel
+	// pass) have depth < 1.0; background pixels (atmosphere fullscreen
+	// quad + distance-normalised planet + stars) kept the cleared 1.0.
+	// The shader uses that to mask bloom spill onto vessel silhouettes
+	// at the limb, where the bright atm halo would otherwise bleed
+	// through the hull via the bloom blur kernel.
+	glActiveTexture(GL_TEXTURE2);
+	glBindTexture(GL_TEXTURE_2D, m_sceneDepthTex);
+	glUniform1i(m_shaderMgr->GetUniformLoc(m_compositeShader, "uSceneDepth"), 2);
 
 	glUniform1f(m_shaderMgr->GetUniformLoc(m_compositeShader, "uExposure"), m_exposure);
 	glUniform1f(m_shaderMgr->GetUniformLoc(m_compositeShader, "uBloomIntensity"),

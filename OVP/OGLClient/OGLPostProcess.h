@@ -62,7 +62,10 @@ private:
 	// HDR scene FBO (full resolution, RGBA16F)
 	GLuint m_sceneFBO;
 	GLuint m_sceneColorTex;
-	GLuint m_sceneDepthRBO;
+	// Depth attached as a texture (not a renderbuffer) so the tonemap
+	// composite can sample it to mask bloom contribution at foreground
+	// pixels — see issue #71.
+	GLuint m_sceneDepthTex;
 
 	// Bloom FBOs (half resolution, ping-pong for blur)
 	GLuint m_bloomFBO[2];
