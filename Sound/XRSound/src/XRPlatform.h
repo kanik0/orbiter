@@ -79,6 +79,32 @@ inline uint64_t GetTickCount64() {
 // trigger -Wredundant-decls and inline-redefinition errors. Nothing
 // further needed here.
 
+// Path-separator normalisation. XRSound ships its config file paths
+// with Windows-style backslashes ("XRSound\\Default\\Cabin Ambience"
+// etc.) and several source sites build paths with the same convention.
+// On POSIX those literal backslashes defeat `fopen` and
+// `std::filesystem` alike, so every path that flows into an I/O call
+// goes through this in-place normaliser first. No-op on Windows.
+inline void XRNormalizePathInPlace(char *path) {
+	if (!path) return;
+	for (char *p = path; *p; ++p)
+		if (*p == '\\') *p = '/';
+}
+inline const char *XRNormalizePathCopy(const char *in, char *buf, size_t bufsz) {
+	if (!in || !buf || bufsz == 0) return in;
+	size_t i = 0;
+	for (; i + 1 < bufsz && in[i]; ++i)
+		buf[i] = (in[i] == '\\') ? '/' : in[i];
+	buf[i] = 0;
+	return buf;
+}
+
 #endif // !_WIN32
+
+#ifdef _WIN32
+// No-op on Windows: paths are already backslash-native.
+inline void XRNormalizePathInPlace(char *) {}
+inline const char *XRNormalizePathCopy(const char *in, char *, size_t) { return in; }
+#endif
 
 #endif // __XRPLATFORM_H

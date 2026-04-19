@@ -14,6 +14,13 @@
 FileList::FileList(const char *pRootPath, const bool bRecurseSubfolders) :
     m_rootPath(pRootPath), m_bRecurseSubfolders(bRecurseSubfolders), m_previousRandomFileIndex(-1)
 {
+    // Config-file values arrive with Windows-style separators (e.g.
+    // "XRSound\Default\Cabin Ambience"). std::filesystem on POSIX treats
+    // the backslash as a literal character, so DirectoryExists fails
+    // unless we rewrite the root path to use forward slashes.
+    LPTSTR buf = m_rootPath.GetBuffer(0);
+    XRNormalizePathInPlace(buf);
+    m_rootPath.ReleaseBuffer();
 }
 
 // Convenience constructor for when you only need to accept a single file type (e.g., "*.cfg")
