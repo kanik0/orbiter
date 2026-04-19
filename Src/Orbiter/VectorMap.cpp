@@ -101,6 +101,10 @@ void VectorMap::InitGDIResources ()
 	// for default label size, query screen resolution
 	int screenh = GetSystemMetrics(SM_CYSCREEN);
 	labelsize = screenh / 100;
+	// On macOS GetSystemMetrics() is a stub returning 0; without this fallback
+	// labelsize becomes 0, oapiCreateFont(-0,...) yields a zero-height font
+	// and ImGui aborts when DrawMarker/Text tries to lay out a glyph (#39).
+	if (labelsize < 8) labelsize = 14;
 	SetLabelSize(labelsize);
  
 	penGridline = oapiCreatePen(1, 1, 0x505050);
