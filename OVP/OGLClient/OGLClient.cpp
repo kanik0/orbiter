@@ -425,6 +425,18 @@ SURFHANDLE OGLClient::clbkCreateSurfaceEx(DWORD w, DWORD h, DWORD attrib)
 	return (SURFHANDLE)surf;
 }
 
+// Plain 2-arg overload used by oapiCreateSurface(w,h). Legacy Orbiter API —
+// callers (VectorMap, DlgMap, MFD panels, various vessel modules) expect a
+// render-target texture they can feed into Sketchpad and later show via
+// ImGui or blit as a mesh texture. Without this override the base class
+// returned NULL and DlgMap stayed empty (#39).
+SURFHANDLE OGLClient::clbkCreateSurface(DWORD w, DWORD h, SURFHANDLE /*hTemplate*/)
+{
+	if (w == 0 || h == 0) return nullptr;
+	return clbkCreateSurfaceEx(w, h,
+		OAPISURFACE_TEXTURE | OAPISURFACE_RENDERTARGET | OAPISURFACE_SKETCHPAD);
+}
+
 bool OGLClient::clbkGetSurfaceSize(SURFHANDLE surf, DWORD *w, DWORD *h)
 {
 	if (!surf) { *w = *h = 0; return false; }

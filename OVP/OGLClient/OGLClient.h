@@ -58,6 +58,7 @@ public:
 	void clbkReleaseTexture(SURFHANDLE hTex) override;
 	bool clbkReleaseSurface(SURFHANDLE surf) override;
 	SURFHANDLE clbkCreateSurfaceEx(DWORD w, DWORD h, DWORD attrib) override;
+	SURFHANDLE clbkCreateSurface(DWORD w, DWORD h, SURFHANDLE hTemplate = NULL) override;
 	bool clbkGetSurfaceSize(SURFHANDLE surf, DWORD *w, DWORD *h) override;
 	void clbkIncrSurfaceRef(SURFHANDLE surf) override;
 	bool clbkSetSurfaceColourKey(SURFHANDLE surf, DWORD ckey) override;
