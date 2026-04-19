@@ -111,7 +111,7 @@ GLuint ShaderMgr::LoadProgram(const char *name, const char *vertFile, const char
 
 GLint ShaderMgr::GetUniformLoc(GLuint program, const char *name)
 {
-	uint64_t key = ((uint64_t)program << 32) | (uint64_t)std::hash<std::string>{}(name);
+	std::pair<GLuint, std::string> key(program, name);
 	auto it = m_uniforms.find(key);
 	if (it != m_uniforms.end())
 		return it->second;
@@ -252,7 +252,7 @@ bool ShaderMgr::ReloadProgram(ProgramEntry &entry)
 
 	// Remove uniform cache entries that belonged to the old program.
 	for (auto it = m_uniforms.begin(); it != m_uniforms.end(); ) {
-		if ((GLuint)(it->first >> 32) == old)
+		if (it->first.first == old)
 			it = m_uniforms.erase(it);
 		else
 			++it;

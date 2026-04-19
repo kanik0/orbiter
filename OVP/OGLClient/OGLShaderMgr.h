@@ -124,8 +124,12 @@ private:
 	// Key = logical program name.
 	std::map<std::string, ProgramEntry> m_programs;
 
-	// Key = (program << 32) | hash(name). Invalidated on reload.
-	std::map<uint64_t, GLint> m_uniforms;
+	// Uniform-location cache. Key is a (program, name) pair so different
+	// programs that share uniform names (e.g. "uAlpha") never alias.
+	// Invalidated per-program on hot-reload. The previous uint64-packed
+	// key OR-merged the hash into the program slot and returned stale
+	// locations across programs — regressed panel2d (#37).
+	std::map<std::pair<GLuint, std::string>, GLint> m_uniforms;
 
 	// UBO block-name → binding point. Populated via RegisterUBOBinding()
 	// plus defaults seeded in the constructor.
