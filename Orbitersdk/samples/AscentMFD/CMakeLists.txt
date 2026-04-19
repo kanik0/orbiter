@@ -4,6 +4,12 @@
 # The target directory for plugin DLLs
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${ORBITER_BINARY_PLUGIN_DIR})
 
+# Sibling .info metadata so the Launchpad groups this sample alongside
+# the other Developer-category plugins (Framerate, Meshdebug) rather than
+# the default "Miscellaneous" bucket where it was showing up unannotated
+# as a user-facing plugin (#32).
+include(${CMAKE_SOURCE_DIR}/cmake/orbiter_module_info.cmake)
+
 add_library(AscentMFD MODULE
 	AscentMFD.cpp
 	AscentMFD.rc
@@ -41,6 +47,12 @@ if(APPLE OR UNIX)
 endif()
 
 install(TARGETS AscentMFD
-	LIBRARY	
+	LIBRARY
 	DESTINATION ${ORBITER_INSTALL_PLUGIN_DIR}
-) 
+)
+
+orbiter_module_info(AscentMFD
+	CATEGORY "Developer resources and samples"
+	DESCRIPTION "ASCENT MFD:\n\nAscent profile analysis MFD — SDK sample demonstrating custom MFD registration, trajectory plotting and vessel parameter queries. Source under Orbitersdk/samples/AscentMFD. Engage from any vessel's MFD mode list."
+)
+
