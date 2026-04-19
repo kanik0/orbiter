@@ -150,7 +150,7 @@ public:
 	char *Name() override { return cstr("Session shutdown"); }
 	char *Description() override {
 		return cstr("How Orbiter behaves when the simulation session "
-			"ends — return to the Launchpad, immediately respawn, or "
+			"ends - return to the Launchpad, immediately respawn, or "
 			"terminate the process.");
 	}
 	bool clbkRender() override {
@@ -197,7 +197,7 @@ public:
 	ItemRenderingOptions(Config *cfg) : m_cfg(cfg) {}
 	char *Name() override { return cstr("Rendering options"); }
 	char *Description() override {
-		return cstr("Renderer debug toggles — wireframe display, "
+		return cstr("Renderer debug toggles - wireframe display, "
 			"force-normalisation of mesh normals.");
 	}
 	bool clbkRender() override {
@@ -257,7 +257,7 @@ public:
 	char *Name() override { return cstr("Launchpad display options"); }
 	char *Description() override {
 		return cstr("How the Launchpad renders scenario descriptions: "
-			"as plain text or via the inline HTML viewer (Win32 only — "
+			"as plain text or via the inline HTML viewer (Win32 only - "
 			"macOS always renders plain text).");
 	}
 	bool clbkRender() override {

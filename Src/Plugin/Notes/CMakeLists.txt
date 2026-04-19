@@ -36,6 +36,18 @@ install(FILES Notes.png
 	DESTINATION ${ORBITER_INSTALL_TEXTURES_DIR}/MenuInfoBar
 )
 
+# Also stage the icon alongside the stock MenuInfoBar textures in the
+# build tree so the menu bar doesn't log "Cannot find menu item texture"
+# when running from the out-of-tree build directory (#44).
+add_custom_command(TARGET Notes POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E make_directory
+		${ORBITER_BINARY_TEXTURES_DIR}/MenuInfoBar
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different
+		${CMAKE_CURRENT_SOURCE_DIR}/Notes.png
+		${ORBITER_BINARY_TEXTURES_DIR}/MenuInfoBar/Notes.png
+	VERBATIM
+)
+
 orbiter_module_info(Notes
 	CATEGORY "Tools and dialogs"
 	DESCRIPTION "FLIGHT NOTES:\n\nFloating notes window for ad-hoc text annotations during a simulation session. Useful for keeping checklists, mission notes, or reminders next to the cockpit view."

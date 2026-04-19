@@ -586,7 +586,7 @@ void OGLLaunchpad::RenderTabScenario(float availH)
 		else
 			ImGui::TextDisabled("(no description)");
 	} else {
-		ImGui::TextDisabled("Select a scenario to launch — double-click to start immediately.");
+		ImGui::TextDisabled("Select a scenario to launch - double-click to start immediately.");
 	}
 	ImGui::EndChild();
 }
@@ -928,7 +928,7 @@ void OGLLaunchpad::RenderTabOptions(float availH)
 	ImGui::BeginChild("OptionsContent", ImVec2(0, availH), false);
 
 	if (!m_cfg) {
-		ImGui::TextDisabled("Config not bound — Options unavailable.");
+		ImGui::TextDisabled("Config not bound - Options unavailable.");
 		ImGui::EndChild();
 		return;
 	}
@@ -942,11 +942,15 @@ void OGLLaunchpad::RenderTabOptions(float availH)
 		{"User interface", 4},
 		{"Joystick",       5},
 		{"Celestial sphere", 6},
-		{"Visual helpers", 7},
-		{"  └ Planetarium",  8},
-		{"  └ Labels",       9},
-		{"  └ Forces",      10},
-		{"  └ Frame axes",  11},
+		// ASCII indent: U+2514 (└) isn't in the Lekton glyph coverage,
+		// so the Options sidebar rendered '?' next to each Visual-helpers
+		// child (#31). Plain spaces + a pipe keep the hierarchy readable
+		// without relying on line-drawing characters.
+		{"Visual helpers",     7},
+		{"    Planetarium",    8},
+		{"    Labels",         9},
+		{"    Forces",        10},
+		{"    Frame axes",    11},
 	};
 
 	float availW = ImGui::GetContentRegionAvail().x;
@@ -1047,7 +1051,7 @@ void OGLLaunchpad::RenderTabModules(float availH)
 		if (!m.description.empty())
 			ImGui::TextWrapped("%s", m.description.c_str());
 		else
-			ImGui::TextDisabled("(no description — module ships without a .info sidecar)");
+			ImGui::TextDisabled("(no description - module ships without a .info sidecar)");
 	} else {
 		ImGui::TextDisabled("Select a module to see its description.\n\n"
 			"Optional Orbiter plugin modules.\n"
@@ -1105,7 +1109,7 @@ void OGLLaunchpad::RenderTabVideo(float availH)
 			ImGui::EndCombo();
 		}
 	} else {
-		ImGui::TextDisabled("(SDL display modes unavailable — using manual size)");
+		ImGui::TextDisabled("(SDL display modes unavailable - using manual size)");
 	}
 
 	// Manual width / height for users who need an off-list size. After any
@@ -1147,7 +1151,7 @@ void OGLLaunchpad::RenderTabVideo(float availH)
 	ImGui::Spacing();
 	ImGui::Separator();
 	ImGui::TextWrapped("Changes apply on the next launch. macOS uses "
-		"borderless fullscreen — the OS picks the optimum refresh rate.");
+		"borderless fullscreen - the OS picks the optimum refresh rate.");
 
 	ImGui::EndChild();
 }
@@ -1312,12 +1316,12 @@ void OGLLaunchpad::RenderTabAbout(float availH)
 	ImGui::Spacing();
 
 	ImGui::TextDisabled("Components");
-	ImGui::BulletText("D3D9Client (Win32 reference) — Jarmo Nikkanen, Peter Schneider");
-	ImGui::BulletText("XRSound — Doug Beachy");
-	ImGui::BulletText("ImGui — Omar Cornut & contributors");
-	ImGui::BulletText("OpenAL Soft — Chris Robinson");
-	ImGui::BulletText("stb_image — Sean Barrett");
-	ImGui::BulletText("SDL2 — Sam Lantinga & contributors");
+	ImGui::BulletText("D3D9Client (Win32 reference) - Jarmo Nikkanen, Peter Schneider");
+	ImGui::BulletText("XRSound - Doug Beachy");
+	ImGui::BulletText("ImGui - Omar Cornut & contributors");
+	ImGui::BulletText("OpenAL Soft - Chris Robinson");
+	ImGui::BulletText("stb_image - Sean Barrett");
+	ImGui::BulletText("SDL2 - Sam Lantinga & contributors");
 
 	ImGui::Spacing();
 	ImGui::Separator();

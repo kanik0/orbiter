@@ -36,6 +36,17 @@ install(FILES Rcontrol.png
 	DESTINATION ${ORBITER_INSTALL_TEXTURES_DIR}/MenuInfoBar
 )
 
+# Also stage the icon in the build tree so the menu bar finds it
+# without requiring a full install (#44).
+add_custom_command(TARGET Rcontrol POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E make_directory
+		${ORBITER_BINARY_TEXTURES_DIR}/MenuInfoBar
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different
+		${CMAKE_CURRENT_SOURCE_DIR}/Rcontrol.png
+		${ORBITER_BINARY_TEXTURES_DIR}/MenuInfoBar/Rcontrol.png
+	VERBATIM
+)
+
 orbiter_module_info(Rcontrol
 	CATEGORY "Input devices"
 	DESCRIPTION "REMOTE CONTROL:\n\nRemote vessel control panel — manipulate the focus vessel (RCS, main/hover/retro thrusters, attitude programs) from a separate floating window. Useful when flying with a HOTAS while keeping the cockpit view free of overlays."
