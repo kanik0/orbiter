@@ -43,7 +43,7 @@ OGLSurface::OGLSurface()
 	  m_msaaColorRbo(0), m_msaaDepthRbo(0), m_depthRbo(0),
 	  m_width(0), m_height(0), m_attrib(0),
 	  m_refCount(1), m_samples(0), m_hasStencil(false),
-	  m_ownsTexture(false),
+	  m_ownsTexture(false), m_fboFailed(false),
 	  m_colorKey(0), m_hasColorKey(false),
 	  m_prevDrawFBO(0), m_prevReadFBO(0)
 {
@@ -140,6 +140,7 @@ GLuint OGLSurface::EnsureFBO()
 {
 	if (m_fbo) return m_fbo;
 	if (!m_texId) return 0;
+	if (m_fboFailed) return 0;
 
 	// --- Single-sample resolve FBO (always built). ---------------------------
 	glGenFramebuffers(1, &m_fbo);
@@ -160,11 +161,12 @@ GLuint OGLSurface::EnsureFBO()
 
 	GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 	if (status != GL_FRAMEBUFFER_COMPLETE) {
-		fprintf(stderr, "[OGLSurface] Resolve FBO incomplete: 0x%x (tex=%u, %ux%u, stencil=%d)\n",
-		        status, m_texId, m_width, m_height, (int)m_hasStencil);
+		fprintf(stderr, "[OGLSurface] Resolve FBO incomplete: 0x%x (tex=%u, %ux%u, attrib=0x%lx, stencil=%d)\n",
+		        status, m_texId, m_width, m_height, (unsigned long)m_attrib, (int)m_hasStencil);
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glDeleteFramebuffers(1, &m_fbo);
 		m_fbo = 0;
+		m_fboFailed = true;  // don't retry every BindFBO call
 		return 0;
 	}
 

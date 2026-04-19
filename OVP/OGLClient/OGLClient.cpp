@@ -978,7 +978,13 @@ SURFHANDLE OGLClient::clbkLoadSurface(const char *fname, DWORD attrib, bool bPat
 	SURFHANDLE h = clbkLoadTexture(fname, 0);
 	if (h && attrib) {
 		OGLSurface *s = (OGLSurface*)h;
-		// If render target requested, ensure FBO is created
+		// WrapTexture() set m_attrib to OAPISURFACE_TEXTURE. Merge the
+		// caller's requested attribs so EnsureFBO() attaches the depth
+		// renderbuffer (required for RT/SKETCHPAD use). A previously-
+		// wrapped file-loaded GL texture may still not be color-renderable
+		// on macOS GL 4.1 — EnsureFBO() will log once and fail silently
+		// if so; clbkGetSketchpad() then rejects further attempts.
+		s->AddAttrib(attrib);
 		if (attrib & (OAPISURFACE_RENDERTARGET | OAPISURFACE_SKETCHPAD))
 			s->EnsureFBO();
 	}
@@ -1136,11 +1142,18 @@ oapi::Sketchpad *OGLClient::clbkGetSketchpad(SURFHANDLE surf) {
 	if (!surf) return nullptr;
 	if (!m_imguiInitialized) return nullptr;
 	if (!ImGui::GetCurrentContext()) return nullptr;
-	if (!ImGui::GetIO().Fonts || !ImGui::GetIO().Fonts->IsBuilt()) return nullptr;
-	// Target surface must be an FBO-backed render target; texture-only
-	// surfaces can't accept draw commands. Returning nullptr here matches
-	// the oapi contract: callers must handle the missing sketchpad.
+	// Don't gate on IsBuilt(): the dynamic atlas flips it to false transiently
+	// while baking new glyphs. Text() handles not-ready atlas; non-text ops
+	// don't need it.
+	if (!ImGui::GetIO().Fonts) return nullptr;
+	// Target surface must be render-target capable. Pure-texture surfaces
+	// (OAPISURFACE_TEXTURE without any RT bit, typically loaded via
+	// clbkLoadTexture) can't accept draw commands — attempting EnsureFBO on
+	// a WrapTexture-wrapped GL texture fails with MISSING_ATTACHMENT and
+	// floods stderr. Reject them up-front; callers must handle the nullptr.
 	OGLSurface *s = (OGLSurface*)surf;
+	const DWORD rtMask = OAPISURFACE_RENDERTARGET | OAPISURFACE_RENDER3D | OAPISURFACE_SKETCHPAD;
+	if (!(s->GetAttrib() & rtMask)) return nullptr;
 	if (!s->EnsureFBO()) return nullptr;
 	OGLSketchpad::InitShared(m_shaderMgr);
 	return new OGLSketchpad(surf, m_shaderMgr);
