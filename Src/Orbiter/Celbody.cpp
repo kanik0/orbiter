@@ -734,7 +734,13 @@ void CelestialBody::RegisterModule (char *dllname)
 #endif
 		hMod = LoadLibrary (cbuf);
 	}
-	if (!hMod) return;
+	if (!hMod) {
+		char msg[512];
+		sprintf (msg, "CelestialBody '%s': module '%s' failed to load (tried Modules/Celbody/ and Modules/). Falling back to orbital elements from config.",
+		         name.c_str(), dllname);
+		LOGOUT_WARN (msg);
+		return;
+	}
 
 	// Check if the module provides instance initialisation
 	typedef CELBODY* (*INITPROC)(OBJHANDLE);
