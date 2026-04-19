@@ -450,6 +450,16 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 		glActiveTexture(GL_TEXTURE0);
 	}
 
+	// Orbiter's mesh files were authored for D3D's clockwise-is-front
+	// convention; OpenGL defaults to counter-clockwise-is-front, so a
+	// glCullFace(GL_BACK) was flipping the hull — the exterior faces got
+	// culled and we ended up staring at the interior of the opposite side
+	// of the ship (look-from-above showed the inside of the belly, and
+	// vice versa — #69). Swap the front-face winding for the duration of
+	// the vessel pass and restore CCW before returning so procedural
+	// geometry (full-screen quads, spheres) keeps its expected winding.
+	glFrontFace(GL_CW);
+
 	DWORD nMesh = vessel->GetMeshCount();
 	// Pass 0: external (hull, EXTPASS bits even while in cockpit view).
 	// Pass 1: internal/VC — only runs when the focus vessel is in internal
@@ -596,6 +606,7 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 		}
 	}
 	} // end pass loop
+	glFrontFace(GL_CCW);  // restore OGL default for subsequent passes
 	glBindVertexArray(0);
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glUseProgram(0);
