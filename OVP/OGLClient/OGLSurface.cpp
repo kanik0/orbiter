@@ -249,13 +249,27 @@ void OGLSurface::UnbindFBO()
 	m_prevDrawFBO = m_prevReadFBO = 0;
 }
 
+// DX7 IDirectDrawSurface::Fill treats `col` as a packed RGB value (surfaces
+// were typically RGB with no alpha channel). Callers like
+// Instrument::ClearSurface (Mfd.cpp:735) and Instrument_Surface::UpdateHorizon
+// pass 0x000000 / 0xRRGGBB and expect opaque output. Taking alpha from
+// (col>>24) would give alpha=0 for those cases — fine on DX7, but on OGL it
+// leaves the cleared pixels transparent, so MFDs show the 3D scene through
+// (and the Surface MFD attitude ball loses its sky/ground fill — #58). Treat
+// alpha=0 inputs as "opaque"; honour an explicit non-zero alpha byte.
+static inline float AlphaFromCol(DWORD col)
+{
+	DWORD a = (col >> 24) & 0xFF;
+	return a ? (float)a / 255.0f : 1.0f;
+}
+
 void OGLSurface::Fill(DWORD col)
 {
 	BindFBO();
 	float r = ((col >> 16) & 0xFF) / 255.0f;
 	float g = ((col >>  8) & 0xFF) / 255.0f;
 	float b = ( col        & 0xFF) / 255.0f;
-	float a = ((col >> 24) & 0xFF) / 255.0f;
+	float a = AlphaFromCol(col);
 	glClearColor(r, g, b, a);
 	glClear(GL_COLOR_BUFFER_BIT);
 	UnbindFBO();
@@ -270,7 +284,7 @@ void OGLSurface::Fill(DWORD x, DWORD y, DWORD w, DWORD h, DWORD col)
 	float r = ((col >> 16) & 0xFF) / 255.0f;
 	float g = ((col >>  8) & 0xFF) / 255.0f;
 	float b = ( col        & 0xFF) / 255.0f;
-	float a = ((col >> 24) & 0xFF) / 255.0f;
+	float a = AlphaFromCol(col);
 	glClearColor(r, g, b, a);
 	glClear(GL_COLOR_BUFFER_BIT);
 	glDisable(GL_SCISSOR_TEST);
