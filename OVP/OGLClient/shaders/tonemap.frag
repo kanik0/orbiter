@@ -49,18 +49,6 @@ vec3 tonemapACES(vec3 hdr) {
 uniform int uIsHDR;
 
 void main() {
-    // macOS RGBA8 scene FBO: radiance values land in 0.02–0.1 range, far
-    // too dim to display after gamma without an exposure boost. Applied
-    // inline here because the separate `uExposure` uniform (set via
-    // glUniform1f in OGLPostProcess::EndScene) was not taking effect on
-    // Apple Silicon GL — either ShaderMgr::GetUniformLoc returns a stale
-    // handle after the bloom / lens-flare programs run, or the compositor
-    // program loses its uniform state between RefreshOnHotReload and the
-    // actual DrawQuad. Hardcoding the gain here bypasses the uniform
-    // plumbing entirely so the bright highlights (sun, city lights) and
-    // the dim atmospheric body surface land in the visible curve.
-    const float kMacosLdrExposure = 8.0;
-
     vec3 scene = texture(uScene, vUV).rgb;
     if (uBloomIntensity > 0.0) {
         scene += texture(uBloom, vUV).rgb * uBloomIntensity;
@@ -69,21 +57,18 @@ void main() {
     vec3 mapped;
     if (uIsHDR != 0) {
         // HDR path: ACES filmic tone map preserves highlight roll-off
-        // for sun discs with values >> 1.0. On HDR the caller's
-        // uExposure is the right control.
+        // for sun discs with values >> 1.0.
         scene *= uExposure;
         mapped = tonemapACES(scene);
     } else {
-        // LDR path (macOS default — see OGLPostProcess::Init note): the
-        // scene attachment is already sRGB-ish 0..1 from GL_RGBA8, so
-        // clamp any bloom overshoot and let gamma2.2 handle the display
-        // encoding. No ACES: its ODT output matrix has negative terms
-        // that clamp dark pixels to pure zero.
-        //
-        // The hardcoded kMacosLdrExposure gain compensates for the tight
-        // RGBA8 dynamic range: scene values typically land in 0.02–0.1,
-        // which would gamma-encode to near-black without pre-scaling.
-        scene *= kMacosLdrExposure;
+        // LDR path (macOS default — RGBA8 scene FBO). uExposure now lands
+        // through correctly after the ShaderMgr cache-collision fix (#49)
+        // that used to hand out stale uniform locations after bloom / lens
+        // flare programs ran. The previous workaround (hardcoded 8× gain)
+        // over-exposed every textured planet to pure white (#25); now the
+        // caller's value drives the mapping and textured bodies retain
+        // their albedo.
+        scene *= uExposure;
         mapped = clamp(scene, 0.0, 1.0);
     }
 

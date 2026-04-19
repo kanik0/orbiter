@@ -12,10 +12,13 @@ namespace ogl {
 OGLPostProcess::OGLPostProcess(ShaderMgr *shaderMgr)
 	: m_shaderMgr(shaderMgr), m_width(0), m_height(0), m_initialized(false),
 	  m_bloomEnabled(true), m_flareEnabled(true),
-	  // uExposure is the HDR-path exposure (only used when OGL_POSTFX_HDR
-	  // is set and the scene FBO is GL_RGBA16F). On the LDR macOS default
-	  // the shader applies its own `kMacosLdrExposure` gain that
-	  // compensates for RGBA8 quantisation — see tonemap.frag.
+	  // uExposure controls both paths. Default 1.0 passes the scene through
+	  // without added gain; textured planets (Saturn, Venus, Mercury, Dione)
+	  // render at their natural albedo. The previous 8× LDR workaround was
+	  // needed because uExposure didn't actually reach the shader on macOS
+	  // (ShaderMgr cache collision, fixed by #49) — it has been removed now
+	  // that the uniform plumbing lands correctly. Caller can override via
+	  // SetExposure() for HDR scenes or user preference.
 	  m_bloomThreshold(0.8f), m_bloomIntensity(0.5f), m_exposure(1.0f),
 	  m_sceneFBO(0), m_sceneColorTex(0), m_sceneDepthRBO(0),
 	  m_thresholdShader(0), m_blurShader(0), m_compositeShader(0), m_flareShader(0),
