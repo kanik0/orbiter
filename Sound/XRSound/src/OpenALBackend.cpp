@@ -5,6 +5,23 @@
 
 #include "OpenALBackend.h"
 
+// Local path normaliser. XRPlatform.h pulls in Orbitersdk headers the
+// OpenAL backend target does not link against; a self-contained copy
+// keeps the decoders independent and does the same job.
+static inline const char *XRNormalizePathCopyLocal(const char *in, char *buf, size_t bufsz) {
+#ifdef _WIN32
+	(void)buf; (void)bufsz;
+	return in;
+#else
+	if (!in || !buf || bufsz == 0) return in;
+	size_t i = 0;
+	for (; i + 1 < bufsz && in[i]; ++i)
+		buf[i] = (in[i] == '\\') ? '/' : in[i];
+	buf[i] = 0;
+	return buf;
+#endif
+}
+
 // Decoders — declarations only. The implementation bodies live in
 // external/decoders_impl.cpp so we don't pay the inlining cost in
 // every TU that talks to the audio backend.
@@ -60,7 +77,13 @@ bool OpenALSound::isFinished()
 	if (!m_source) return true;
 	ALint state = 0;
 	alGetSourcei(m_source, AL_SOURCE_STATE, &state);
-	return state == AL_STOPPED || state == AL_INITIAL;
+	// AL_INITIAL means "source created, never played yet" — the XRSound
+	// lifecycle creates sources with startPaused=true and only lets
+	// UpdateSoundState's first setIsPaused(false) kick them off. Treating
+	// INITIAL as finished here caused UpdateSoundState to drop the source
+	// before it ever played, so nothing audible ever reached the device
+	// (#45). Only AL_STOPPED is a real "finished" state.
+	return state == AL_STOPPED;
 }
 
 void OpenALSound::setVolume(float volume)
@@ -79,8 +102,20 @@ void OpenALSound::setIsLooped(bool loop)
 void OpenALSound::setIsPaused(bool pause)
 {
 	if (!m_source) return;
-	if (pause) alSourcePause(m_source);
-	else       alSourcePlay(m_source);
+	// alSourcePlay on an already-playing source *rewinds it to the start*
+	// (per the OpenAL spec). XRSound drives setIsPaused(false) 20 times a
+	// second via UpdateSoundState, so issuing an unconditional alSourcePlay
+	// produced a stuttering "wha-wha-wha" loop that never advanced past the
+	// first sample (#45). Gate the call on the actual source state so we
+	// only issue Play for fresh / paused sources and only issue Pause for
+	// playing sources.
+	ALint state = 0;
+	alGetSourcei(m_source, AL_SOURCE_STATE, &state);
+	if (pause) {
+		if (state == AL_PLAYING) alSourcePause(m_source);
+	} else {
+		if (state != AL_PLAYING) alSourcePlay(m_source);
+	}
 }
 
 // Pan is simulated by positioning the source slightly off the listener's
@@ -289,6 +324,13 @@ bool OpenALEngine::ParseWav(const char *filename, std::vector<uint8_t> &data,
 ALuint OpenALEngine::LoadFile(const char *filename, float *outDurationSec)
 {
 	if (!m_initialized || !filename) return 0;
+
+	// Config-file values carry Windows-style backslashes; normalise so the
+	// decoders (dr_wav / dr_mp3 / stb_vorbis) and the buffer cache key all
+	// see the same POSIX-style path. Without this the decoders silently
+	// fail to open the file and nothing audible reaches the device (#45).
+	char pathBuf[1024];
+	filename = XRNormalizePathCopyLocal(filename, pathBuf, sizeof(pathBuf));
 
 	auto it = m_bufferCache.find(filename);
 	if (it != m_bufferCache.end()) {

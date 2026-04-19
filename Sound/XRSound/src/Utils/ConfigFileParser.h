@@ -16,6 +16,7 @@
 #include <stdio.h>
 
 #include "XRString.h"
+#include "../XRPlatform.h"   // for XRNormalizePathCopy
 #include <fstream>      // for ifstream
 
 const int MAX_LINE_LENGTH = 1024;
@@ -57,13 +58,18 @@ public:
 
     static void TrimString(char *pStr);
 
-    // Returns true if the supplied file exists and is readable
+    // Returns true if the supplied file exists and is readable. Input paths
+    // may contain Windows-style backslash separators (values lifted verbatim
+    // from XRSound vessel override .cfg files); normalise in a local buffer
+    // before touching std::ifstream so POSIX can resolve the path.
     static bool IsFileReadable(const char *pFilename)
     {
         if (!pFilename || !*pFilename)
             return false;
 
-        std::ifstream file(pFilename);
+        char buf[1024];
+        const char *path = XRNormalizePathCopy(pFilename, buf, sizeof(buf));
+        std::ifstream file(path);
         return file.good();
     }
 

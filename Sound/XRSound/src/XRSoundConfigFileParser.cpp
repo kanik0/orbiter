@@ -65,7 +65,11 @@ bool XRSoundConfigFileParser::ParseVesselSoundConfig(VESSEL *pVessel)
             csSanitizedClassName.SetAt(i, '_');   // replace invalid character
     }
 
+#ifdef _WIN32
     m_csOverrideFilename.Format("XRSound\\XRSound-%s.cfg", static_cast<const char *>(csSanitizedClassName));  // e.g., "XRSound\XRSound-XR2Ravenstar.cfg"
+#else
+    m_csOverrideFilename.Format("XRSound/XRSound-%s.cfg", static_cast<const char *>(csSanitizedClassName));
+#endif
     bOverrideFileExists = (PathFileExists(m_csOverrideFilename) != FALSE);
 
     if (bOverrideFileExists)

@@ -86,7 +86,13 @@ bool ConfigFileParser::ParseFile(const char *pFilename)
     sprintf(temp, "Parsing config file '%s'", pFilename);
     WriteLog(temp);
 
-    FILE *pFile = fopen(pFilename, "rt");
+    // Normalise Windows-style path separators before hitting fopen so the
+    // POSIX kernel can find "XRSound\XRSound.cfg" (shipped with backslashes
+    // in both the constant and the XRSound.cfg values) as "XRSound/...".
+    char pathBuf[1024];
+    const char *openPath = XRNormalizePathCopy(pFilename, pathBuf, sizeof(pathBuf));
+
+    FILE *pFile = fopen(openPath, "rt");
 
     if (pFile == nullptr)
     {
