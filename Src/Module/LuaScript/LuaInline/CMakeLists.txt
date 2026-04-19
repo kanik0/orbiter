@@ -1,17 +1,13 @@
 # Copyright (c) Martin Schweiger
 # Licensed under the MIT License
 
-# Core library to go to the Orbiter main directory
+# Core library to go to the Orbiter main directory. Both the Win32
+# .dll and the POSIX .dylib / .so need to land in the Orbiter root so
+# the loader (`Script.cpp` path=".") can find them — LuaInline.cpp
+# now uses std::thread / std::condition_variable (#22) so there's no
+# platform-specific quarantine any more.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${ORBITER_BINARY_ROOT_DIR})
-# NOTE: on macOS / Linux we deliberately do NOT set LIBRARY_OUTPUT_DIRECTORY
-# to the root. LuaInline.cpp still uses Win32 threading (_beginthreadex,
-# WaitForSingleObject, TerminateThread) which is stubbed on POSIX. Loading
-# the dylib successfully — rather than silently failing to locate it —
-# exposes a SIGSEGV when a vessel (e.g. DeltaGlider::AAPSubsystem) calls
-# oapiExecScriptCmd. Until LuaInline is ported to std::thread, leave the
-# dylib in Modules/ where the loader won't find it, keeping the current
-# "silent-broken scripting, no crash" behaviour.
-# See GitHub issue tracked under label `platform:macos`, `scope:lua`.
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${ORBITER_BINARY_ROOT_DIR})
 
 add_library(LuaInline SHARED
 	LuaInline.cpp
@@ -39,6 +35,20 @@ set_target_properties(LuaInline
 	PROPERTIES
 	FOLDER Modules/Lua
 )
+
+# LuaInline lives in the Orbiter root, but its transitive dep
+# libLuaInterpreter.dylib sits in Modules/ alongside the other plugins.
+# Without an explicit rpath hint dyld only checks siblings of LuaInline and
+# the link fails. Keep the same block on Linux (RUNPATH uses $ORIGIN).
+if(APPLE)
+	set_target_properties(LuaInline PROPERTIES
+		BUILD_RPATH   "@loader_path/Modules"
+		INSTALL_RPATH "@loader_path/Modules")
+elseif(UNIX)
+	set_target_properties(LuaInline PROPERTIES
+		BUILD_RPATH   "\$ORIGIN/Modules"
+		INSTALL_RPATH "\$ORIGIN/Modules")
+endif()
 
 
 # Installation

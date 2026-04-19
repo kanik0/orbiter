@@ -8,6 +8,7 @@
 #include "MFDAPI.h"
 #include "DrawAPI.h"
 #include "gcCoreAPI.h"
+#include <chrono>
 #include <list>
 
 using std::min;
@@ -69,9 +70,8 @@ Interpreter::Interpreter ()
 	lua_pushlightuserdata (L, this);
 	lua_setfield (L, LUA_REGISTRYINDEX, "interp");
 
-	hExecMutex = CreateMutex (NULL, TRUE, NULL);
-	hWaitMutex = CreateMutex (NULL, FALSE, NULL);
-
+	// Start with the execution slot owned (matches CreateMutex(…,TRUE,…)).
+	m_execLocked = true;
 }
 
 void Interpreter::LazyInitGCCore() {
@@ -113,9 +113,6 @@ int Interpreter::LuaCall(lua_State *L, int narg, int nres)
 Interpreter::~Interpreter ()
 {
 	lua_close (L);
-
-	if (hExecMutex) CloseHandle (hExecMutex);
-	if (hWaitMutex) CloseHandle (hWaitMutex);
 }
 
 void Interpreter::Initialise ()
@@ -677,17 +674,36 @@ void Interpreter::lua_pushsketchpad (lua_State *L, oapi::Sketchpad *skp)
 
 void Interpreter::WaitExec (DWORD timeout)
 {
-	// Called by orbiter thread or interpreter thread to wait its turn
-	// Orbiter waits for the script for 1 second to return
-	WaitForSingleObject (hWaitMutex, timeout); // wait for synchronisation mutex
-	WaitForSingleObject (hExecMutex, timeout); // wait for execution mutex
-	ReleaseMutex (hWaitMutex);              // release synchronisation mutex
+	// Called by the orbiter thread or the interpreter thread to wait for
+	// its turn. Mirrors the original two-mutex Win32 pattern: only one
+	// thread holds the execution slot at a time, and callers block until
+	// the current holder relinquishes it via EndExec(). INFINITE timeout
+	// (the default — 0xFFFFFFFF) maps to an unbounded wait; any other
+	// value is interpreted as milliseconds, returning silently on timeout
+	// just like WaitForSingleObject did.
+	std::unique_lock<std::mutex> lk(m_execMu);
+	auto available = [this]{ return !m_execLocked; };
+	if (timeout == INFINITE) {
+		m_execCv.wait(lk, available);
+	} else {
+		m_execCv.wait_for(lk, std::chrono::milliseconds(timeout), available);
+		if (m_execLocked) return; // timed out — leave the slot as-is
+	}
+	m_execLocked = true;
 }
 
 void Interpreter::EndExec ()
 {
-	// called by orbiter thread or interpreter thread to hand over control
-	ReleaseMutex (hExecMutex);
+	// Called by the orbiter thread or the interpreter thread to hand
+	// control over to the other thread. Unlike std::mutex::unlock, the
+	// CV pattern lets either thread release the slot safely regardless
+	// of which one locked it — the original Win32 mutex relied on the
+	// same cross-thread transfer behaviour.
+	{
+		std::lock_guard<std::mutex> lk(m_execMu);
+		m_execLocked = false;
+	}
+	m_execCv.notify_all();
 }
 
 void Interpreter::frameskip (lua_State *L)

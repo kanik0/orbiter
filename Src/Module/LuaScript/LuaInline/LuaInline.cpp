@@ -27,9 +27,8 @@
 #ifdef _WIN32
 #include <direct.h>
 #endif
-#ifdef _WIN32
-#include <process.h>
-#endif
+#include <chrono>
+#include <future>
 
 // ==============================================================
 // class InterpreterList::Environment: implementation
@@ -38,41 +37,46 @@ InterpreterList::Environment::Environment()
 {
 	cmd = NULL;
 	singleCmd = false;
-	hThread = NULL;
 	interp = CreateInterpreter ();
 }
 
 InterpreterList::Environment::~Environment()
 {
-	if (interp) {
-		if (hThread) {
-			termInterp = true;
-			interp->Terminate();
-			interp->EndExec(); // give the thread opportunity to close
+	if (!interp) return;
+	if (thread.joinable()) {
+		// Signal the worker to exit its WaitExec and unwind. EndExec hands
+		// the execution slot back so the thread can observe termInterp.
+		termInterp = true;
+		interp->Terminate();
+		interp->EndExec();
 
-			if (WaitForSingleObject (hThread, 1000) != 0) {
-				oapiWriteLog((char*)"LuaInline: timeout while waiting for interpreter thread");
-				TerminateThread (hThread, 0);
-			}
-			CloseHandle (hThread);
+		// std::thread has no timed join, so run the join on a helper and
+		// wait up to 1 second — matches the old WaitForSingleObject(1000)
+		// fallback. If the worker is wedged we detach rather than calling
+		// TerminateThread (POSIX has no safe equivalent, and even on
+		// Windows this path was a last resort). Detaching leaks the worker
+		// to process exit; oapiWriteLog surfaces it so it isn't silent.
+		auto joiner = std::async(std::launch::async,
+			[this]{ thread.join(); });
+		if (joiner.wait_for(std::chrono::seconds(1)) == std::future_status::timeout) {
+			oapiWriteLog((char*)"LuaInline: timeout while waiting for interpreter thread");
+			thread.detach();
 		}
-		delete interp;
 	}
+	delete interp;
 }
 
 Interpreter *InterpreterList::Environment::CreateInterpreter ()
 {
-	unsigned id;
 	termInterp = false;
 	interp = new Interpreter ();
 	interp->Initialise();
-	hThread = (HANDLE)_beginthreadex (NULL, 4096, &InterpreterThreadProc, this, 0, &id);
+	thread = std::thread(&InterpreterList::Environment::InterpreterThreadProc, this);
 	return interp;
 }
 
-unsigned int WINAPI InterpreterList::Environment::InterpreterThreadProc (LPVOID context)
+void InterpreterList::Environment::InterpreterThreadProc (InterpreterList::Environment *env)
 {
-	InterpreterList::Environment *env = (InterpreterList::Environment*)context;
 	Interpreter *interp = env->interp;
 	// interpreter loop
 	for (;;) {
@@ -89,9 +93,7 @@ unsigned int WINAPI InterpreterList::Environment::InterpreterThreadProc (LPVOID 
 		if (interp->Status() == 1) break;
 		interp->EndExec();  // return control
 	}
-	interp->EndExec();  // return mutex (is this necessary?)
-	_endthreadex(0);
-	return 0;
+	interp->EndExec();  // return execution slot
 }
 
 
