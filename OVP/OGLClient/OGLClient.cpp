@@ -677,11 +677,19 @@ void OGLClient::clbkRender2DPanel(SURFHANDLE *hSurf, MESHHANDLE hMesh, MATRIX3 *
 	else
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-	// Upload transform as mat3 uniform
+	// Upload transform as a column-major mat3 with only the diagonal scale
+	// (m11, m22) and translation column (m13, m23) — matching the D3D9
+	// client (D3D9Client.cpp:1948) which reads only those four elements.
+	// DefaultPanel builds `transf = {1,-0.5,0, 0,1,-0.5, 0,0,1}`: the -0.5
+	// in m12/m23 positions is ignored on Windows but, applied as a full
+	// mat3, would shear the generic cockpit (the tilted rendering tracked
+	// in #54). Zeroing the off-diagonal shear reproduces Win32 behaviour.
+	// Layout: shader computes `uTransform * vec3(x, y, 1)`, so we need
+	// columns (m11, 0, 0), (0, m22, 0), (m13, m23, 1).
 	float mat[9] = {
-		(float)T->m11, (float)T->m12, (float)T->m13,
-		(float)T->m21, (float)T->m22, (float)T->m23,
-		(float)T->m31, (float)T->m32, (float)T->m33
+		(float)T->m11, 0.0f,          0.0f,
+		0.0f,          (float)T->m22, 0.0f,
+		(float)T->m13, (float)T->m23, 1.0f
 	};
 	glUniformMatrix3fv(m_shaderMgr->GetUniformLoc(m_panel2dShader, "uTransform"), 1, GL_FALSE, mat);
 	glUniform2f(m_shaderMgr->GetUniformLoc(m_panel2dShader, "uViewport"), (float)m_viewW, (float)m_viewH);
