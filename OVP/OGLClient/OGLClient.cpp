@@ -459,6 +459,13 @@ bool OGLClient::clbkSetSurfaceColourKey(SURFHANDLE surf, DWORD ckey)
 	return true;
 }
 
+bool OGLClient::clbkClearSurfaceColourKey(SURFHANDLE surf)
+{
+	if (!surf) return false;
+	((OGLSurface*)surf)->ClearColorKey();
+	return true;
+}
+
 DWORD OGLClient::clbkGetDeviceColour(BYTE r, BYTE g, BYTE b)
 {
 	return (DWORD)r | ((DWORD)g << 8) | ((DWORD)b << 16);

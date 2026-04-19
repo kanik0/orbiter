@@ -2037,10 +2037,11 @@ DLLEXPORT void oapiSetSurfaceColourKey (SURFHANDLE surf, DWORD ck)
 DLLEXPORT void oapiClearSurfaceColourKey (SURFHANDLE surf)
 {
 	if (!surf) return;
-	oapi::GraphicsClient *gc = g_pOrbiter->GetGraphicsClient();
-	//if (gc) gc->clbClearSurfaceColourKey (surf); // TODO
 #ifdef _WIN32
 	((LPDIRECTDRAWSURFACE7)surf)->SetColorKey (DDCKEY_SRCBLT, 0);
+#else
+	oapi::GraphicsClient *gc = g_pOrbiter->GetGraphicsClient();
+	if (gc) gc->clbkClearSurfaceColourKey (surf);
 #endif
 }
 

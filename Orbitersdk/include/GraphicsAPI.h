@@ -1156,6 +1156,16 @@ public:
 	virtual bool clbkSetSurfaceColourKey (SURFHANDLE surf, DWORD ckey) { return false; }
 
 	/**
+	 * \brief Clear any transparency colour key previously set on a surface.
+	 * \param surf surface handle
+	 * \return true on success, false if the renderer does not support
+	 *   colour-key transparency or the clear could not be applied.
+	 * \note Derived classes should overload this method if the renderer
+	 *   supports colour key transparency for surfaces.
+	 */
+	virtual bool clbkClearSurfaceColourKey (SURFHANDLE surf) { return false; }
+
+	/**
 	 * \brief Convert an RGB colour triplet into a device-specific colour value.
 	 * \param r red component
 	 * \param g green component

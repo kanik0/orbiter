@@ -90,6 +90,7 @@ public:
 	// --- Color key ----------------------------------------------------------
 
 	void  SetColorKey(DWORD ckey) { m_colorKey = ckey; m_hasColorKey = true; }
+	void  ClearColorKey()         { m_colorKey = 0;    m_hasColorKey = false; }
 	bool  HasColorKey() const { return m_hasColorKey; }
 	DWORD GetColorKey() const { return m_colorKey; }
 
