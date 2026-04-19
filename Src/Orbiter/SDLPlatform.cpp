@@ -461,10 +461,28 @@ void SDLPlatform::HandleKeyEvent(const SDL_KeyboardEvent &key)
 	// This handler is kept for potential future buffered-event needs.
 }
 
+// SDL mouse events arrive in window-logical pixels, but the Orbiter engine
+// (Pane, DefaultPanel hit-tests, plugin clbkProcessMouse, etc.) works in
+// drawable pixels — we initialise pane->W/H from SDL_GL_GetDrawableSize, so
+// on a Retina display they diverge by the backing scale factor. Without this
+// scaling, clicks land at half the x/y of every hit-box in the generic
+// cockpit and are silently swallowed (#59).
+void SDLPlatform::DrawableFromWindow(int wx, int wy, int &dx, int &dy) const
+{
+	int winW = m_width, winH = m_height, drawW = winW, drawH = winH;
+	if (m_window) {
+		SDL_GetWindowSize(m_window, &winW, &winH);
+		SDL_GL_GetDrawableSize(m_window, &drawW, &drawH);
+	}
+	if (winW <= 0) winW = 1;
+	if (winH <= 0) winH = 1;
+	dx = (int)((long long)wx * drawW / winW);
+	dy = (int)((long long)wy * drawH / winH);
+}
+
 void SDLPlatform::HandleMouseMotion(const SDL_MouseMotionEvent &motion)
 {
-	m_mouseX = motion.x;
-	m_mouseY = motion.y;
+	DrawableFromWindow(motion.x, motion.y, m_mouseX, m_mouseY);
 }
 
 void SDLPlatform::HandleMouseButton(const SDL_MouseButtonEvent &button)
@@ -483,8 +501,10 @@ void SDLPlatform::HandleMouseButton(const SDL_MouseButtonEvent &button)
 		break;
 	}
 
-	m_mouseX = button.x;
-	m_mouseY = button.y;
+	int mx, my;
+	DrawableFromWindow(button.x, button.y, mx, my);
+	m_mouseX = mx;
+	m_mouseY = my;
 
 	// Skip mouse events if ImGui wants to capture them
 	if (ImGui::GetIO().WantCaptureMouse) return;
@@ -501,7 +521,7 @@ void SDLPlatform::HandleMouseButton(const SDL_MouseButtonEvent &button)
 		if (m_mouseButtons[0]) state |= MK_LBUTTON;
 		if (m_mouseButtons[1]) state |= MK_RBUTTON;
 		if (m_mouseButtons[2]) state |= MK_MBUTTON;
-		m_mouseEvents.push_back({event, state, button.x, button.y});
+		m_mouseEvents.push_back({event, state, mx, my});
 	}
 }
 
