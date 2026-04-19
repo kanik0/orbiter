@@ -13,7 +13,9 @@
 
 in vec2 vNdc;
 
-uniform mat4 uViewProj;       // same VP the planet surface pass used
+uniform mat3 uCamToWorld;     // camera basis in world (cols = X_cam, Y_cam, forward_cam)
+uniform float uTanHalfFov;    // tan(fov_y / 2)
+uniform float uAspect;        // viewport width / height
 uniform vec3 uCamPosPlanet;   // camera position in planet-local frame [m]
 uniform float uPlanetRadius;  // planet radius [m]
 uniform float uAtmoRadius;    // planet radius + atmosphere altitude [m]
@@ -28,18 +30,14 @@ uniform float uExposure;      // atmosphere-only exposure multiplier
 
 out vec4 FragColor;
 
-// Reconstruct a unit world-space view direction from NDC using the inverse VP.
-vec3 ndcToWorldDir(mat4 invVP, vec2 ndc) {
-    vec4 nh = invVP * vec4(ndc, -1.0, 1.0);
-    vec4 fh = invVP * vec4(ndc,  1.0, 1.0);
-    vec3 n  = nh.xyz / nh.w;
-    vec3 f  = fh.xyz / fh.w;
-    return normalize(f - n);
-}
-
 void main() {
-    mat4 invVP = inverse(uViewProj);
-    vec3 rd = ndcToWorldDir(invVP, vNdc);
+    // Camera-local ray direction for this NDC sample: +X right, +Y up,
+    // +Z forward (the forward-is-+Z convention matches the camera basis we
+    // upload from oapiCameraRotationMatrix).
+    vec3 dirCam = normalize(vec3(vNdc.x * uAspect * uTanHalfFov,
+                                 vNdc.y * uTanHalfFov,
+                                 1.0));
+    vec3 rd = uCamToWorld * dirCam;
     vec3 ro = uCamPosPlanet;
     vec3 C  = vec3(0.0);
 
