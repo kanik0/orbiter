@@ -1136,7 +1136,10 @@ oapi::Sketchpad *OGLClient::clbkGetSketchpad(SURFHANDLE surf) {
 	if (!surf) return nullptr;
 	if (!m_imguiInitialized) return nullptr;
 	if (!ImGui::GetCurrentContext()) return nullptr;
-	if (!ImGui::GetIO().Fonts || !ImGui::GetIO().Fonts->IsBuilt()) return nullptr;
+	// Don't gate on IsBuilt(): the dynamic atlas flips it to false transiently
+	// while baking new glyphs. Text() handles not-ready atlas; non-text ops
+	// don't need it.
+	if (!ImGui::GetIO().Fonts) return nullptr;
 	// Target surface must be an FBO-backed render target; texture-only
 	// surfaces can't accept draw commands. Returning nullptr here matches
 	// the oapi contract: callers must handle the missing sketchpad.

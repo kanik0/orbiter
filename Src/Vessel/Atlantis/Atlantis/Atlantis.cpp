@@ -1369,6 +1369,7 @@ void Atlantis::RedrawPanel_MFDButton (SURFHANDLE surf, int mfd)
 	using namespace oapi;
 
 	Sketchpad *pSkp = oapiGetSketchpad(surf);
+	if (!pSkp) return;   // macOS: oapiGetSketchpad may legitimately return NULL
 
 	// D. Beachy: BUGFIX: if MFD powered off, cover separator lines and do not paint buttons
     if (oapiGetMFDMode(mfd) == MFD_NONE) {
