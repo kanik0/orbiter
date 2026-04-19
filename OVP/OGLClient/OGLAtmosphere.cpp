@@ -6,6 +6,7 @@
 #include "OGLAtmosphere.h"
 #include "OGLShaderMgr.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -33,17 +34,26 @@ OGLAtmosphere::OGLAtmosphere(OBJHANDLE hPlanet, ShaderMgr *shaderMgr)
 
 	const ATMCONST *atm = oapiGetPlanetAtmConstants(hPlanet);
 	if (atm) {
-		m_atmoAlt    = atm->altlimit;
+		// `altlimit` is Orbiter's physics cutoff (e.g. Earth: 2500 km) — far
+		// above the visible atmosphere. `horizonalt` is the "visible top of
+		// atmosphere" used by the legacy HazeMgr (e.g. Earth: 80 km,
+		// Mars: 60 km) and is the right shell for single-scatter rendering.
+		// Using altlimit inflated the shell 30× and spread density over km
+		// that contribute nothing, leaving the integral imperceptible (#26).
+		m_atmoAlt    = atm->horizonalt > 0 ? atm->horizonalt : atm->altlimit;
 		m_horizonAlt = atm->horizonalt;
 		m_skyColor   = atm->color0;
 	}
 
-	// Scale heights scale with the atmosphere thickness; anchor to Earth so
-	// worlds with significantly thicker (Venus, Titan) or thinner (Mars)
-	// shells give plausible gradients without hand-tuning every body.
+	// Earth's real scale heights (~8.5 km Rayleigh, ~1.2 km Mie) are the
+	// right defaults for the scatter integral; we tweak within a sane band
+	// per body. The previous altRatio scaling anchored to altlimit flattened
+	// the exponential falloff to useless levels (scaleR ≈ 250 km instead of
+	// 8.5 km for Earth).
 	const float altRatio = float(std::max(m_atmoAlt, 1000.0)) / kEarthAtmoAlt;
-	m_scaleR = std::max(2000.0f, kEarthScaleR * altRatio);
-	m_scaleM = std::max(300.0f,  kEarthScaleM * altRatio);
+	const float scaleClamp = std::clamp(altRatio, 0.5f, 4.0f);
+	m_scaleR = kEarthScaleR * scaleClamp;
+	m_scaleM = kEarthScaleM * scaleClamp;
 
 	// Tint the sun radiance by the module-provided sky colour so the dominant
 	// wavelengths match (Orbiter's color0 already encodes the observed hue).
@@ -57,8 +67,8 @@ OGLAtmosphere::OGLAtmosphere(OBJHANDLE hPlanet, ShaderMgr *shaderMgr)
 
 	// Denser shells (Venus' 90-bar, Titan's 1.5-bar) scatter harder — scale
 	// the Mie coefficient, which dominates the near-horizon haze, by the
-	// thickness ratio.
-	m_betaM = kEarthBetaM * altRatio;
+	// thickness ratio (clamped for the same reason as the scale heights).
+	m_betaM = kEarthBetaM * scaleClamp;
 
 	char name[64] = {0};
 	oapiGetObjectName(hPlanet, name, 64);
@@ -82,7 +92,7 @@ void OGLAtmosphere::Render(const float *vp,
                            const VECTOR3 &camPos, const VECTOR3 &sunPos,
                            double planetRadius, const VECTOR3 &planetPos)
 {
-	if (!m_hasAtmo || !m_shader || !m_quadVAO || !vp) return;
+	if (!m_hasAtmo || !m_shader || !m_quadVAO) return;
 
 	// Camera position in the planet-local frame, in absolute metres. The
 	// scatter shader lives entirely in metres so it can compute exp(-h/H)
@@ -92,6 +102,7 @@ void OGLAtmosphere::Render(const float *vp,
 		float(camPos.y - planetPos.y),
 		float(camPos.z - planetPos.z)
 	};
+	(void)vp;  // legacy uniform: we now build rays from camera axes directly
 
 	// Sun direction in the same frame — a world-frame unit vector is fine;
 	// Orbiter's world axes are invariant under the planet translation.
@@ -102,12 +113,32 @@ void OGLAtmosphere::Render(const float *vp,
 		float(sd.x / sdLen), float(sd.y / sdLen), float(sd.z / sdLen)
 	};
 
+	// Camera basis directly, avoiding an in-shader inverse-VP reconstruction.
+	// With Orbiter's far plane at 1e10 m the VP^-1 route crushes NDC into a
+	// single ray direction under float32 precision — every pixel then sees
+	// the atmosphere shell and the discard test fails (symptom: full-screen
+	// atmosphere tint, #26). Building the ray from camera axes + fov keeps
+	// every intermediate in a well-behaved range.
+	MATRIX3 camRot;
+	oapiCameraRotationMatrix(&camRot);
+	const float camToWorld[9] = {
+		(float)camRot.m11, (float)camRot.m21, (float)camRot.m31,  // camera +X in world
+		(float)camRot.m12, (float)camRot.m22, (float)camRot.m32,  // camera +Y in world
+		(float)camRot.m13, (float)camRot.m23, (float)camRot.m33,  // camera forward in world
+	};
+	const double fov       = oapiCameraAperture() * 2.0;
+	const float  tanHalf   = (float)std::tan(fov * 0.5);
+	GLint  vpDims[4];
+	glGetIntegerv(GL_VIEWPORT, vpDims);
+	const float  aspect    = (vpDims[3] > 0) ? (float)vpDims[2] / (float)vpDims[3] : 1.0f;
+
 	const float atmoRadius = float(planetRadius + m_atmoAlt);
 	const float planetR    = float(planetRadius);
 
 	glUseProgram(m_shader);
-	glUniformMatrix4fv(m_shaderMgr->GetUniformLoc(m_shader, "uViewProj"),
-	                   1, GL_FALSE, vp);
+	glUniformMatrix3fv(m_shaderMgr->GetUniformLoc(m_shader, "uCamToWorld"), 1, GL_FALSE, camToWorld);
+	glUniform1f (m_shaderMgr->GetUniformLoc(m_shader, "uTanHalfFov"), tanHalf);
+	glUniform1f (m_shaderMgr->GetUniformLoc(m_shader, "uAspect"),     aspect);
 	glUniform3fv(m_shaderMgr->GetUniformLoc(m_shader, "uCamPosPlanet"), 1, camRel);
 	glUniform1f (m_shaderMgr->GetUniformLoc(m_shader, "uPlanetRadius"), planetR);
 	glUniform1f (m_shaderMgr->GetUniformLoc(m_shader, "uAtmoRadius"),   atmoRadius);
