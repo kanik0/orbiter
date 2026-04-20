@@ -25,9 +25,8 @@ public:
 	std::string currentPage;
 	std::string featuretarget;
 
-	//TODO: add when converting Launchpad
-	//void DrawVisual();
-	//void DrawPhysics();
+	void DrawVisual();
+	void DrawPhysics();
 	void DrawInstrument();
 	void DrawVessel();
 	void DrawUI();
@@ -48,6 +47,8 @@ public:
 	};
 
 	static inline OptionTab tabs[] = {
+		{"Visual effects",       "/tab_visual.htm",     &DlgOptions::DrawVisual},
+		{"Physics engine",       "/tab_param.htm",      &DlgOptions::DrawPhysics},
 		{"Instruments & panels", "/tab_param.htm",      &DlgOptions::DrawInstrument},
 		{"Vessel settings",      "/tab_param.htm",      &DlgOptions::DrawVessel},
 		{"User interface",       "/tab_param.htm",      &DlgOptions::DrawUI},

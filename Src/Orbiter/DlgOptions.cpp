@@ -113,6 +113,86 @@ void DlgOptions::OnDraw()
 
 }
 
+void DlgOptions::DrawVisual()
+{
+	CFG_VISUALPRM &vis = g_pOrbiter->Cfg()->CfgVisualPrm;
+
+	ImGui::SeparatorText("Surface and atmosphere");
+	ImGui::Checkbox("Vessel ground shadows",    &vis.bVesselShadows);
+	ImGui::Checkbox("Surface base shadows",     &vis.bShadows);
+	ImGui::Checkbox("Cloud layers",             &vis.bClouds);
+	ImGui::Checkbox("Cloud shadows",            &vis.bCloudShadows);
+	ImGui::Checkbox("Night-side city lights",   &vis.bNightlights);
+	ImGui::Checkbox("Reflective water surface", &vis.bWaterreflect);
+	ImGui::Checkbox("Specular water ripples",   &vis.bSpecularRipple);
+	ImGui::Checkbox("Atmospheric haze",         &vis.bHaze);
+	ImGui::Checkbox("Distance fog",             &vis.bFog);
+	ImGui::Checkbox("Specular reflections",     &vis.bSpecular);
+	ImGui::Checkbox("Reentry flames",           &vis.bReentryFlames);
+	ImGui::Checkbox("Particle streams",         &vis.bParticleStreams);
+	ImGui::Checkbox("Local light sources",      &vis.bLocalLight);
+
+	ImGui::SeparatorText("Limits");
+	int maxLight = (int)vis.MaxLight;
+	if (ImGui::SliderInt("Max light sources", &maxLight, 0, 8))
+		vis.MaxLight = (DWORD)maxLight;
+	int ambient = (int)vis.AmbientLevel;
+	if (ImGui::SliderInt("Ambient light level", &ambient, 0, 255))
+		vis.AmbientLevel = (DWORD)ambient;
+	int planetMaxLevel = (int)vis.PlanetMaxLevel;
+	if (ImGui::SliderInt("Planet max LOD level", &planetMaxLevel, 1, SURF_MAX_PATCHLEVEL2))
+		vis.PlanetMaxLevel = (DWORD)planetMaxLevel;
+	float patchRes = (float)vis.PlanetPatchRes;
+	if (ImGui::SliderFloat("Planet patch resolution scale", &patchRes, 0.5f, 4.0f, "%.2f"))
+		vis.PlanetPatchRes = patchRes;
+	float lightBright = (float)vis.LightBrightness;
+	if (ImGui::SliderFloat("Night-light brightness", &lightBright, 0.0f, 2.0f, "%.2f"))
+		vis.LightBrightness = lightBright;
+
+	const char *elevModes[] = { "None", "Linear", "Cubic spline" };
+	if (vis.ElevMode < 0) vis.ElevMode = 0;
+	if (vis.ElevMode > 2) vis.ElevMode = 2;
+	ImGui::Combo("Elevation interpolation", &vis.ElevMode,
+		elevModes, IM_ARRAYSIZE(elevModes));
+}
+
+void DlgOptions::DrawPhysics()
+{
+	CFG_PHYSICSPRM &phy = g_pOrbiter->Cfg()->CfgPhysicsPrm;
+
+	ImGui::SeparatorText("Forces and propagation");
+	ImGui::Checkbox("Distributed mass model",    &phy.bDistributedMass);
+	ImGui::Checkbox("Non-spherical gravity",     &phy.bNonsphericalGrav);
+	ImGui::Checkbox("Solar radiation pressure",  &phy.bRadiationPressure);
+	ImGui::Checkbox("Atmospheric wind",          &phy.bAtmWind);
+	ImGui::Checkbox("Encke orbit stabilisation", &phy.bOrbitStabilise);
+
+	ImGui::SeparatorText("Stabilisation thresholds");
+	ImGui::InputDouble("Perturbation limit", &phy.Stabilise_PLimit, 0.0, 0.0, "%.4g");
+	ImGui::InputDouble("Step-size limit",    &phy.Stabilise_SLimit, 0.0, 0.0, "%.4g");
+
+	ImGui::SeparatorText("Linear propagation");
+	ImGui::SliderInt("Active levels", &phy.nLPropLevel, 1, MAX_PROP_LEVEL);
+	const char *propMethods[NPROP_METHOD] = {
+		"RK2","RK4","RK5","RK6","RK7","RK8","SY2","SY4","SY6","SY8"
+	};
+	for (int i = 0; i < phy.nLPropLevel; ++i) {
+		ImGui::PushID(i);
+		ImGui::Text("Level %d", i + 1);
+		ImGui::SameLine();
+		ImGui::PushItemWidth(80.0f);
+		ImGui::Combo("##m", &phy.PropMode[i], propMethods, NPROP_METHOD);
+		ImGui::PopItemWidth();
+		ImGui::SameLine();
+		ImGui::PushItemWidth(120.0f);
+		ImGui::InputDouble("dt##t", &phy.PropTTgt[i], 0.0, 0.0, "%.3g");
+		ImGui::SameLine();
+		ImGui::InputDouble("max##l", &phy.PropTLim[i], 0.0, 0.0, "%.3g");
+		ImGui::PopItemWidth();
+		ImGui::PopID();
+	}
+}
+
 void DlgOptions::DrawInstrument()
 {
 	CFG_INSTRUMENTPRM &instru = g_pOrbiter->Cfg()->CfgInstrumentPrm;
