@@ -502,6 +502,10 @@ void OGLvPlanet::RenderClouds(const float *vp, const VECTOR3 &camPos, const VECT
 	// Clouds occlude what's behind them but should not write depth — the
 	// atmosphere pass downstream needs to see the planet's depth, not the
 	// cloud shell's, otherwise the scatter integration stops on the cloud.
+	// Preserve the caller's depth-write state so we don't leak a TRUE mask
+	// back into the outer planet loop (which runs with depth writes off).
+	GLboolean prevDepthMask = GL_TRUE;
+	glGetBooleanv(GL_DEPTH_WRITEMASK, &prevDepthMask);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glDepthMask(GL_FALSE);
@@ -510,7 +514,7 @@ void OGLvPlanet::RenderClouds(const float *vp, const VECTOR3 &camPos, const VECT
 	glDrawElements(GL_TRIANGLES, s_texSphereIndexCount, GL_UNSIGNED_INT, 0);
 	glBindVertexArray(0);
 
-	glDepthMask(GL_TRUE);
+	glDepthMask(prevDepthMask);
 	glDisable(GL_BLEND);
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glUseProgram(0);
