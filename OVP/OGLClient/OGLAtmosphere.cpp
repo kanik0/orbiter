@@ -155,6 +155,18 @@ void OGLAtmosphere::Render(const float *vp,
 	//   FragColor = (inscatter, alpha)
 	// src_alpha blending gives us: dst = src + dst * (1-alpha), which is the
 	// standard "sky-over-surface" compositing with alpha = 1 - transmittance.
+	//
+	// Snapshot the caller's depth/cull state: the outer planet loop draws
+	// every planet with depth write and depth test disabled, and restoring
+	// these to TRUE here would enable depth writes for the *next* planet's
+	// surface sphere. Later vessels, projected at a much larger normalized
+	// distance, then fail the GL_LESS test against that synthetic near-depth
+	// along the limb — producing a halo that bleeds across vessel silhouettes.
+	GLboolean prevDepthTest = glIsEnabled(GL_DEPTH_TEST);
+	GLboolean prevDepthMask = GL_TRUE;
+	glGetBooleanv(GL_DEPTH_WRITEMASK, &prevDepthMask);
+	GLboolean prevCullFace  = glIsEnabled(GL_CULL_FACE);
+
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	// Depth test off so the quad still paints haze on the planet surface
@@ -171,9 +183,9 @@ void OGLAtmosphere::Render(const float *vp,
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	glBindVertexArray(0);
 
-	glDepthMask(GL_TRUE);
-	glEnable(GL_DEPTH_TEST);
-	glEnable(GL_CULL_FACE);
+	glDepthMask(prevDepthMask);
+	if (prevDepthTest) glEnable(GL_DEPTH_TEST);
+	if (prevCullFace)  glEnable(GL_CULL_FACE);
 	glDisable(GL_BLEND);
 	glUseProgram(0);
 }
