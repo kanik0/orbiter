@@ -180,6 +180,13 @@ private:
 	              OGLSurface *src, DWORD srcx, DWORD srcy, DWORD srcw, DWORD srch,
 	              DWORD flag) const;
 
+	// Self-blit helper — glBlitFramebuffer pixel copy for src == tgt (see
+	// issue #62). BlitQuad's NDC math breaks on a texture that is both
+	// BMP-uploaded and FBO-rendered, so for self-blits we skip the quad
+	// path and go straight to absolute-coordinate pixel transfer.
+	bool BlitFramebufferSelf(OGLSurface *surf, DWORD srcx, DWORD srcy,
+	                          DWORD tgtx, DWORD tgty, DWORD w, DWORD h) const;
+
 	// Opt-in round-trip of an RGBA8 render target: create → clear →
 	// readback center pixel → log PASS/FAIL. Gated by OGL_M1_SELFTEST=1.
 	void RunM1SelfTest();
