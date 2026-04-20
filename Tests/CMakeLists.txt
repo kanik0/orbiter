@@ -14,6 +14,29 @@ function(add_test_file test_name)
 
 	set_target_properties( ${test_name} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${ORBITER_BINARY_ROOT_DIR}" )
 
+	# Test binaries live at the build root next to Orbiter, but the
+	# plugin-side dylibs they link against (e.g. libLuaInterpreter) are
+	# deployed under Modules/ to match the runtime loader layout. Extend
+	# the rpath so dyld can find them without copying or symlinking.
+	if(APPLE)
+		set_target_properties(${test_name} PROPERTIES
+			BUILD_RPATH   "@loader_path;@loader_path/Modules"
+			INSTALL_RPATH "@loader_path;@loader_path/Modules"
+		)
+		# libLuaInterpreter is linked with -undefined dynamic_lookup so it
+		# can reach back into the Orbiter executable at runtime. A test
+		# harness has no such host, so dyld aborts on the first unresolved
+		# RTTI symbol (typeinfo/vtable are bound eagerly). Compile a small
+		# stubs TU into the test to provide those key symbols — it's never
+		# exercised at runtime, only needed by the loader.
+		target_sources(${test_name} PRIVATE Stubs.cpp)
+	elseif(UNIX)
+		set_target_properties(${test_name} PROPERTIES
+			BUILD_RPATH   "\$ORIGIN;\$ORIGIN/Modules"
+			INSTALL_RPATH "\$ORIGIN;\$ORIGIN/Modules"
+		)
+	endif()
+
 	target_include_directories(${test_name}
 		PRIVATE ${ORBITER_SOURCE_SDK_INCLUDE_DIR}
 		PRIVATE ${MODULE_COMMON_DIR}
