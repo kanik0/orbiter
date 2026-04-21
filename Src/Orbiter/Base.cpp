@@ -48,7 +48,8 @@ Base::Base (char *fname, Planet *_planet, double _lng, double _lat)
 
 	InitDeviceObjects ();
 
-	ifstream ifs (g_pOrbiter->ConfigPath(fname));
+	ifstream ifs;
+	OpenFileIgnoreCase (ifs, g_pOrbiter->ConfigPath(fname));
 
 	// read location information from file, if available
 	if (ifs && GetItemString (ifs, "LOCATION", cbuf)) {
@@ -200,7 +201,8 @@ void Base::CreateStaticDeviceObjects ()
 {
 	ngenericmesh = 0;
 	ngenerictex  = 0;
-	ifstream ifs (g_pOrbiter->ConfigPath ("Base"));
+	ifstream ifs;
+	OpenFileIgnoreCase (ifs, g_pOrbiter->ConfigPath ("Base"));
 	if (ifs) {
 		char cbuf[256], **tmp_list;
 		LONGLONG *tmp_id;

@@ -1382,7 +1382,8 @@ DLLEXPORT VISHANDLE *oapiObjectVisualPtr (OBJHANDLE hObject)
 
 DLLEXPORT MESHHANDLE oapiLoadMesh (const char *fname)
 {
-	ifstream ifs(g_pOrbiter->MeshPath(fname));
+	ifstream ifs;
+	OpenFileIgnoreCase(ifs, g_pOrbiter->MeshPath(fname));
 	Mesh *mesh = new Mesh; TRACENEW
 	ifs >> *mesh;
 	return (MESHHANDLE)mesh;

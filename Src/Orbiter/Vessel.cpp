@@ -438,7 +438,8 @@ void Vessel::ReadGenericCaps (ifstream &ifs)
 
 	// recursively read base class specs
 	if (GetItemString (ifs, "BaseClass", cbuf)) {
-		ifstream basef (g_pOrbiter->ConfigPath (cbuf));
+		ifstream basef;
+		OpenFileIgnoreCase (basef, g_pOrbiter->ConfigPath (cbuf));
 		if (basef) ReadGenericCaps (basef);
 	}
 
