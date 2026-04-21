@@ -814,6 +814,11 @@ void RenderJoystickPage(Config *c)
 		&c->CfgJoystickPrm.ThrottleSaturation, 0, 10000);
 	ImGui::Checkbox("Ignore initial throttle position",
 		&c->CfgJoystickPrm.bThrottleIgnore);
+
+	ImGui::Spacing();
+	ImGui::TextDisabled("Haptic feedback");
+	ImGui::SliderFloat("Rumble gain (0 disables)",
+		&c->CfgJoystickPrm.HapticGain, 0.0f, 2.0f, "%.2f");
 }
 
 void RenderCelSpherePage(Config *c)

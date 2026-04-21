@@ -32,6 +32,7 @@
 #include <cstdint>
 
 struct _SDL_GameController;
+struct _SDL_Haptic;
 
 namespace orbiter {
 
@@ -44,6 +45,19 @@ public:
 	// Bind to the SDL_GameController owned by SDLPlatform. nullptr
 	// detaches and stops any running effect. Idempotent.
 	void Bind(_SDL_GameController *gc);
+
+	// Fallback binding for plain SDL_Joystick devices that don't
+	// expose a GameController mapping (older flight sticks). SDLPlatform
+	// opens the haptic interface via SDL_HapticOpenFromJoystick and
+	// initialises SDL_HapticRumble before handing the pointer over.
+	// Ignored if a GameController is already bound.
+	void BindHaptic(_SDL_Haptic *haptic);
+
+	// Master gain multiplier applied to all effects at emit time.
+	// 0 disables rumble entirely; 1 keeps the ship-tuned defaults;
+	// up to 2 for users who want more aggressive feedback. Persisted
+	// in Orbiter.cfg via CfgJoystickPrm.HapticGain.
+	void SetGain(float gain);
 
 	// Per-frame tick: reapplies the sustained AtmosphericBuffet
 	// envelope (SDL_GameControllerRumble durations are bounded, so
@@ -58,15 +72,19 @@ public:
 	void AtmosphericBuffet(float intensity); // 0 stops the channel
 	void Stop();
 
-	bool IsAvailable() const { return m_gc != nullptr; }
+	bool IsAvailable() const { return m_gc != nullptr || m_haptic != nullptr; }
 
 private:
 	_SDL_GameController *m_gc = nullptr;
+	_SDL_Haptic         *m_haptic = nullptr;  // fallback path (legacy joysticks)
 
 	// Mixed-channel state. Each channel contributes a low-freq + a
 	// high-freq amplitude; the per-frame tick combines them and
-	// pushes the result through SDL_GameControllerRumble.
-	float m_buffetLevel = 0.0f;
+	// pushes the result through SDL_GameControllerRumble. The haptic
+	// fallback only exposes a single magnitude, so we collapse the
+	// two motors to max(low, high) before sending it.
+	float m_gain         = 1.0f;
+	float m_buffetLevel  = 0.0f;
 	float m_transientLow = 0.0f;
 	float m_transientHigh = 0.0f;
 	double m_transientLeft = 0.0; // seconds remaining
