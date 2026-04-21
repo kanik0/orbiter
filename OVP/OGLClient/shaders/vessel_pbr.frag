@@ -71,8 +71,22 @@ void main() {
     if (matHasMetalness != 0) metalness = texture(uMetalnessTex, vUV).g;
     metalness = clamp(metalness, 0.0, 1.0);
 
-    vec3 emission = matEmissive.rgb;
-    if (matHasEmissive != 0) emission = texture(uEmissiveTex, vUV).rgb;
+    // Emissive has two distinct sources:
+    //   - an emissive *texture* (matHasEmissive == 1) is a per-texel
+    //     radiance map and is added as-is;
+    //   - matEmissive as a *material* property is a D3D-era "always-on"
+    //     lighting boost the authoring expected to be multiplied by the
+    //     diffuse texture (see D3D9Client/Shaders/PBR.fx:475 —
+    //     `cDiff *= saturate(... + gMtrl.emissive.rgb)`). Without the
+    //     albedo modulation the DeltaGlider VC (whose materials ship
+    //     emissive=0.8 for most panels) washes out to flat grey because
+    //     every fragment gets a +0.8 bias regardless of texture detail
+    //     (issue #101).
+    vec3 emission;
+    if (matHasEmissive != 0)
+        emission = texture(uEmissiveTex, vUV).rgb;
+    else
+        emission = matEmissive.rgb * albedo.rgb;
 
     vec3 F0 = materialF0(albedo.rgb);
 
