@@ -329,14 +329,28 @@ void OGLvVessel::InitShared(ShaderMgr *shaderMgr, const std::string &texturePath
 	if (FileExists(path.c_str()))
 		s_exhaustTexture = OGLTexture::LoadDDS(path.c_str());
 
-	// Create exhaust billboard quad (vertices updated per-exhaust)
+	// Exhaust billboard geometry (positions filled per-exhaust, per-frame).
+	// Two quads:
+	//   vtx 0..3 — core cone (narrow at the tip, sits on the plume axis)
+	//   vtx 4..7 — flare halo (larger camera-aligned quad centred at the
+	//              nozzle), gives the "bright bulb" look Windows ships
+	//              (see D3D9Client/D3D9Effect.cpp:778-816).
+	// UV atlas: core sits in the left strip of Exhaust.dds (U 0.01..0.24),
+	// flare in the upper-right region (U 0.50..1.00, V 0..0.50).
 	float verts[] = {
-		0,0,0, 0.24f,0,
-		0,0,0, 0.24f,1,
-		0,0,0, 0.01f,0,
-		0,0,0, 0.01f,1,
+		0,0,0, 0.24f, 0.0f,
+		0,0,0, 0.24f, 1.0f,
+		0,0,0, 0.01f, 0.0f,
+		0,0,0, 0.01f, 1.0f,
+		0,0,0, 0.50390625f, 0.00390625f,
+		0,0,0, 0.99609375f, 0.00390625f,
+		0,0,0, 0.50390625f, 0.49609375f,
+		0,0,0, 0.99609375f, 0.49609375f,
 	};
-	unsigned int idx[] = {0,1,2, 3,2,1};
+	unsigned int idx[] = {
+		0,1,2,  3,2,1,     // core
+		4,5,6,  7,6,5,     // flare
+	};
 
 	glGenVertexArrays(1, &s_exhaustVAO);
 	glGenBuffers(1, &s_exhaustVBO);
@@ -815,6 +829,13 @@ void OGLvVessel::RenderExhausts(VESSEL *vessel, const MATRIX3 &vrot,
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, s_exhaustTexture->texId);
 	glUniform1i(s_shaderMgr->GetUniformLoc(s_exhaustShader, "uTexture"), 0);
+	// Animated flicker (issue #102): the shader modulates brightness and
+	// alpha by a mix of a sinusoid and cheap UV turbulence; we feed it the
+	// sim time + a per-thruster phase so engines don't pulse in lockstep.
+	const float simTime = (float)oapiGetSimTime();
+	const GLint uTimeLoc  = s_shaderMgr->GetUniformLoc(s_exhaustShader, "uTime");
+	const GLint uPhaseLoc = s_shaderMgr->GetUniformLoc(s_exhaustShader, "uPhase");
+	glUniform1f(uTimeLoc, simTime);
 
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_ONE, GL_ONE);
@@ -831,36 +852,73 @@ void OGLvVessel::RenderExhausts(VESSEL *vessel, const MATRIX3 &vrot,
 		if (!vessel->GetExhaustSpec(i, &es)) continue;
 		if (!es.lpos || !es.ldir) continue;
 
-		float lsz = (float)(es.lsize * level * scale);
+		// Per-thruster phase + length jitter. The phase is a deterministic
+		// hash of the index so a given engine always animates the same way
+		// frame to frame; the length wobble rides on a slow ~3 Hz sine so
+		// the plume feels like it's breathing rather than just blinking.
+		const float phase = (float)i * 2.3987f;
+		const float jitter = 1.0f + 0.06f * sinf(simTime * 3.0f + phase);
+		glUniform1f(uPhaseLoc, phase);
+
+		float lsz = (float)(es.lsize * level * scale) * jitter;
 		float wsz = (float)(es.wsize * level * scale);
 		if (lsz < 0.001f) continue;
 
+		// Plume origin (lpos, offset back by lofs along the exhaust
+		// direction to match D3D9's `ref = lpos - ldir*lofs`).
 		VECTOR3 lp = *es.lpos, ld = *es.ldir;
-		float ex = (float)(vrot.m11 * lp.x + vrot.m12 * lp.y + vrot.m13 * lp.z) * scale + tx;
-		float ey = (float)(vrot.m21 * lp.x + vrot.m22 * lp.y + vrot.m23 * lp.z) * scale + ty;
-		float ez = (float)(vrot.m31 * lp.x + vrot.m32 * lp.y + vrot.m33 * lp.z) * scale + tz;
+		VECTOR3 refLocal = {
+			lp.x - ld.x * es.lofs,
+			lp.y - ld.y * es.lofs,
+			lp.z - ld.z * es.lofs
+		};
+		float ex = (float)(vrot.m11 * refLocal.x + vrot.m12 * refLocal.y + vrot.m13 * refLocal.z) * scale + tx;
+		float ey = (float)(vrot.m21 * refLocal.x + vrot.m22 * refLocal.y + vrot.m23 * refLocal.z) * scale + ty;
+		float ez = (float)(vrot.m31 * refLocal.x + vrot.m32 * refLocal.y + vrot.m33 * refLocal.z) * scale + tz;
+		// Exhaust direction in world (edir = -ldir, normalised).
 		float dx = -(float)(vrot.m11 * ld.x + vrot.m12 * ld.y + vrot.m13 * ld.z);
 		float dy = -(float)(vrot.m21 * ld.x + vrot.m22 * ld.y + vrot.m23 * ld.z);
 		float dz = -(float)(vrot.m31 * ld.x + vrot.m32 * ld.y + vrot.m33 * ld.z);
 
+		// sdir = camera × exhaust (perpendicular to both, used to
+		// fatten the core quad) — normalised.
 		float sx = cdy * dz - cdz * dy, sy = cdz * dx - cdx * dz, sz = cdx * dy - cdy * dx;
 		float slen = sqrtf(sx * sx + sy * sy + sz * sz);
 		if (slen < 1e-6f) { sx = 1; sy = 0; sz = 0; slen = 1; }
 		sx /= slen; sy /= slen; sz /= slen;
 
-		float hw = wsz * 0.5f;
+		// tdir = camera × sdir. Camera-aligned, used to build the flare
+		// quad so it always faces the viewer.
+		float ttx = cdy * sz - cdz * sy;
+		float tty = cdz * sx - cdx * sz;
+		float ttz = cdx * sy - cdy * sx;
+		float tlen = sqrtf(ttx*ttx + tty*tty + ttz*ttz);
+		if (tlen > 1e-6f) { ttx /= tlen; tty /= tlen; ttz /= tlen; }
+
+		const float hw        = wsz * 0.5f;
+		// D3D9 uses flarescale = 7; scale the same way but only to half
+		// because our hw is already half-width.
+		const float flare     = wsz * 3.5f;
+
 		float verts[] = {
-			ex - sx * hw, ey - sy * hw, ez - sz * hw, 0.24f, 0.0f,
-			ex + sx * hw, ey + sy * hw, ez + sz * hw, 0.24f, 1.0f,
+			// Core quad — same narrow cone as before.
+			ex - sx * hw,             ey - sy * hw,             ez - sz * hw,             0.24f, 0.0f,
+			ex + sx * hw,             ey + sy * hw,             ez + sz * hw,             0.24f, 1.0f,
 			ex + dx * lsz - sx * hw * 0.2f, ey + dy * lsz - sy * hw * 0.2f, ez + dz * lsz - sz * hw * 0.2f, 0.01f, 0.0f,
 			ex + dx * lsz + sx * hw * 0.2f, ey + dy * lsz + sy * hw * 0.2f, ez + dz * lsz + sz * hw * 0.2f, 0.01f, 1.0f,
+			// Flare halo — camera-aligned quad centred at the nozzle,
+			// 7× wide to match D3D9Client's bloom halo.
+			ex - sx * flare + ttx * flare, ey - sy * flare + tty * flare, ez - sz * flare + ttz * flare, 0.50390625f, 0.00390625f,
+			ex + sx * flare + ttx * flare, ey + sy * flare + tty * flare, ez + sz * flare + ttz * flare, 0.99609375f, 0.00390625f,
+			ex - sx * flare - ttx * flare, ey - sy * flare - tty * flare, ez - sz * flare - ttz * flare, 0.50390625f, 0.49609375f,
+			ex + sx * flare - ttx * flare, ey + sy * flare - tty * flare, ez + sz * flare - ttz * flare, 0.99609375f, 0.49609375f,
 		};
 
 		glBindVertexArray(s_exhaustVAO);
 		glBindBuffer(GL_ARRAY_BUFFER, s_exhaustVBO);
 		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
 		glUniform1f(s_shaderMgr->GetUniformLoc(s_exhaustShader, "uAlpha"), (float)level);
-		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+		glDrawElements(GL_TRIANGLES, 12, GL_UNSIGNED_INT, 0);
 	}
 
 	glBindVertexArray(0);
