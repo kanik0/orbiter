@@ -2668,9 +2668,18 @@ HRESULT Orbiter::UserInput ()
 	return S_OK;
 }
 
+// End of Win32-specific UserInput() — the following buffered/immediate
+// keyboard dispatchers are cross-platform (they synthesise DIDEVICEOBJECTDATA
+// records in the shared format that Orbiter's dispatch path already consumes).
+#endif // _WIN32 -- UserInput
+
 //-----------------------------------------------------------------------------
 // Name: SendKbdBuffered()
-// Desc: Simulate a buffered keyboard event
+// Desc: Simulate a buffered keyboard event. Lives outside the _WIN32 branch
+//       because `oapi.simulatebufferedkey` (Lua) and `oapiSimulateBufferedKey`
+//       (plugins) need to synthesise events on every platform — the previous
+//       macOS stub in platform_stubs_posix.cpp returned false and silently
+//       swallowed every scripted keystroke (fixes #110).
 //-----------------------------------------------------------------------------
 
 bool Orbiter::SendKbdBuffered(DWORD key, DWORD *mod, DWORD nmod, bool onRunningOnly)
@@ -2703,10 +2712,6 @@ bool Orbiter::SendKbdImmediate(char kstate[256], bool onRunningOnly)
 	bAllowInput = true; // make sure the render window processes inputs
 	return true;
 }
-
-// End of Win32-specific buffered input methods. The following immediate
-// keyboard handlers are cross-platform (they just read the kstate array).
-#endif // _WIN32 -- SendKbdBuffered, SendKbdImmediate
 
 //-----------------------------------------------------------------------------
 // Name: KbdInputImmediate_System ()

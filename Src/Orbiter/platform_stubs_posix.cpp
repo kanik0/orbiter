@@ -69,10 +69,9 @@ void ConsoleNG::EchoIntro() const {}
 // ======================================================================
 
 // MouseEvent, BroadcastMouseEvent, BroadcastImmediateKeyboardEvent,
-// BroadcastBufferedKeyboardEvent, KbdInputBuffered_System/OnRunning are now
-// compiled from Orbiter.cpp for all platforms (no longer Windows-only).
-bool Orbiter::SendKbdBuffered(DWORD, DWORD*, DWORD, bool) { return false; }
-bool Orbiter::SendKbdImmediate(char[256], bool) { return false; }
+// BroadcastBufferedKeyboardEvent, KbdInputBuffered_System/OnRunning,
+// SendKbdBuffered, SendKbdImmediate are now compiled from Orbiter.cpp for
+// all platforms (no longer Windows-only).
 
 // MemStat is compiled from Memstat.cpp - no stub needed
 
