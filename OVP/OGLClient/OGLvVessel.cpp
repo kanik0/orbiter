@@ -550,11 +550,15 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 			if (!ShouldRenderMesh(vismode, /*internalpass=*/false, /*bCockpit=*/false, /*bVC=*/false))
 				continue;
 
+			// Same fallback as the main pass — look up the cache by the stored
+			// mesh name, not the vessel class name. The shadow pass only reads
+			// (never populates) the cache so a missing entry just skips the
+			// shadow for this frame.
 			MESHHANDLE hMesh = vessel->GetMeshTemplate(m);
 			if (!hMesh) {
-				const char *className = vessel->GetClassName();
-				if (className) {
-					auto it = s_fallbackMeshes.find(className);
+				const char *meshName = vessel->GetMeshName(m);
+				if (meshName && *meshName) {
+					auto it = s_fallbackMeshes.find(meshName);
 					if (it != s_fallbackMeshes.end()) hMesh = it->second;
 				}
 			}
@@ -650,18 +654,26 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 		WORD vismode = vessel->GetMeshVisibilityMode(m);
 		if (!ShouldRenderMesh(vismode, internalpass, bCockpit, bVC)) continue;
 
+		// AddMesh(hMesh, ...) stores the preloaded handle, but AddMesh(name, ofs)
+		// leaves `hMesh = NULL` and keeps only the filename. The D3D9 client
+		// calls `CopyMeshFromTemplate` in that case (VVessel.cpp:298) which
+		// loads from `meshname`. Previously we fell back to
+		// `oapiLoadMeshGlobal(vessel->GetClassName())` — but the class name
+		// has nothing to do with the missing mesh slot, so on every Atlantis
+		// mission the optional `shuttle_eva_plat` / cargo slot re-loaded the
+		// orbiter mesh and rendered it at the platform offset, producing a
+		// second shuttle hovering next to the real one. Use the stored mesh
+		// name instead; fall through and skip when both are missing.
 		MESHHANDLE hMesh = vessel->GetMeshTemplate(m);
 		if (!hMesh) {
-			const char *className = vessel->GetClassName();
-			if (className) {
-				auto it = s_fallbackMeshes.find(className);
+			const char *meshName = vessel->GetMeshName(m);
+			if (meshName && *meshName) {
+				auto it = s_fallbackMeshes.find(meshName);
 				if (it != s_fallbackMeshes.end()) {
 					hMesh = it->second;
 				} else {
-					hMesh = oapiLoadMeshGlobal(className);
-					s_fallbackMeshes[className] = hMesh;
-					if (hMesh) fprintf(stderr, "[OGLvVessel] Loaded fallback mesh '%s': %u groups\n",
-						className, oapiMeshGroupCount(hMesh));
+					hMesh = oapiLoadMeshGlobal(meshName);
+					s_fallbackMeshes[meshName] = hMesh;
 				}
 			}
 			if (!hMesh) continue;
