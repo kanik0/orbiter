@@ -118,13 +118,13 @@ jobs:
 
     - name: Rendering parity (ctest)
       if: ${{ inputs.parity }}
-      # Best-effort: the macos-14 runner has a window-server but the
-      # framebuffer captures are highly OS-version sensitive. The
-      # ctest target skips scenarios whose baselines are placeholder
-      # 0-byte files (the default in the repo), so a green CI run
-      # only proves the pipeline plumbing — adding real baselines
-      # tightens the gate without touching this workflow.
-      continue-on-error: true
+      # Now gating: the three baselines under Tests/rendering_parity/baselines
+      # were captured on the macos-14 runner via `regenerate-parity-baselines`
+      # and committed as real PNGs (see #14). SSIM-compare against them and
+      # fail the job on drift. Additional scenarios in manifest.json that
+      # still have 0-byte placeholders continue to be skipped by
+      # run_parity.py, so adding a slot with no baseline doesn't break the
+      # step — fill it with a real PNG from the regen workflow when ready.
       run: ctest --test-dir "out/build/macos-arm64-${CONFIGURATION}"
         -R rendering_parity --output-on-failure
 
