@@ -215,7 +215,8 @@ Planet::Planet (char *fname)
 	maxelev = 0.0;
 	labelLegend  = NULL;
 	nLabelLegend = 0;
-	ifstream ifs (g_pOrbiter->ConfigPath (fname));
+	ifstream ifs;
+	OpenFileIgnoreCase (ifs, g_pOrbiter->ConfigPath (fname));
 	if (!ifs) return;
 
 	AtmInterface = 0;

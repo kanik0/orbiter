@@ -9,6 +9,7 @@
 #include <algorithm>
 
 #include "Config.h"
+#include "Util.h"
 #include "Psys.h"
 #include "TimeData.h"
 #include "Element.h"
@@ -170,7 +171,8 @@ bool PlanetarySystem::Read (char *fname, const Config* config, OutputLoadStatusC
 	DWORD j;
 	char cbuf[256], label[128];
 	
-	ifstream ifs (config->ConfigPath(fname));
+	ifstream ifs;
+	OpenFileIgnoreCase (ifs, config->ConfigPath(fname));
 	if (!ifs) return false;
 	Clear();
 	if (GetItemString (ifs, "Name", cbuf)) {

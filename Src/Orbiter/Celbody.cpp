@@ -11,6 +11,7 @@
 #define OAPI_IMPLEMENTATION
 
 #include "Orbiter.h"
+#include "Util.h"
 #include "Element.h"
 #include "Celbody.h"
 #include "Log.h"
@@ -48,7 +49,8 @@ CelestialBody::CelestialBody (char *fname)
 	DefaultParam ();
 	ClearModule ();
 
-	ifstream ifs (g_pOrbiter->ConfigPath (fname));
+	ifstream ifs;
+	OpenFileIgnoreCase (ifs, g_pOrbiter->ConfigPath (fname));
 	if (!ifs) {
 		LOGOUT_ERR_FILENOTFOUND_MSG(g_pOrbiter->ConfigPath (fname), "while initialising celestial body");
 		g_pOrbiter->TerminateOnError();

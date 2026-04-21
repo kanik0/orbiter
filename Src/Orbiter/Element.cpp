@@ -2,6 +2,7 @@
 // Licensed under the MIT License
 
 #include "Orbiter.h"
+#include "Util.h"
 #include "Element.h"
 #include "Config.h"
 #include <fstream>
@@ -63,7 +64,8 @@ Elements::Elements (const Elements &el)
 Elements::Elements (char *fname)
 {
 	double epoch;
-	ifstream ifs (g_pOrbiter->ConfigPath (fname));
+	ifstream ifs;
+	OpenFileIgnoreCase (ifs, g_pOrbiter->ConfigPath (fname));
 	if (!GetItemReal (ifs, "Epoch", epoch))           epoch  = 2000.0;
 	mjd_epoch = Jepoch2MJD (epoch);
 	t_epoch   = (mjd_epoch-td.MJD_ref)*86400.0;
