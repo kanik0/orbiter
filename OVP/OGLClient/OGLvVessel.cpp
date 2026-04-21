@@ -723,8 +723,18 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 					glUniform1i(texLoc, 0);
 					hasTexture = true;
 				}
-			} else if (grp && grp->TexIdx > 0 && grp->TexIdx <= nTex) {
-				SURFHANDLE hSurf = oapiGetTextureHandle(hMesh, grp->TexIdx);
+			} else if (grp && grp->TexIdx < nTex) {
+				// MESHGROUPEX::TexIdx is stored 0-based by the mesh loader
+				// (Src/Orbiter/Mesh.cpp:868-869 subtracts 1 from the file's
+				// 1-based TEXTURE index; SPEC_DEFAULT = UINT_MAX flags "no
+				// texture"). The public oapiGetTextureHandle API is 1-based
+				// — it calls Mesh::GetTexture(texidx - 1) internally — so
+				// we need to shift back up by one when dereferencing. The
+				// previous `TexIdx > 0 && TexIdx <= nTex` guard on the raw
+				// value happened to bind groups with file-TEXTURE >= 2 to
+				// the *wrong* texture and silently dropped file-TEXTURE 1
+				// groups entirely (issue #96, Atlantis fuselage).
+				SURFHANDLE hSurf = oapiGetTextureHandle(hMesh, grp->TexIdx + 1);
 				if (hSurf) {
 					OGLSurface *surf = (OGLSurface*)hSurf;
 					GLuint texId = surf->GetTexture();
