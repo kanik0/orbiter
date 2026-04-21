@@ -235,6 +235,12 @@ private:
 	static GLint  s_locViewMode;
 	static GLint  s_locClipperDir;
 	static GLint  s_locClipperCosDist;
+	// Sampler objects for the public BlendState::FILTER_* bits. Sampler
+	// objects override the bound texture's own min/mag filter params, so
+	// we don't have to mutate shared textures to honour a per-blit hint.
+	static GLuint s_samplerPoint;
+	static GLuint s_samplerLinear;
+	static GLuint s_samplerAniso;
 	static bool   s_sharedInitialized;
 
 	// Colour-transform state. Defaults are identity so a Sketchpad that
@@ -252,6 +258,12 @@ private:
 	// the future, to dashed pattern repeats) when stroking primitives.
 	float m_lineScale;
 	float m_patternScale;
+
+	// Active BlendState::FILTER_* hint picked by the most recent
+	// SetBlendState call. Passed into DrawTexturedQuads so blits honour
+	// the caller's request (FILTER_POINT for mask authoring / nearest-
+	// neighbour previews, FILTER_LINEAR for photo-real surfaces).
+	int m_filterBits = 0;  // 0x00, 0x10, 0x20
 
 	// Transient Pen/Brush owned by QuickPen / QuickBrush — the public
 	// API lets callers skip the create-set-release dance. Destroyed
