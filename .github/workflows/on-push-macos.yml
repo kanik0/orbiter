@@ -1,8 +1,17 @@
 name: On Push (macOS)
 
 # Triggered by direct pushes to main. Builds debug + release for the
-# Apple Silicon runner and runs the Launchpad smoke test on each.
-# No artifacts uploaded (use the release workflow for that).
+# Apple Silicon runner, runs the Launchpad smoke test on each, and —
+# when both macOS configurations succeed — publishes a GitHub release
+# with the release-configuration .dmg attached. The release tag is a
+# plain ISO date (e.g. 2026-04-21); same-day re-builds get an
+# incrementing "-2", "-3", ... suffix picked at runtime.
+#
+# The Windows pipeline (on-push.yml) runs in parallel; it's not in
+# the dependency chain here because its build can take substantially
+# longer and because the macOS .dmg is shippable on its own. Add a
+# build-windows job here if you want Windows artifacts attached to
+# the same release.
 #
 # All ${{ }} expansions resolve to inputs / matrix values defined in
 # this file or in the reusable workflow_call schema; no untrusted
@@ -23,14 +32,75 @@ on:
       - 'Textures2/**'
 
 jobs:
-  build:
-    name: Push macOS
-    strategy:
-      fail-fast: false
-      matrix:
-        configuration: [debug, release]
+  build-debug:
+    name: Push macOS debug
     uses: ./.github/workflows/reusable-build-macos.yml
     with:
-      configuration: ${{ matrix.configuration }}
+      configuration: debug
       smoke: true
       upload: false
+
+  build-release:
+    name: Push macOS release
+    uses: ./.github/workflows/reusable-build-macos.yml
+    with:
+      configuration: release
+      smoke: true
+      upload: true
+      dmg: true
+
+  release:
+    name: Publish release
+    needs: [build-debug, build-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout (for commit metadata)
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Download DMG artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: Orbiter-macos-arm64-release-dmg
+          path: dmg
+
+      - name: Compute release tag
+        id: compute-tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Base tag is today's ISO date. If a release already exists
+          # for today we append "-2", "-3", ... until we find a free
+          # slot so multiple successful pushes in the same day each
+          # produce their own immutable release.
+          base="$(date -u +%Y-%m-%d)"
+          tag="$base"
+          n=2
+          while gh release view "$tag" --repo "$REPO" >/dev/null 2>&1; do
+            tag="${base}-${n}"
+            n=$((n + 1))
+          done
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $tag"
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.compute-tag.outputs.tag }}
+          name: Orbiter macOS ${{ steps.compute-tag.outputs.tag }}
+          prerelease: false
+          make_latest: true
+          target_commitish: ${{ github.sha }}
+          body: |
+            Automated macOS build of commit
+            [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}).
+
+            Download `Orbiter-macos-arm64.dmg` and open it on an Apple Silicon Mac.
+            Debug and release configurations both passed the Launchpad smoke test on
+            `macos-14` before this release was created.
+          files: |
+            dmg/Orbiter-macos-arm64.dmg
