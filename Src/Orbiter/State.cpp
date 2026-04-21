@@ -41,7 +41,8 @@ void State::Update ()
 
 bool State::Read (const char *fname)
 {
-	ifstream ifs (fname, ios::in);
+	ifstream ifs;
+	OpenFileIgnoreCase (ifs, fname, ios::in);
 	if (!ifs) return false;
 
 	int i;

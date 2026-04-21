@@ -1104,7 +1104,8 @@ HWND Orbiter::CreateRenderWindow (Config *pCfg, const char *scenario)
 	for (auto it = m_Plugin.begin(); it != m_Plugin.end(); it++) {
 		void (*opcLoadState)(FILEHANDLE) = (void(*)(FILEHANDLE))FindModuleProc(it->hDLL, "opcLoadState");
 		if (opcLoadState) {
-			ifstream ifs(ScnPath(scenario));
+			ifstream ifs;
+			OpenFileIgnoreCase(ifs, ScnPath(scenario));
 			std::string str = "BEGIN_" + it->sName;
 			if (FindLine(ifs, str.c_str())) {
 				opcLoadState((FILEHANDLE)&ifs);

@@ -44,6 +44,12 @@ bool iequal(const std::string& s1, const std::string& s2);
 bool OpenFileIgnoreCase(std::ifstream &f, const char *path,
 	std::ios_base::openmode mode = std::ios_base::in);
 
+// Resolve a path to its case-correct form on disk, walking one segment
+// at a time. Returns an empty string when no case-insensitive match
+// exists at any point along the chain. Windows returns the input path
+// unchanged. Useful for non-ifstream openers (fopen, stbi_load, etc).
+std::string ResolvePathIgnoreCase(const char *path);
+
 // conversion between Vector and VECTOR3 structures
 
 inline Vector MakeVector (const VECTOR3 &v)

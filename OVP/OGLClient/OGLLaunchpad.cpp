@@ -12,6 +12,8 @@
 #include <sys/stat.h>
 #include <algorithm>
 #include <fstream>
+#include <cstdlib>
+#include <unistd.h>
 #include <sstream>
 #include <cstring>
 #include <cstdio>
@@ -387,24 +389,71 @@ std::string OGLLaunchpad::HtmlToPlainText(const std::string &html)
 void OGLLaunchpad::LoadDescription(const std::string &fullPath, bool isFolder)
 {
 	m_selectedDescription.clear();
-	if (isFolder) {
-		// Folders get their description from a sibling Description.txt with the
-		// same DESC / HYPERDESC blocks used by the Windows Launchpad.
-		std::ifstream f(fullPath + "/Description.txt");
-		if (!f.is_open()) return;
-		std::string desc = ScanBlock(f, "DESC");
-		if (desc.empty()) {
-			f.clear();
-			f.seekg(0);
-			std::string hyper = ScanBlock(f, "HYPERDESC");
-			if (!hyper.empty()) desc = HtmlToPlainText(hyper);
-		}
-		m_selectedDescription = desc;
-	} else {
-		std::ifstream f(fullPath);
-		if (!f.is_open()) return;
-		m_selectedDescription = ScanBlock(f, "DESC");
+	m_selectedHyperdesc.clear();
+	const std::string target = isFolder ? fullPath + "/Description.txt" : fullPath;
+	std::ifstream f(target);
+	if (!f.is_open()) return;
+
+	// Capture both blocks so the UI can offer an "Open in browser"
+	// affordance when HYPERDESC is present (Win32 Launchpad renders it
+	// inline via IWebBrowser2 — we have no equivalent on macOS).
+	m_selectedDescription = ScanBlock(f, "DESC");
+	f.clear();
+	f.seekg(0);
+	m_selectedHyperdesc = ScanBlock(f, "HYPERDESC");
+
+	// Folders historically fall back to a plaintext-flattened HYPERDESC
+	// when DESC is absent; keep that behaviour so the summary panel is
+	// never empty.
+	if (isFolder && m_selectedDescription.empty() && !m_selectedHyperdesc.empty())
+		m_selectedDescription = HtmlToPlainText(m_selectedHyperdesc);
+}
+
+void OGLLaunchpad::OpenHyperdescInBrowser()
+{
+	if (m_selectedHyperdesc.empty()) return;
+
+	// Wrap the raw HYPERDESC in a minimal HTML5 document so the
+	// browser has something well-formed to parse — the Orbiter
+	// convention is to include only body markup, no <html>/<head>.
+	const char *tmpl_top =
+		"<!DOCTYPE html>\n"
+		"<html><head><meta charset=\"utf-8\">"
+		"<title>Orbiter scenario description</title>"
+		"<style>body{font-family:-apple-system,Segoe UI,sans-serif;"
+		"max-width:48em;margin:2em auto;padding:0 1em;line-height:1.5}"
+		"h1{font-size:1.4em}</style></head><body>\n";
+	const char *tmpl_bot = "\n</body></html>\n";
+
+	// Write to a per-run temp file. Using /tmp (POSIX) keeps the path
+	// stable enough that repeated clicks overwrite rather than leak.
+	const char *tmpdir = std::getenv("TMPDIR");
+	if (!tmpdir || !*tmpdir) tmpdir = "/tmp";
+	std::string tmpPath = std::string(tmpdir);
+	if (tmpPath.back() != '/') tmpPath += '/';
+	tmpPath += "orbiter_desc.html";
+
+	std::ofstream out(tmpPath, std::ios::binary | std::ios::trunc);
+	if (!out) return;
+	out.write(tmpl_top, (std::streamsize)strlen(tmpl_top));
+	out.write(m_selectedHyperdesc.data(), (std::streamsize)m_selectedHyperdesc.size());
+	out.write(tmpl_bot, (std::streamsize)strlen(tmpl_bot));
+	out.close();
+
+	// Hand the file off to the platform browser. The macOS `open`
+	// command and Linux's `xdg-open` both accept a bare path and
+	// resolve it to file://. fork+exec avoids blocking the GUI.
+#if defined(__APPLE__)
+	const char *cmd = "open";
+#else
+	const char *cmd = "xdg-open";
+#endif
+	pid_t pid = fork();
+	if (pid == 0) {
+		execlp(cmd, cmd, tmpPath.c_str(), (char*)nullptr);
+		_exit(127);
 	}
+	// Parent: don't wait — the browser outlives the Launchpad.
 }
 
 void OGLLaunchpad::ReleaseThumbnail()
@@ -587,6 +636,15 @@ void OGLLaunchpad::RenderTabScenario(float availH)
 			ImGui::TextDisabled("(no description)");
 	} else {
 		ImGui::TextDisabled("Select a scenario to launch - double-click to start immediately.");
+	}
+	// HYPERDESC escape hatch (#17): Win32 renders the block inline via
+	// IWebBrowser2. macOS has no equivalent; a system-browser handoff
+	// keeps the full formatted description reachable without pulling in
+	// WKWebView or an HTML renderer.
+	if (!m_selectedHyperdesc.empty()) {
+		ImGui::Separator();
+		if (ImGui::Button("Open full description in browser"))
+			OpenHyperdescInBrowser();
 	}
 	ImGui::EndChild();
 }
