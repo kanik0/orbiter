@@ -10,6 +10,7 @@
 #include "imgui_internal.h"   // ImTextCharFromUtf8
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <vector>
@@ -36,6 +37,9 @@ GLint  OGLSketchpad::s_locViewProj   = -1;
 GLint  OGLSketchpad::s_locViewMode   = -1;
 GLint  OGLSketchpad::s_locClipperDir = -1;
 GLint  OGLSketchpad::s_locClipperCosDist = -1;
+GLuint OGLSketchpad::s_samplerPoint  = 0;
+GLuint OGLSketchpad::s_samplerLinear = 0;
+GLuint OGLSketchpad::s_samplerAniso  = 0;
 bool   OGLSketchpad::s_sharedInitialized = false;
 
 void OGLSketchpad::InitShared(ShaderMgr *sm)
@@ -71,6 +75,33 @@ void OGLSketchpad::InitShared(ShaderMgr *sm)
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
 	glEnableVertexAttribArray(1);
 	glBindVertexArray(0);
+
+	// Sampler objects for BlendState::FILTER_* hints. Samplers override
+	// the bound texture's min/mag filter params for the texture unit
+	// they're attached to, so we can honour a per-blit filter request
+	// without mutating the source surface's sampler state.
+	GLuint samplers[3] = { 0, 0, 0 };
+	glGenSamplers(3, samplers);
+	s_samplerPoint  = samplers[0];
+	s_samplerLinear = samplers[1];
+	s_samplerAniso  = samplers[2];
+
+	glSamplerParameteri(s_samplerPoint,  GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glSamplerParameteri(s_samplerPoint,  GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+	glSamplerParameteri(s_samplerLinear, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glSamplerParameteri(s_samplerLinear, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+	glSamplerParameteri(s_samplerAniso,  GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glSamplerParameteri(s_samplerAniso,  GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+#ifdef GL_TEXTURE_MAX_ANISOTROPY
+	// EXT_texture_filter_anisotropic — widely available on desktop GL
+	// but not a GL 4.1 core feature. Clamp to whatever the driver
+	// actually supports instead of guessing at a 16× ceiling.
+	GLfloat maxAniso = 1.0f;
+	glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &maxAniso);
+	glSamplerParameterf(s_samplerAniso, GL_TEXTURE_MAX_ANISOTROPY, maxAniso);
+#endif
 }
 
 void OGLSketchpad::ReleaseShared()
@@ -78,6 +109,9 @@ void OGLSketchpad::ReleaseShared()
 	if (!s_sharedInitialized) return;
 	if (s_vao) { glDeleteVertexArrays(1, &s_vao); s_vao = 0; }
 	if (s_vbo) { glDeleteBuffers(1, &s_vbo); s_vbo = 0; }
+	GLuint samplers[3] = { s_samplerPoint, s_samplerLinear, s_samplerAniso };
+	glDeleteSamplers(3, samplers);
+	s_samplerPoint = s_samplerLinear = s_samplerAniso = 0;
 	s_program = 0;
 	s_sharedInitialized = false;
 }
@@ -415,10 +449,23 @@ void OGLSketchpad::DrawTexturedQuads(const float *xyuv, int nVerts,
 	glBufferData(GL_ARRAY_BUFFER, nVerts * 4 * sizeof(float), xyuv, GL_STREAM_DRAW);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, tex);
+
+	// Apply the caller's SetBlendState filter hint via a sampler object.
+	// FILTER_LINEAR (0x00) is the default so the legacy behaviour
+	// survives callers that never touch BlendState.
+	GLuint sampler = s_samplerLinear;
+	if      (m_filterBits == FILTER_POINT)       sampler = s_samplerPoint;
+	else if (m_filterBits == FILTER_ANISOTROPIC) sampler = s_samplerAniso;
+	glBindSampler(0, sampler);
+
 	glUniform1i(s_locTexture, 0);
 	glUniform4fv(s_locColor, 1, c);
 	glUniform1i(s_locMode, mode);
 	glDrawArrays(GL_TRIANGLES, 0, nVerts);
+
+	// Unbind so unrelated downstream passes that sample unit 0
+	// aren't surprised by our filter choice.
+	glBindSampler(0, 0);
 }
 
 // --- Primitives ------------------------------------------------------------
@@ -756,11 +803,14 @@ void OGLSketchpad::ColorCompatibility(bool bEnable)
 
 void OGLSketchpad::SetBlendState(BlendState state)
 {
-	// Low 4 bits pick the colour-combining rule, next nibble picks the
-	// texture sampling filter. The filter selection is handed to the
-	// OGLSurface sampler we bind in blits — for the immediate draw call
-	// we only need to set glBlendFunc for the colour combiner.
+	// Low 4 bits pick the colour-combining rule; next nibble picks the
+	// texture sampling filter hint. The filter selection is applied at
+	// DrawTexturedQuads time via a sampler object, so the caller's
+	// choice (POINT for nearest, LINEAR for bilinear, ANISOTROPIC for
+	// max-aniso where supported) is honoured per blit without mutating
+	// the source surface's own sampler.
 	const int combiner = state & 0x0F;
+	m_filterBits       = state & 0xF0;
 	glEnable(GL_BLEND);
 	switch (combiner) {
 	case COPY:
@@ -879,8 +929,12 @@ void OGLSketchpad::CopyRect(const SURFHANDLE hSrc, const LPRECT src, int tx, int
 
 	float u0, v0, u1, v1;
 	UvRect(srcS, src, u0, v0, u1, v1);
-	int w = src ? (src->right - src->left) : (int)srcS->GetWidth();
-	int h = src ? (src->bottom - src->top) : (int)srcS->GetHeight();
+	// The public contract (DrawAPI.h:1499) lets callers mirror the image
+	// with a negative-width or negative-height source rect. UvRect picks
+	// up the sign naturally (u0 > u1 flips the sample), but the target
+	// size must stay positive so the quad is still wound CCW.
+	int w = src ? std::abs(src->right - src->left) : (int)srcS->GetWidth();
+	int h = src ? std::abs(src->bottom - src->top) : (int)srcS->GetHeight();
 	float ax = (float)tx, ay = (float)ty;
 	float bx = ax + (float)w, by = ay + (float)h;
 
@@ -933,8 +987,10 @@ void OGLSketchpad::RotateRect(const SURFHANDLE hSrc, const LPRECT src,
 
 	float u0, v0, u1, v1;
 	UvRect(srcS, src, u0, v0, u1, v1);
-	int rw = src ? (src->right - src->left) : (int)srcS->GetWidth();
-	int rh = src ? (src->bottom - src->top) : (int)srcS->GetHeight();
+	// Mirror via negative-width src rect (DrawAPI.h:1522): UvRect already
+	// swaps the UVs; absolute value here keeps the target quad shape.
+	int rw = src ? std::abs(src->right - src->left) : (int)srcS->GetWidth();
+	int rh = src ? std::abs(src->bottom - src->top) : (int)srcS->GetHeight();
 	float hx = 0.5f * rw * sw;
 	float hy = 0.5f * rh * sh;
 
