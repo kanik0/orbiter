@@ -15,6 +15,10 @@
 #include "GraphicsAPI.h"
 #include <cstdio>
 #include <cmath>
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <unordered_map>
 #include <sys/stat.h>
 
 namespace ogl {
@@ -38,6 +42,160 @@ static bool FileExists(const char *path) {
 	struct stat st;
 	return stat(path, &st) == 0;
 }
+
+// ----- Mesh-group animation transforms (issue #94) --------------------------
+// Orbiter vessels attach MGROUP_TRANSFORM animations to mesh groups via
+// Vessel::AddAnimationComponent. The transforms move individual groups
+// (struts, hatches, control surfaces, etc.) relative to the authored mesh
+// when the vessel's animation state changes — for example the DeltaGlider
+// rotates each landing-gear group by up to ~95° as anim_gear travels from
+// defstate to 0.  We evaluate the transforms per-frame and compose them
+// into each group's model matrix instead of mutating the shared mesh VBO,
+// since the mesh cache is shared across vessels that use the same template.
+namespace {
+
+using Mat4 = std::array<float, 16>;
+
+constexpr Mat4 kIdentity4 = {
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1
+};
+
+// Column-major 4x4 multiply — c = a * b, indexing m[col*4 + row].
+inline Mat4 MatMul(const Mat4 &a, const Mat4 &b) {
+    Mat4 c{};
+    for (int j = 0; j < 4; ++j)
+        for (int i = 0; i < 4; ++i) {
+            float v = 0.0f;
+            for (int k = 0; k < 4; ++k) v += a[k * 4 + i] * b[j * 4 + k];
+            c[j * 4 + i] = v;
+        }
+    return c;
+}
+
+// Rotation by `angle` rad around `axis`, pivoting around `ref`.
+// Equivalent to T(ref) * R(axis, angle) * T(-ref).
+inline Mat4 RotAxisRef(const VECTOR3 &axis, double angle, const VECTOR3 &ref) {
+    double ax = axis.x, ay = axis.y, az = axis.z;
+    const double len = std::sqrt(ax * ax + ay * ay + az * az);
+    if (len < 1e-12) return kIdentity4;
+    ax /= len; ay /= len; az /= len;
+    const double c = std::cos(angle), s = std::sin(angle), omc = 1.0 - c;
+    const float r00 = (float)(c + ax * ax * omc);
+    const float r01 = (float)(ax * ay * omc - az * s);
+    const float r02 = (float)(ax * az * omc + ay * s);
+    const float r10 = (float)(ay * ax * omc + az * s);
+    const float r11 = (float)(c + ay * ay * omc);
+    const float r12 = (float)(ay * az * omc - ax * s);
+    const float r20 = (float)(az * ax * omc - ay * s);
+    const float r21 = (float)(az * ay * omc + ax * s);
+    const float r22 = (float)(c + az * az * omc);
+    const float rx = (float)ref.x, ry = (float)ref.y, rz = (float)ref.z;
+    const float tx = rx - (r00 * rx + r01 * ry + r02 * rz);
+    const float ty = ry - (r10 * rx + r11 * ry + r12 * rz);
+    const float tz = rz - (r20 * rx + r21 * ry + r22 * rz);
+    return {
+        r00, r10, r20, 0.0f,
+        r01, r11, r21, 0.0f,
+        r02, r12, r22, 0.0f,
+        tx,  ty,  tz,  1.0f
+    };
+}
+
+inline Mat4 Translate(double x, double y, double z) {
+    return {
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        (float)x, (float)y, (float)z, 1
+    };
+}
+
+inline Mat4 ScaleRef(const VECTOR3 &scale, const VECTOR3 &ref) {
+    const float sx = (float)scale.x, sy = (float)scale.y, sz = (float)scale.z;
+    const float rx = (float)ref.x,   ry = (float)ref.y,   rz = (float)ref.z;
+    return {
+        sx, 0,  0,  0,
+        0,  sy, 0,  0,
+        0,  0,  sz, 0,
+        rx * (1.0f - sx), ry * (1.0f - sy), rz * (1.0f - sz), 1
+    };
+}
+
+using AnimXformMap = std::unordered_map<uint64_t, Mat4>;
+
+inline uint64_t AnimKey(UINT mesh, UINT grp) {
+    return ((uint64_t)mesh << 32) | (uint64_t)grp;
+}
+
+static void ProcessAnimComp(const ANIMATIONCOMP *comp, double state, double defstate,
+                            const Mat4 &parentT, AnimXformMap &out)
+{
+    if (!comp || !comp->trans) return;
+    const MGROUP_TRANSFORM *trans = comp->trans;
+    const double s0 = comp->state0, s1 = comp->state1;
+    const double sEff = std::clamp(state,    s0, s1);
+    const double dEff = std::clamp(defstate, s0, s1);
+    const double range = s1 - s0;
+    const double progress = (range > 1e-12) ? (sEff - dEff) / range : 0.0;
+
+    Mat4 local = kIdentity4;
+    switch (trans->Type()) {
+    case MGROUP_TRANSFORM::NULLTRANSFORM:
+        break;
+    case MGROUP_TRANSFORM::ROTATE: {
+        const MGROUP_ROTATE *r = static_cast<const MGROUP_ROTATE *>(trans);
+        local = RotAxisRef(r->axis, r->angle * progress, r->ref);
+    } break;
+    case MGROUP_TRANSFORM::TRANSLATE: {
+        const MGROUP_TRANSLATE *l = static_cast<const MGROUP_TRANSLATE *>(trans);
+        local = Translate(l->shift.x * progress, l->shift.y * progress, l->shift.z * progress);
+    } break;
+    case MGROUP_TRANSFORM::SCALE: {
+        const MGROUP_SCALE *s = static_cast<const MGROUP_SCALE *>(trans);
+        // Interpolate each axis between 1.0 (authored) and scale as progress 0→1.
+        const VECTOR3 sc = {
+            1.0 + (s->scale.x - 1.0) * progress,
+            1.0 + (s->scale.y - 1.0) * progress,
+            1.0 + (s->scale.z - 1.0) * progress
+        };
+        local = ScaleRef(sc, s->ref);
+    } break;
+    }
+
+    const Mat4 composed = MatMul(parentT, local);
+
+    // Skip per-vertex lists (LOCALVERTEXLIST) — a group-level matrix can't
+    // express arbitrary per-vertex edits. Vessels that use that path fall
+    // back to the authored mesh, matching the pre-animation behaviour.
+    if (trans->mesh != LOCALVERTEXLIST && trans->grp) {
+        for (UINT i = 0; i < trans->ngrp; ++i)
+            out[AnimKey(trans->mesh, trans->grp[i])] = composed;
+    }
+
+    for (UINT i = 0; i < comp->nchildren; ++i)
+        ProcessAnimComp(comp->children[i], state, defstate, composed, out);
+}
+
+static void BuildAnimTransforms(VESSEL *vessel, AnimXformMap &out)
+{
+    ANIMATION *anim = nullptr;
+    const UINT nanim = vessel->GetAnimPtr(&anim);
+    if (!anim || nanim == 0) return;
+    for (UINT a = 0; a < nanim; ++a) {
+        const ANIMATION &A = anim[a];
+        if (A.state == A.defstate) continue;  // mesh already at authored pose
+        for (UINT c = 0; c < A.ncomp; ++c) {
+            ANIMATIONCOMP *comp = A.comp[c];
+            if (!comp || comp->parent) continue;  // roots only; children recursed
+            ProcessAnimComp(comp, A.state, A.defstate, kIdentity4, out);
+        }
+    }
+}
+
+} // anonymous namespace
 
 // Port of D3D9Client vVessel::Render mesh-visibility filter (VVessel.cpp:739-757).
 // Returns true when the mesh should be drawn in the current pass.
@@ -460,6 +618,11 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 	// geometry (full-screen quads, spheres) keeps its expected winding.
 	glFrontFace(GL_CW);
 
+	// Evaluate per-(mesh, group) animation transforms once per frame. Empty
+	// when the vessel has no animations or all states match their defaults.
+	AnimXformMap animTransforms;
+	BuildAnimTransforms(vessel, animTransforms);
+
 	DWORD nMesh = vessel->GetMeshCount();
 	// Pass 0: external (hull, EXTPASS bits even while in cockpit view).
 	// Pass 1: internal/VC — only runs when the focus vessel is in internal
@@ -501,19 +664,29 @@ void OGLvVessel::Render(const float *vp, const VECTOR3 &camPos, const VECTOR3 &s
 		float tx = (float)(nvx + ox * scale), ty = (float)(nvy + oy * scale), tz = (float)(nvz + oz * scale);
 		float s = (float)scale;
 
-		float model[16] = {
+		const Mat4 rootModel = {
 			(float)(vrot.m11 * s), (float)(vrot.m21 * s), (float)(vrot.m31 * s), 0.0f,
 			(float)(vrot.m12 * s), (float)(vrot.m22 * s), (float)(vrot.m32 * s), 0.0f,
 			(float)(vrot.m13 * s), (float)(vrot.m23 * s), (float)(vrot.m33 * s), 0.0f,
 			tx, ty, tz, 1.0f
 		};
-		glUniformMatrix4fv(s_shaderMgr->GetUniformLoc(activeShader, "uModel"), 1, GL_FALSE, model);
+		const GLint uModelLoc = s_shaderMgr->GetUniformLoc(activeShader, "uModel");
 
 		DWORD nTex = oapiMeshTextureCount(hMesh);
 
 		for (DWORD g = 0; g < (DWORD)cached->groups.size(); g++) {
 			CachedMeshGroup &cmg = cached->groups[g];
 			if (!cmg.vao || cmg.indexCount == 0) continue;
+
+			// Compose the per-group model matrix: rootModel * animTransform
+			// when this group has an active animation, plain rootModel
+			// otherwise. The map is usually empty or small (~15 entries for
+			// the DeltaGlider's gear) so the lookup is cheap.
+			auto animIt = animTransforms.find(AnimKey(m, g));
+			const Mat4 groupModel = (animIt != animTransforms.end())
+				? MatMul(rootModel, animIt->second)
+				: rootModel;
+			glUniformMatrix4fv(uModelLoc, 1, GL_FALSE, groupModel.data());
 
 			MESHGROUPEX *grp = oapiMeshGroupEx(hMesh, g);
 
