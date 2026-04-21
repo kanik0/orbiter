@@ -133,6 +133,15 @@ void Interpreter::Initialise ()
 	LoadStartupScript (); // load default initialisation script
 }
 
+#ifndef XRSOUND
+// Stub when the XRSound lua module isn't built — lua_xrsound.cpp owns the
+// real implementation but is only compiled under ORBITER_BUILD_XRSOUND.
+// Without this no-op, dlopen'ing LuaInline / LuaMFD / LuaConsole fails at
+// runtime with "symbol not found: Interpreter::LoadXRSoundAPI()" and every
+// scenario `Script = ...` directive silently never runs.
+void Interpreter::LoadXRSoundAPI () {}
+#endif
+
 int Interpreter::Status () const
 {
 	return status;
@@ -736,6 +745,7 @@ int Interpreter::RunChunk (const char *chunk, int n)
 		if (res) {
 			auto error = lua_tostring(L, -1);
 			if (error) { // can be nullptr
+				fprintf(stderr, "[Lua error] %s\n", error);
 				if (is_term) {
 					// term_strout ("Execution error.");
 					term_strout(error, true);
@@ -1085,12 +1095,18 @@ void Interpreter::LoadAPI ()
 	};
 	luaL_openlib (L, "term", termLib, 0);
 
-	// Load XRSound library
+	// Load XRSound library only when the XRSound API is compiled in —
+	// lua_xrsound.cpp owns the implementation, and building without
+	// ORBITER_BUILD_XRSOUND leaves `xrsound_create_instance` unresolved.
+	// Referencing it here would be a dangling symbol that fails dlopen on
+	// every downstream Lua module (LuaInline, LuaMFD, LuaConsole).
+#ifdef XRSOUND
 	static const struct luaL_reg XRSoundLib[] = {
 		{"create_instance", xrsound_create_instance},
 		{NULL, NULL}
 	};
 	luaL_openlib (L, "xrsound", XRSoundLib, 0);
+#endif
 
 	// Set up global tables of constants
 
