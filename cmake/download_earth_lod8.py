@@ -78,13 +78,55 @@ def fetch(spec, out_path: Path) -> None:
     print(f"[earth] wrote {out_path} ({len(data) / 1024 / 1024:.1f} MiB)")
 
 
+def resize_to_earth_png(src: Path, dst: Path, width: int, height: int) -> None:
+    """Load the full-resolution NASA mosaic and produce a much smaller
+    equirectangular `Earth.png` the OGL planet renderer can load as its base
+    albedo texture. Keeping the big upstream file cached alongside means
+    subsequent configures skip both download and resize when the target is
+    already up to date."""
+    try:
+        from PIL import Image
+    except ImportError:
+        raise SystemExit(
+            "[earth] Pillow (PIL) is required to resize the mosaic. "
+            "Install with `pip3 install --user pillow` and re-run configure.")
+
+    if dst.exists():
+        # Cheap existence check — the file size of a 4096×2048 RGB PNG sits in
+        # a predictable band. We compare against a rough floor so a truncated
+        # previous run re-generates; SHA pinning would require shipping a
+        # pre-computed hash that depends on Pillow's PNG encoder, which is
+        # worse for reproducibility than just regenerating when suspicious.
+        if dst.stat().st_size > 1_000_000:
+            print(f"[earth] {dst.name} already present, skip resize")
+            return
+
+    print(f"[earth] resizing {src.name} → {width}×{height} {dst.name}")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(src) as im:
+        im = im.convert("RGB")
+        im = im.resize((width, height), Image.LANCZOS)
+        im.save(dst, format="PNG", optimize=True)
+    print(f"[earth] wrote {dst} ({dst.stat().st_size / 1024 / 1024:.1f} MiB)")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=(
-        "Download the NASA Blue Marble Next Generation mosaic into the "
-        "Orbiter build tree. Tile-pyramid generation is a separate "
-        "offline step (see header comment)."))
+        "Download the NASA Blue Marble Next Generation mosaic and optionally "
+        "resample it into an equirectangular Earth.png that the OGL planet "
+        "renderer loads as its base albedo. Full LOD tile-pyramid generation "
+        "(Textures/Earth/Archive/Surf.tree) is still a separate offline step "
+        "— see the header comment."))
     ap.add_argument("--out", default=None,
-                    help="destination path; defaults to Textures/EarthBlueMarble.jpg")
+                    help="download destination; defaults to Textures/EarthBlueMarble.png")
+    ap.add_argument("--earth-png", default=None,
+                    help="if set, resize the downloaded mosaic to this path "
+                         "(e.g. Textures/Earth.png) so the OGL renderer picks "
+                         "it up without needing a full LOD pyramid")
+    ap.add_argument("--earth-png-width", type=int, default=4096,
+                    help="width in pixels for the resized Earth.png (default 4096)")
+    ap.add_argument("--earth-png-height", type=int, default=2048,
+                    help="height in pixels for the resized Earth.png (default 2048)")
     args = ap.parse_args()
 
     spec = BLUEMARBLE_SOURCES[0]
@@ -95,14 +137,20 @@ def main() -> int:
         print(f"[earth] download failed: {e}", file=sys.stderr)
         return 1
 
-    print()
-    print("[earth] Next steps (manual):")
-    print("[earth]   1. Tile-split the JPEG into Textures2/Earth/<lvl>/<x>_<y>.dds")
-    print("[earth]      using texconv (Windows) or compressonatorcli (POSIX).")
-    print("[earth]   2. Levels 1..8 cover the full globe at increasing resolution;")
-    print("[earth]      see Doc/HiResTextures.htm for the on-disk layout.")
-    print("[earth]   3. Drop the resulting tree into Textures2/Earth/ and the")
-    print("[earth]      OGL planet renderer will pick it up at scenario load.")
+    if args.earth_png:
+        try:
+            resize_to_earth_png(out, Path(args.earth_png),
+                                args.earth_png_width, args.earth_png_height)
+        except Exception as e:
+            print(f"[earth] resize failed: {e}", file=sys.stderr)
+            return 2
+    else:
+        print()
+        print("[earth] Next steps (manual):")
+        print("[earth]   1. Resample to a compact equirectangular via --earth-png")
+        print("[earth]      to get the OGL renderer's base albedo.")
+        print("[earth]   2. Tile-split the mosaic into Textures/Earth/Archive/Surf.tree")
+        print("[earth]      for full LOD zoom (separate offline pipeline).")
     return 0
 
 
