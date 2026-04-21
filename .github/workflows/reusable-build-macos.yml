@@ -133,6 +133,24 @@ jobs:
       run: cmake --build "out/build/macos-arm64-${CONFIGURATION}"
         --target macos-dmg
 
+    - name: Report bundle + DMG size
+      if: ${{ inputs.dmg }}
+      env:
+        BUILD_DIR: out/build/macos-arm64-${{ inputs.configuration }}
+      run: |
+        # Help track DMG growth over time and diagnose missing assets
+        # (issue #12). Does not affect the build — purely telemetry.
+        set -euo pipefail
+        echo "----- top-level bundle layout -----"
+        du -sh "$BUILD_DIR"/Orbiter.app 2>/dev/null || true
+        du -sh "$BUILD_DIR"/Textures "$BUILD_DIR"/Textures2 \
+               "$BUILD_DIR"/Meshes "$BUILD_DIR"/Scenarios \
+               "$BUILD_DIR"/Modules "$BUILD_DIR"/Sound 2>/dev/null || true
+        echo "----- biggest texture dirs -----"
+        du -sh "$BUILD_DIR"/Textures/*/ 2>/dev/null | sort -h | tail -10 || true
+        echo "----- compressed DMG size -----"
+        ls -lh "$BUILD_DIR"/Orbiter-macos-arm64.dmg 2>/dev/null || true
+
     - name: Upload .app artifact
       if: ${{ inputs.upload && !inputs.dmg }}
       uses: actions/upload-artifact@v7

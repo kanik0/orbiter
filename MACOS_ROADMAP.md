@@ -277,6 +277,25 @@ Effort totale stimato: **~189 giorni-sviluppo senior singolo**. Critical path se
 - **Rischio:** Apple notarization richiede Apple ID + app-specific password → fallback "unsigned" con Gatekeeper override documentato.
 - **Effort:** 4gg.
 
+### M28.a. DMG size audit (post-M28 follow-up, issue #12)
+- **Stato:** il .dmg shippato (`Orbiter-macos-arm64.dmg`) pesa ~157 MB vs stima
+  originale ~430 MB. Differenza quasi tutta in Earth LOD8 Blue Marble tiles
+  (`Textures2/Earth/`) che non vengono fetched di default e richiedono uno
+  step offline di tile-split (texconv/compressonatorcli) — l'`option`
+  `ORBITER_FETCH_EARTH_BLUEMARBLE` scarica solo il mosaic source (530 MB PNG),
+  non genera le tile. Finché il tile-pyramid resta manuale il .dmg di
+  default rinuncia alla copertura hires.
+- **Breakdown attuale (release debug):** `Textures/` ~247 MB, `Modules/`
+  ~37 MB, `Textures2/` ~20 MB, `Meshes/` ~16 MB, `Sound/` ~8 MB, il resto
+  `< 1 MB` ciascuno. UDZO compression riduce l'insieme a ~157 MB.
+- **Telemetria CI:** `reusable-build-macos.yml` stampa il breakdown dopo
+  ogni build dmg → regressioni dimensionali visibili nel log della run.
+- **Per arrivare a 430 MB:** generare la tile-pyramid LOD8 offline e
+  committare `Textures2/Earth/<lvl>/*.dds` (≈ 270 MB aggiuntivi), oppure
+  wire-ift `ORBITER_FETCH_EARTH_BLUEMARBLE=ON` + tile-split come step CI
+  dedicato (non incluso nel release pipeline principale per non
+  sforarlo).
+
 ### M29. Force feedback/haptic (SDL_Haptic)
 - **Obiettivo:** SDL_Haptic native: rumble on landing gear touchdown, vibrazione atmospheric buffeting.
 - **File:** `SDLPlatform.cpp` (514) aggiungere SDL_Haptic init+effect. `Input.cpp` bridge. Nuovo `HapticFX.cpp`.

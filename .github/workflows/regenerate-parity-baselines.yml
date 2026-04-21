@@ -1,0 +1,36 @@
+name: Regenerate parity baselines
+
+# Manually triggered workflow that runs the rendering-parity harness
+# on macos-14 and uploads every captured PNG as a downloadable
+# artifact. Use this when you've changed the renderer and want to
+# refresh the baselines in Tests/rendering_parity/baselines/: trigger
+# the workflow, download the `parity-baselines-<sha>` artifact,
+# replace the placeholder PNGs in the repo with the captured ones,
+# and commit.
+#
+# This workflow never writes back to the repo — baselines are only
+# accepted into history through a human-reviewed commit so we can
+# eyeball the captures before they start gating PRs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: Build configuration used for the capture run
+        default: release
+        type: choice
+        options: [debug, release]
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    name: Capture baselines
+    uses: ./.github/workflows/reusable-build-macos.yml
+    with:
+      configuration: ${{ inputs.configuration }}
+      smoke: false
+      parity: true
+      upload: false
+      dmg: false
