@@ -206,7 +206,8 @@ CFG_JOYSTICKPRM CfgJoystickPrm_default = {
 	2500,		// Deadzone (neutralise joystick axes within 20% of central position)
 	1,			// ThrottleAxis (z-axis by default)
 	9500,		// ThrottleSaturation (saturate throttle at the last 5% each end)
-	true		// bThrottleIgnore (ignore throttle setting on simulation start)
+	true,		// bThrottleIgnore (ignore throttle setting on simulation start)
+	1.0f		// HapticGain (unity = ship-tuned defaults)
 };
 
 CFG_UIPRM CfgUIPrm_default = {
@@ -564,6 +565,11 @@ bool Config::Load(const char *fname)
 	if (GetInt (ifs, "JoystickDeadzone", i))
 		CfgJoystickPrm.Deadzone = max (0, min (10000, i));
 	GetBool (ifs, "IgnoreThrottleOnStart", CfgJoystickPrm.bThrottleIgnore);
+	{
+		double d;
+		if (GetReal (ifs, "JoystickHapticGain", d))
+			CfgJoystickPrm.HapticGain = (float)max (0.0, min (2.0, d));
+	}
 
 	// planet render parameters
 	if (GetInt (ifs, "PlanetPreloadMode", i))
@@ -1303,6 +1309,8 @@ BOOL Config::Write (const char *fname) const
 			ofs << "JoystickDeadzone = " << CfgJoystickPrm.Deadzone << '\n';
 		if (CfgJoystickPrm.bThrottleIgnore != CfgJoystickPrm_default.bThrottleIgnore || bEchoAll)
 			ofs << "IgnoreThrottleOnStart = " << BoolStr (CfgJoystickPrm.bThrottleIgnore) << '\n';
+		if (CfgJoystickPrm.HapticGain != CfgJoystickPrm_default.HapticGain || bEchoAll)
+			ofs << "JoystickHapticGain = " << CfgJoystickPrm.HapticGain << '\n';
 	}
 
 	if (memcmp (&CfgUIPrm, &CfgUIPrm_default, sizeof(CFG_UIPRM)) || bEchoAll) {

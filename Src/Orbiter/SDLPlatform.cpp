@@ -8,6 +8,8 @@
 #include "SDLPlatform.h"
 #include "HapticFX.h"
 #include "Orbiter.h"
+
+extern Orbiter *g_pOrbiter;
 #include "Log.h"
 #include "imgui.h"
 #include "backends/imgui_impl_sdl2.h"
@@ -308,15 +310,45 @@ bool SDLPlatform::Initialize(int width, int height)
 		}
 	}
 
-	// Bind the haptic channel to the open controller (if any). The
-	// HapticFX wrapper tolerates a null binding so headless / no-pad
+	// Legacy SDL_Joystick fallback — flight sticks and HOTAS without a
+	// SDL_GameController profile still expose rumble through the older
+	// SDL_Haptic API. We only reach here when no GC was claimed above.
+	if (!m_gameController && numJoy > 0) {
+		if (SDL_InitSubSystem(SDL_INIT_HAPTIC) == 0) {
+			for (int i = 0; i < numJoy; i++) {
+				if (SDL_IsGameController(i)) continue;   // already considered
+				SDL_Joystick *js = SDL_JoystickOpen(i);
+				if (!js) continue;
+				SDL_Haptic *h = SDL_HapticOpenFromJoystick(js);
+				if (h && SDL_HapticRumbleSupported(h) && SDL_HapticRumbleInit(h) == 0) {
+					m_joystickLegacy = js;
+					m_hapticLegacy   = h;
+					m_joy.connected  = true;
+					fprintf(stderr, "[SDLPlatform] Legacy joystick haptic: %s\n",
+						SDL_JoystickName(js));
+					break;
+				}
+				if (h) SDL_HapticClose(h);
+				SDL_JoystickClose(js);
+			}
+		}
+	}
+
+	// Bind the haptic channel to whichever device we managed to claim.
+	// The HapticFX wrapper tolerates a null binding so headless / no-pad
 	// runners stay quiet.
 	m_haptic = new HapticFX();
-	m_haptic->Bind(m_gameController);
-	if (m_gameController && SDL_GameControllerHasRumble(m_gameController)) {
-		fprintf(stderr, "[SDLPlatform] Haptic rumble available on %s\n",
-			SDL_GameControllerName(m_gameController));
+	if (m_gameController) {
+		m_haptic->Bind(m_gameController);
+		if (SDL_GameControllerHasRumble(m_gameController))
+			fprintf(stderr, "[SDLPlatform] Haptic rumble available on %s\n",
+				SDL_GameControllerName(m_gameController));
+	} else if (m_hapticLegacy) {
+		m_haptic->BindHaptic(m_hapticLegacy);
 	}
+	// Apply the persisted gain before any effect can fire.
+	if (g_pOrbiter && g_pOrbiter->Cfg())
+		m_haptic->SetGain(g_pOrbiter->Cfg()->CfgJoystickPrm.HapticGain);
 
 	m_initialized = true;
 	return true;
@@ -327,14 +359,23 @@ void SDLPlatform::Shutdown()
 	if (m_haptic) {
 		m_haptic->Stop();
 		m_haptic->Bind(nullptr);
+		m_haptic->BindHaptic(nullptr);
 		delete m_haptic;
 		m_haptic = nullptr;
+	}
+	if (m_hapticLegacy) {
+		SDL_HapticClose(m_hapticLegacy);
+		m_hapticLegacy = nullptr;
+	}
+	if (m_joystickLegacy) {
+		SDL_JoystickClose(m_joystickLegacy);
+		m_joystickLegacy = nullptr;
 	}
 	if (m_gameController) {
 		SDL_GameControllerClose(m_gameController);
 		m_gameController = nullptr;
-		m_joy.connected = false;
 	}
+	m_joy.connected = false;
 	if (m_glContext) {
 		SDL_GL_DeleteContext(m_glContext);
 		m_glContext = nullptr;

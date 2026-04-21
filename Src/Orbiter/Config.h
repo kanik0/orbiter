@@ -227,6 +227,7 @@ struct CFG_JOYSTICKPRM {
 	DWORD  ThrottleAxis;		// joystick throttle axis (0=none, 1=z-axis, 2=slider 0, 3=slider 1)
 	int    ThrottleSaturation;	// saturation level for joystick throttle control (0-10000)
 	bool   bThrottleIgnore;		// ignore joystick throttle setting on start
+	float  HapticGain;			// haptic feedback master gain (0=off, 1=default, up to 2)
 };
 
 struct CFG_UIPRM {              // user interface options

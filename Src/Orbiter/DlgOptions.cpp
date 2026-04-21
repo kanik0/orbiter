@@ -320,6 +320,11 @@ void DlgOptions::DrawJoystick()
 			g_pOrbiter->OnOptionChanged(OPTCAT_JOYSTICK, OPTITEM_JOYSTICK_PARAM);
 
 	ImGui::EndDisabled();
+
+	ImGui::SeparatorText("Haptic feedback");
+	ImGui::SliderFloat("Rumble gain", &g_pOrbiter->Cfg()->CfgJoystickPrm.HapticGain,
+	                   0.0f, 2.0f, "%.2f");
+	ImGui::TextDisabled("0 disables rumble; 1 is the ship-tuned default.");
 }
 void DlgOptions::DrawCelSphere()
 {

@@ -2280,6 +2280,9 @@ void Orbiter::EndTimeStep (bool running)
 	// implementation is a no-op when no controller is attached.
 	if (running && m_pSDL && m_pSDL->GetHaptic() && g_focusobj) {
 		orbiter::HapticFX *fx = m_pSDL->GetHaptic();
+		// Pick up any runtime change to the UI gain slider. SetGain is
+		// cheap (clamp + float assign); no need to gate on change.
+		fx->SetGain(pConfig->CfgJoystickPrm.HapticGain);
 		// Touchdown rising edge.
 		bool contact = g_focusobj->bSurfaceContact;
 		if (contact && !m_haptPrevContact) {

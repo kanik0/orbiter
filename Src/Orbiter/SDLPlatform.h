@@ -117,6 +117,8 @@ private:
 
 	// Joystick
 	SDL_GameController *m_gameController;
+	SDL_Joystick       *m_joystickLegacy = nullptr;  // fallback when no GC mapping
+	SDL_Haptic         *m_hapticLegacy   = nullptr;  // fallback rumble device
 	JoyState m_joy;
 	void UpdateJoystick();
 
