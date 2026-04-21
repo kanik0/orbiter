@@ -7,9 +7,11 @@ name: On Push (macOS)
 # plain ISO date (e.g. 2026-04-21); same-day re-builds get an
 # incrementing "-2", "-3", ... suffix picked at runtime.
 #
-# The Windows workflow currently fails and is intentionally not in
-# the dependency chain here — this pipeline ships macOS artifacts
-# regardless of the Windows state.
+# The Windows pipeline (on-push.yml) runs in parallel; it's not in
+# the dependency chain here because its build can take substantially
+# longer and because the macOS .dmg is shippable on its own. Add a
+# build-windows job here if you want Windows artifacts attached to
+# the same release.
 #
 # All ${{ }} expansions resolve to inputs / matrix values defined in
 # this file or in the reusable workflow_call schema; no untrusted
