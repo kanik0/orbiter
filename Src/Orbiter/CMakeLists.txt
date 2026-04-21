@@ -265,59 +265,18 @@ else()
 	add_custom_command(TARGET ${OrbiterTgt}	POST_BUILD
 		COMMAND ${CMAKE_COMMAND} -E make_directory ${ORBITER_BINARY_SDK_DIR}/lib
 	)
-	# macOS post-build: create Modules/Celbody symlinks and copy fonts
+	# macOS post-build: copy imgui fonts next to Orbiter. The Modules/Celbody
+	# symlinking used to live here too, but every celbody dylib declares
+	# `add_dependencies(${CELBODY} ${OrbiterTgt})` (they link against Orbiter's
+	# exported symbols), so this POST_BUILD fires *before* the dylibs exist
+	# — leaving Modules/Celbody/ empty and forcing a manual `sh
+	# create_celbody_symlinks.sh`. The symlink step now lives in the
+	# `celbody_symlinks` custom target declared at the end of
+	# Src/Celbody/CMakeLists.txt, after every celbody target is known.
 	if(APPLE)
-		set(_symlink_script "${CMAKE_BINARY_DIR}/create_celbody_symlinks.sh")
-		file(WRITE ${_symlink_script}
-			"#!/bin/sh\n"
-			"mkdir -p \"${CMAKE_BINARY_DIR}/Modules/Celbody\" \"${CMAKE_BINARY_DIR}/Fonts\"\n"
-			"# (1) (removed in issue #8) The previous step symlinked the\n"
-			"#     prebuilt Win32 PE32 .dll archives shipped under\n"
-			"#     Modules/Celbody/ to lib<Name>.dylib. dlopen failed on\n"
-			"#     every one (\"slice is not valid mach-o file\"). Those 8\n"
-			"#     bodies (Ariel, Deimos, Miranda, Oberon, Phobos, Titania,\n"
-			"#     Triton, Umbriel) are no longer copied to the build tree\n"
-			"#     on non-Windows; their .cfg is patched to use the\n"
-			"#     Keplerian fallback. See Src/Celbody/CMakeLists.txt and\n"
-			"#     cmake/macos_celbody_cfg_patch.cmake.\n"
-			"# (2) Bridge the planet / Galsat / Satsat / Vsop87 dylibs\n"
-			"#     that get built into Modules/ (because SHARED libraries\n"
-			"#     on macOS use the LIBRARY_OUTPUT_DIRECTORY — Modules/ —\n"
-			"#     instead of the Modules/Celbody/ value set as RUNTIME).\n"
-			"#     Orbiter dlopen's Modules/Celbody/lib<Name>.dylib, so we\n"
-			"#     symlink only the known celbody libs (avoids shadowing\n"
-			"#     plugin libs that also live in Modules/Plugin/).\n"
-			"for name in Sun Mercury Venus Earth Mars Jupiter Saturn Uranus Neptune \\\n"
-			"            Moon Vsop87 Galsat Io Europa Ganymede Callisto \\\n"
-			"            Satsat Mimas Enceladus Tethys Dione Rhea Titan \\\n"
-			"            Hyperion Iapetus Phoebe Vesta Nereid Proteus; do\n"
-			"  src=\"${CMAKE_BINARY_DIR}/Modules/lib$name.dylib\"\n"
-			"  dst=\"${CMAKE_BINARY_DIR}/Modules/Celbody/lib$name.dylib\"\n"
-			"  [ -f \"$src\" ] && ln -sf \"../lib$name.dylib\" \"$dst\" 2>/dev/null\n"
-			"done\n"
-			"# (3) Bridge atmosphere modules to Modules/Celbody/<Planet>/Atmosphere/.\n"
-			"#     CELBODY2::LoadAtmosphereModule resolves lib<Name>.dylib relative\n"
-			"#     to that subpath. Build products land in Modules/ flat, so we\n"
-			"#     symlink them into the expected per-planet layout.\n"
-			"bridge_atm() {\n"
-			"  planet=$1; name=$2\n"
-			"  src=\"${CMAKE_BINARY_DIR}/Modules/lib$name.dylib\"\n"
-			"  atm_dir=\"${CMAKE_BINARY_DIR}/Modules/Celbody/$planet/Atmosphere\"\n"
-			"  if [ -f \"$src\" ]; then\n"
-			"    mkdir -p \"$atm_dir\"\n"
-			"    ln -sf \"../../../lib$name.dylib\" \"$atm_dir/lib$name.dylib\" 2>/dev/null\n"
-			"  fi\n"
-			"}\n"
-			"bridge_atm Venus VenusAtm2006\n"
-			"bridge_atm Earth EarthAtm2006\n"
-			"bridge_atm Earth EarthAtmJ71G\n"
-			"bridge_atm Earth EarthAtmNRLMSISE00\n"
-			"bridge_atm Mars MarsAtm2006\n"
-			"exit 0\n"
-		)
 		add_custom_command(TARGET ${OrbiterTgt} POST_BUILD
-			COMMENT "Creating Modules/Celbody symlinks and copying fonts..."
-			COMMAND sh ${_symlink_script}
+			COMMENT "Copying imgui fonts..."
+			COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/Fonts
 			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${imgui_SOURCE_DIR}/misc/fonts/Roboto-Medium.ttf ${CMAKE_BINARY_DIR}/Fonts/
 			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${imgui_SOURCE_DIR}/misc/fonts/Cousine-Regular.ttf ${CMAKE_BINARY_DIR}/Fonts/
 		)
