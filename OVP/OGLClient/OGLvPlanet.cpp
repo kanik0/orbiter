@@ -240,8 +240,13 @@ void OGLvPlanet::LoadTexture(const std::string &texturePath)
 	char name[64];
 	oapiGetObjectName(m_hObj, name, 64);
 
-	// Primary: <Name>.tex / .dds / .bmp
-	const char *extensions[] = { ".tex", ".dds", ".bmp", nullptr };
+	// Primary: <Name>.tex / .dds / .bmp / .png. The .png entry lets the macOS
+	// Blue Marble pipeline (`cmake/download_earth_lod8.py --earth-png …`) drop
+	// a 4096×2048 resampled Earth.png straight into Textures/ without needing
+	// a DDS compressor on the build host — the full LOD `.tree` archive is
+	// still the ideal long-term format (see #36) but the flat PNG already
+	// lifts Earth out of the two-colour EarthM.bmp fallback.
+	const char *extensions[] = { ".tex", ".dds", ".bmp", ".png", nullptr };
 	for (int i = 0; extensions[i]; i++) {
 		std::string tryPath = texturePath + name + extensions[i];
 		if (FileExists(tryPath.c_str())) {

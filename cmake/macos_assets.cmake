@@ -99,15 +99,21 @@ if(ORBITER_FETCH_EARTH_BLUEMARBLE)
 		message(WARNING "ORBITER_FETCH_EARTH_BLUEMARBLE=ON but no python3 "
 			"interpreter found — skipping Earth mosaic download.")
 	else()
-		set(_eb_out "${CMAKE_BINARY_DIR}/Textures/EarthBlueMarble.png")
-		message(STATUS "Fetching NASA Blue Marble mosaic → ${_eb_out}")
+		# Cache the full 530 MiB upstream outside Textures/ so the smaller
+		# Earth.png we actually ship isn't shadowed by it.
+		set(_eb_raw "${CMAKE_BINARY_DIR}/.orbiter_cache/EarthBlueMarble.png")
+		set(_eb_out "${CMAKE_BINARY_DIR}/Textures/Earth.png")
+		message(STATUS "Fetching + resampling NASA Blue Marble → ${_eb_out}")
 		execute_process(
 			COMMAND ${Python3_EXECUTABLE}
 				${CMAKE_SOURCE_DIR}/cmake/download_earth_lod8.py
-				--out ${_eb_out}
+				--out ${_eb_raw}
+				--earth-png ${_eb_out}
+				--earth-png-width 4096
+				--earth-png-height 2048
 			RESULT_VARIABLE _eb_rc)
 		if(NOT _eb_rc EQUAL 0)
-			message(WARNING "Blue Marble download failed (rc=${_eb_rc}); "
+			message(WARNING "Blue Marble pipeline failed (rc=${_eb_rc}); "
 				"see configure log for details. The build continues — "
 				"Earth will fall back to the bundled EarthM.bmp.")
 		endif()
