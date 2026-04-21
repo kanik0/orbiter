@@ -270,9 +270,28 @@ bool OGLKeymapEditor::CaptureFromImGui(WORD &outBinding)
 		return false;
 	}
 
-	// Translate ImGuiKey → OAPI_KEY for the alphanumerics + function
-	// keys most users want to remap. Modifier state comes from
-	// io.KeyCtrl / io.KeyShift / io.KeyAlt.
+	// OAPI_KEY_* codes match DirectInput DIK codes, which index the
+	// physical-keyboard scan order (A=0x1E, S=0x1F, D=0x20, ..., W=0x11,
+	// B=0x30, PERIOD=0x34). ImGuiKey_A..ImGuiKey_Z are alphabetical, so
+	// earlier code that treated the two as contiguous mapped most keys to
+	// unrelated OAPI codes — pressing `S` captured as `B`, `D` as `F`,
+	// `W` as `PERIOD`, etc. Use an explicit alphabet→OAPI table instead.
+	static const WORD kAlpha[26] = {
+		OAPI_KEY_A, OAPI_KEY_B, OAPI_KEY_C, OAPI_KEY_D, OAPI_KEY_E,
+		OAPI_KEY_F, OAPI_KEY_G, OAPI_KEY_H, OAPI_KEY_I, OAPI_KEY_J,
+		OAPI_KEY_K, OAPI_KEY_L, OAPI_KEY_M, OAPI_KEY_N, OAPI_KEY_O,
+		OAPI_KEY_P, OAPI_KEY_Q, OAPI_KEY_R, OAPI_KEY_S, OAPI_KEY_T,
+		OAPI_KEY_U, OAPI_KEY_V, OAPI_KEY_W, OAPI_KEY_X, OAPI_KEY_Y,
+		OAPI_KEY_Z,
+	};
+	// F-row: F1..F10 are contiguous in DIK (0x3B..0x44) but F11/F12 live
+	// at 0x57/0x58 — a linear offset would send F11→NUMLOCK, F12→SCROLL.
+	static const WORD kFRow[12] = {
+		OAPI_KEY_F1, OAPI_KEY_F2, OAPI_KEY_F3,  OAPI_KEY_F4,
+		OAPI_KEY_F5, OAPI_KEY_F6, OAPI_KEY_F7,  OAPI_KEY_F8,
+		OAPI_KEY_F9, OAPI_KEY_F10, OAPI_KEY_F11, OAPI_KEY_F12,
+	};
+
 	WORD k = 0;
 	for (ImGuiKey key = ImGuiKey_NamedKey_BEGIN;
 		 key < ImGuiKey_NamedKey_END;
@@ -280,12 +299,12 @@ bool OGLKeymapEditor::CaptureFromImGui(WORD &outBinding)
 	{
 		if (!ImGui::IsKeyPressed(key, false)) continue;
 		if (key >= ImGuiKey_A && key <= ImGuiKey_Z)
-			k = OAPI_KEY_A + (key - ImGuiKey_A);
-		else if (key >= ImGuiKey_0 && key <= ImGuiKey_9)
-			k = OAPI_KEY_1 + (key - ImGuiKey_1); // ImGuiKey_0 maps to OAPI_KEY_0 below
-		else if (key == ImGuiKey_0) k = OAPI_KEY_0;
+			k = kAlpha[key - ImGuiKey_A];
+		else if (key >= ImGuiKey_1 && key <= ImGuiKey_9)
+			k = OAPI_KEY_1 + (key - ImGuiKey_1); // 1..9 are contiguous (0x02..0x0A)
+		else if (key == ImGuiKey_0) k = OAPI_KEY_0; // 0 sits at 0x0B, past 9
 		else if (key >= ImGuiKey_F1 && key <= ImGuiKey_F12)
-			k = OAPI_KEY_F1 + (key - ImGuiKey_F1);
+			k = kFRow[key - ImGuiKey_F1];
 		else if (key == ImGuiKey_Space)      k = OAPI_KEY_SPACE;
 		else if (key == ImGuiKey_Enter)      k = OAPI_KEY_RETURN;
 		else if (key == ImGuiKey_Tab)        k = OAPI_KEY_TAB;
@@ -305,6 +324,15 @@ bool OGLKeymapEditor::CaptureFromImGui(WORD &outBinding)
 		else if (key == ImGuiKey_Slash)      k = OAPI_KEY_SLASH;
 		else if (key == ImGuiKey_Minus)      k = OAPI_KEY_MINUS;
 		else if (key == ImGuiKey_Equal)      k = OAPI_KEY_EQUALS;
+		// OEM keys by physical scancode position — ImGui reports the
+		// ISO/ANSI slot regardless of layout, so on Italian keyboards the
+		// è / + / ò / à / ù / \ keys route through these ImGui enums.
+		else if (key == ImGuiKey_LeftBracket)  k = OAPI_KEY_LBRACKET;
+		else if (key == ImGuiKey_RightBracket) k = OAPI_KEY_RBRACKET;
+		else if (key == ImGuiKey_Semicolon)    k = OAPI_KEY_SEMICOLON;
+		else if (key == ImGuiKey_Apostrophe)   k = OAPI_KEY_APOSTROPHE;
+		else if (key == ImGuiKey_Backslash)    k = OAPI_KEY_BACKSLASH;
+		else if (key == ImGuiKey_GraveAccent)  k = OAPI_KEY_GRAVE;
 		if (k) break;
 	}
 	if (!k) return false;
