@@ -7,6 +7,7 @@
 #ifndef _WIN32
 
 #include "OGLClient.h"
+#include "Util.h"  // ResolvePathIgnoreCase
 #include "OGLTexture.h"
 #include "OGLSurface.h"
 #include "OGLShaderMgr.h"
@@ -373,26 +374,28 @@ SURFHANDLE OGLClient::clbkLoadTexture(const char *fname, DWORD flags)
 	std::string normalizedName = fname;
 	for (auto &c : normalizedName) if (c == '\\') c = '/';
 
-	std::string tryPath = m_texturePath + normalizedName;
-	if (FileExists(tryPath.c_str())) {
-		OGLSurface *s = LoadTextureAsSurface(tryPath.c_str());
-		if (s) return (SURFHANDLE)s;
-	}
+	// Each lookup candidate is first probed literally, then via the
+	// case-insensitive resolver so references authored with Win32
+	// casing (e.g. "Atlantis\\MGAtlantis.dds" → "atlantis/mgatlantis.dds"
+	// on disk) resolve on POSIX without a manual rename pass.
+	auto tryLoad = [&](const std::string &path) -> OGLSurface* {
+		if (FileExists(path.c_str()))
+			return LoadTextureAsSurface(path.c_str());
+		const std::string resolved = ResolvePathIgnoreCase(path.c_str());
+		if (!resolved.empty() && resolved != path)
+			return LoadTextureAsSurface(resolved.c_str());
+		return nullptr;
+	};
 
-	if (FileExists(normalizedName.c_str())) {
-		OGLSurface *s = LoadTextureAsSurface(normalizedName.c_str());
-		if (s) return (SURFHANDLE)s;
-	}
+	if (OGLSurface *s = tryLoad(m_texturePath + normalizedName)) return (SURFHANDLE)s;
+	if (OGLSurface *s = tryLoad(normalizedName))                 return (SURFHANDLE)s;
 
 	const char *ext = strrchr(normalizedName.c_str(), '.');
 	if (!ext) {
 		const char *tryExts[] = { ".dds", ".bmp", ".tex", ".png", nullptr };
 		for (int i = 0; tryExts[i]; i++) {
-			std::string tryP = m_texturePath + normalizedName + tryExts[i];
-			if (FileExists(tryP.c_str())) {
-				OGLSurface *s = LoadTextureAsSurface(tryP.c_str());
-				if (s) return (SURFHANDLE)s;
-			}
+			if (OGLSurface *s = tryLoad(m_texturePath + normalizedName + tryExts[i]))
+				return (SURFHANDLE)s;
 		}
 	}
 

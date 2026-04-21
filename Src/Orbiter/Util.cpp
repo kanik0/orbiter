@@ -71,27 +71,25 @@ bool iequal(const std::string& s1, const std::string& s2)
 	return true;
 }
 
-bool OpenFileIgnoreCase(std::ifstream &f, const char *path,
-	std::ios_base::openmode mode)
+std::string ResolvePathIgnoreCase(const char *path)
 {
 #ifdef _WIN32
-	f.open(path, mode);
-	return f.good();
+	return path ? std::string(path) : std::string();
 #else
-	// Fast path: exact match.
-	f.open(path, mode);
-	if (f.good()) return true;
-	f.clear();
+	if (!path || !*path) return std::string();
 
-	// Split into directory + filename, then scan the directory for a
-	// case-insensitive match. Tolerates Win32-style "Vessels\\Foo.cfg"
-	// — the loop walks each path component independently so a
-	// case-mismatch in any segment is recovered.
+	// Fast path: exact match on the given path.
+	{
+		struct stat st;
+		if (stat(path, &st) == 0) return std::string(path);
+	}
+
+	// Walk the path one segment at a time, resolving each to its
+	// canonical (case-corrected) form on disk. Tolerates Win32-style
+	// "Vessels\\Foo.cfg" — path separators are normalised first.
 	std::string p = path;
 	for (auto &c : p) if (c == '\\') c = '/';
 
-	// Walk the path one segment at a time, resolving each to its
-	// canonical (case-corrected) form on disk.
 	std::string resolved;
 	if (!p.empty() && p.front() == '/') resolved = "/";
 	std::string remainder = p;
@@ -115,7 +113,7 @@ bool OpenFileIgnoreCase(std::ifstream &f, const char *path,
 			if (!parent.empty() && parent.back() == '/')
 				parent.pop_back();
 			DIR *d = opendir(parent.empty() ? "/" : parent.c_str());
-			if (!d) return false;
+			if (!d) return std::string();
 			std::string match;
 			struct dirent *e;
 			while ((e = readdir(d)) != nullptr) {
@@ -125,7 +123,7 @@ bool OpenFileIgnoreCase(std::ifstream &f, const char *path,
 				}
 			}
 			closedir(d);
-			if (match.empty()) return false;
+			if (match.empty()) return std::string();
 			resolved = (resolved.empty() ? match : resolved + match);
 		}
 		// Append the trailing slash so the next loop iteration can
@@ -134,6 +132,25 @@ bool OpenFileIgnoreCase(std::ifstream &f, const char *path,
 		remainder = rest;
 	}
 
+	return resolved;
+#endif
+}
+
+bool OpenFileIgnoreCase(std::ifstream &f, const char *path,
+	std::ios_base::openmode mode)
+{
+#ifdef _WIN32
+	f.open(path, mode);
+	return f.good();
+#else
+	// Fast path: exact open — avoids the stat+walk when the file is
+	// already named correctly on disk.
+	f.open(path, mode);
+	if (f.good()) return true;
+	f.clear();
+
+	const std::string resolved = ResolvePathIgnoreCase(path);
+	if (resolved.empty()) return false;
 	f.open(resolved.c_str(), mode);
 	return f.good();
 #endif

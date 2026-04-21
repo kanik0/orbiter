@@ -133,6 +133,10 @@ private:
 	std::string m_selectedScenario;
 	std::string m_selectedScenarioFull;
 	std::string m_selectedDescription;
+	// Raw HYPERDESC block (HTML) for the current selection, if any.
+	// Populated alongside m_selectedDescription so the UI can offer an
+	// "Open in browser" button without re-parsing the file.
+	std::string m_selectedHyperdesc;
 	bool m_selectionIsFolder = false;
 	ScenarioThumbnail m_selectedThumb;
 	bool m_startPaused = false;
@@ -164,6 +168,10 @@ private:
 	void ReleaseThumbnail();
 	// Decode HYPERDESC HTML markup into plain text (mirrors Win32 Html2Text).
 	static std::string HtmlToPlainText(const std::string &html);
+	// Write the current selection's HYPERDESC block to a temp HTML file
+	// and hand it to the platform's default browser (`open` on macOS,
+	// `xdg-open` elsewhere). No-op when no HYPERDESC is cached.
+	void OpenHyperdescInBrowser();
 
 	// Parse a sidecar .info file (see cmake/orbiter_module_info.cmake) into
 	// the (category, description) fields of `entry`. Missing file or
