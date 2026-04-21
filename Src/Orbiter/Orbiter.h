@@ -313,6 +313,12 @@ public:
 	inline void ReleaseSurfaceDC (SURFHANDLE surf, HDC hDC)
 	{ if (gclient) gclient->clbkReleaseSurfaceDC (surf, hDC); }
 
+	// `explicitDeltat` lets the macOS main loop drive the sim at a target
+	// cadence (60 Hz) by handing in a synthetic step size when catching up
+	// behind a slow render — otherwise each BeginTimeStep reads the
+	// wall-clock delta as before. See fix for #117.
+	bool BeginTimeStep (bool running, double explicitDeltat = -1.0);
+
 	bool SendKbdBuffered(DWORD key, DWORD *mod = 0, DWORD nmod = 0, bool onRunningOnly = false);
 	// Simulate a buffered keypress with an optional list of modifier keys
 
@@ -338,10 +344,10 @@ protected:
 
 	void BroadcastGlobalInit();
 
-	bool BeginTimeStep (bool running);
 	// Initialise the next frame time from the current system time. Returns true if
 	// time was advanced or if running==false (paused). Returns false if not enough time
-	// has passed since the current frame time (i.e. skip this update)
+	// has passed since the current frame time (i.e. skip this update).
+	// (Declaration hoisted to the public API block above for #117 decoupling.)
 
 	void EndTimeStep (bool running);
 	// Finish step update by copying next frame time data to current frame time data

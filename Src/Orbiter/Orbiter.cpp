@@ -1441,6 +1441,24 @@ INT Orbiter::Run ()
 	}
 
 	bool running = true;
+
+	// Decouple simulation cadence from render cadence (#117). Previously the
+	// macOS loop ran one sim step per render frame, so expensive scenes
+	// (e.g. track view with Earth LOD tiles) stretched Lua `proc.wait_frames`
+	// loops by 2–4×. Now we schedule sim steps at a target 60 Hz and let the
+	// renderer pull frames independently — each render iteration drains
+	// whatever sim work is due.
+	constexpr double   kSimHz       = 60.0;
+	constexpr double   kSimInterval = 1.0 / kSimHz;
+	// Cap absorbs up to ~1 s of render-side lag before the sim falls behind
+	// wall-clock. Lower caps (8, 16) left external camera still at ~40 Hz
+	// because track view drops into 4–5 fps on the current OGLClient, so the
+	// sim never caught up.
+	constexpr int      kMaxCatchup  = 60;
+	auto               simIntChrono = std::chrono::duration_cast<
+		std::chrono::steady_clock::duration>(std::chrono::duration<double>(kSimInterval));
+	auto               nextSimTime  = std::chrono::steady_clock::now();
+
 	while (running) {
 
 		// Process SDL events
@@ -1451,12 +1469,26 @@ INT Orbiter::Run ()
 
 		if (bSession) {
 			if (bAllowInput) bActive = true, bAllowInput = false;
-			if (BeginTimeStep (bRunning)) {
-				UpdateWorld();
-				EndTimeStep (bRunning);
-				if (bActive) UserInput();
-				bRenderOnce = TRUE;
+
+			auto nowT = std::chrono::steady_clock::now();
+			int  steps = 0;
+			while (nowT >= nextSimTime && steps < kMaxCatchup) {
+				if (BeginTimeStep (bRunning, kSimInterval)) {
+					UpdateWorld();
+					EndTimeStep (bRunning);
+					if (bActive) UserInput();
+					bRenderOnce = TRUE;
+				}
+				nextSimTime += simIntChrono;
+				++steps;
+				nowT = std::chrono::steady_clock::now();
 			}
+			// If we fell more than a second behind (laptop resume, huge GC
+			// pause, etc.) give up catching up so we don't spend the next
+			// several iterations CPU-bound on back-fill work.
+			if (nowT - nextSimTime > std::chrono::seconds(1))
+				nextSimTime = nowT;
+
 			if (m_pConsole)
 				m_pConsole->ParseCmd();
 		}
@@ -1468,6 +1500,18 @@ INT Orbiter::Run ()
 
 		if (!bSession) {
 			SDL_Delay(16); // ~60fps idle
+		} else {
+			// If the scheduled sim tick is still in the future *and* the
+			// render finished early, sleep the residual so we don't spin
+			// the CPU at thousands of iterations per second. Capped at
+			// the sim interval to stay responsive to SDL events.
+			auto nowT = std::chrono::steady_clock::now();
+			if (nowT < nextSimTime) {
+				auto slack = std::chrono::duration_cast<std::chrono::milliseconds>(
+					nextSimTime - nowT);
+				if (slack.count() > 0)
+					SDL_Delay((Uint32)std::min<long long>(slack.count(), 16));
+			}
 		}
 	}
 
@@ -2213,7 +2257,7 @@ VOID Orbiter::Output2DData ()
 // Name: BeginTimeStep()
 // Desc: Update timings for the current frame step
 //-----------------------------------------------------------------------------
-bool Orbiter::BeginTimeStep (bool running)
+bool Orbiter::BeginTimeStep (bool running, double explicitDeltat)
 {
 	// Check for a pause/resume request
 	if (bRequestRunning != running) {
@@ -2238,6 +2282,13 @@ bool Orbiter::BeginTimeStep (bool running)
 		deltat = 1e-2;
 		time_prev = time_curr - std::chrono::milliseconds(10);
 		launch_tick--;
+	} else if (explicitDeltat > 0.0) {
+		// Caller-driven sim cadence (macOS decoupled main loop, #117):
+		// each catch-up step advances SysDT by exactly the target interval
+		// regardless of how much wall-clock time elapsed since the previous
+		// call. Avoids SysDT≈0 on back-to-back BeginTimeStep invocations
+		// inside the same render iteration.
+		deltat = explicitDeltat;
 	} else {
 		// standard time update
 		std::chrono::duration<double> time_delta = time_curr - time_prev;
