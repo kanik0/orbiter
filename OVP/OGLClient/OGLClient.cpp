@@ -915,20 +915,17 @@ void OGLClient::RunM1SelfTest()
 
 bool OGLClient::clbkSetMeshTexture(DEVMESHHANDLE hMesh, DWORD texidx, SURFHANDLE tex)
 {
-	// A proper device-mesh texture override requires a per-DEVMESHHANDLE
-	// texture table (tracked by OGLvVessel, not the registry). That lands
-	// with M17 when the Sketchpad/MFD pipeline gains a distinct device mesh.
-	// For M2 we stay "not supported" so callers fall back to the template's
-	// own texture slot.
+	// Advertise "not supported" so callers fall back to the template's own
+	// texture slot. Per-DEVMESHHANDLE override tables are intentionally not
+	// tracked at the client level.
 	(void)hMesh; (void)texidx; (void)tex;
 	return false;
 }
 
 int OGLClient::clbkSetMeshMaterial(DEVMESHHANDLE hMesh, DWORD matidx, const MATERIAL *mat)
 {
-	// Material plumbing through a UBO is M3 territory — until then we advertise
-	// "not supported" so vessel modules fall back to their own legacy path.
-	// We do *not* invalidate: nothing on the GPU side changed.
+	// Advertise "not supported" so vessel modules fall back to their own
+	// legacy path. Nothing on the GPU side changes, so no invalidation.
 	(void)hMesh; (void)matidx; (void)mat;
 	return 2;
 }

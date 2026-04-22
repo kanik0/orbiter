@@ -15,22 +15,13 @@ permissions:
   actions: read
   contents: write
 
-env:
-  artifact-name: Orbiter-${{ inputs.version }}.zip
+# This is an experimental macOS / Apple Silicon port of Orbiter. Releases
+# from this fork ship the macOS arm64 .dmg only — Windows builds remain
+# the upstream orbitersim/orbiter project's responsibility. On-push macOS
+# builds are handled by on-push-macos.yml; this workflow is the tagged /
+# versioned equivalent for making dated public releases.
 
 jobs:
-  build:
-    name: Build Windows
-    uses: ./.github/workflows/reusable-build.yml
-    strategy:
-      fail-fast: false
-      matrix:
-        architecture: [x64, x86]
-    with:
-      architecture: ${{ matrix.architecture }}
-      upload: true
-      docs: true
-
   build-macos:
     name: Build macOS arm64
     uses: ./.github/workflows/reusable-build-macos.yml
@@ -42,7 +33,7 @@ jobs:
 
   package:
     name: Package
-    needs: [build, build-macos]
+    needs: [build-macos]
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -50,36 +41,24 @@ jobs:
     steps:
     - uses: actions/download-artifact@v8
       with:
-        name: Orbiter-x86
-        path: Orbiter-x86
-
-    - uses: actions/download-artifact@v8
-      with:
-        name: Orbiter-x64
-        path: Orbiter-x64
-
-    - uses: actions/download-artifact@v8
-      with:
         name: Orbiter-macos-arm64-release-dmg
         path: Orbiter-macos-arm64
 
-    - run: |
-        find .
-        mv Orbiter-x86/Orbiter.zip Orbiter-x86.zip
-        mv Orbiter-x64/Orbiter.zip Orbiter-x64.zip
-        mv Orbiter-macos-arm64/Orbiter-macos-arm64.dmg \
-           Orbiter-macos-arm64.dmg
+    - run: mv Orbiter-macos-arm64/Orbiter-macos-arm64.dmg Orbiter-macos-arm64.dmg
 
     - name: "Create release"
       uses: softprops/action-gh-release@v2
       with:
-        body: https://cdn.openorbiter.space/orbiter-releases/Orbiter-${{ inputs.version }}.zip
         tag_name: ${{ inputs.version }}
         prerelease: false
         make_latest: true
         target_commitish: ${{ github.sha }}
-        name: Orbiter ${{ inputs.version }}
+        name: Orbiter macOS ${{ inputs.version }}
+        body: |
+          Experimental macOS / Apple Silicon build of Orbiter.
+
+          Download `Orbiter-macos-arm64.dmg` and open it on an Apple
+          Silicon Mac. For Windows builds, see the upstream project at
+          https://github.com/orbitersim/orbiter.
         files: |
-          Orbiter-x86.zip
-          Orbiter-x64.zip
           Orbiter-macos-arm64.dmg
