@@ -72,13 +72,17 @@ add_custom_target(macos-bundle-distributable
 	COMMAND ${CMAKE_COMMAND} -E copy_directory
 		"${CMAKE_BINARY_DIR}/XRSound"       "${_dist}/Contents/Resources/XRSound"
 	# Doc / Html / Localdoc: copy source trees first, then overlay any
-	# PDFs produced during the build (e.g. XRSound User Manual) — the
-	# second copy_directory overwrites conflicting files, so generated
-	# PDFs win over their LaTeX/ODT sources.
+	# PDFs produced during the build (e.g. XRSound User Manual, which
+	# lands in ${CMAKE_BINARY_DIR}/Doc/). make_directory guarantees the
+	# overlay source exists even when no build step has populated it,
+	# and copy_directory onto an existing destination merges/overwrites
+	# so generated PDFs win over their LaTeX/ODT sources.
 	COMMAND ${CMAKE_COMMAND} -E copy_directory
 		"${CMAKE_SOURCE_DIR}/Doc"           "${_dist}/Contents/Resources/Doc"
-	COMMAND /bin/sh -c "[ -d '${CMAKE_BINARY_DIR}/Doc' ] && \
-		cmake -E copy_directory '${CMAKE_BINARY_DIR}/Doc' '${_dist}/Contents/Resources/Doc' || true"
+	COMMAND ${CMAKE_COMMAND} -E make_directory
+		"${CMAKE_BINARY_DIR}/Doc"
+	COMMAND ${CMAKE_COMMAND} -E copy_directory
+		"${CMAKE_BINARY_DIR}/Doc"           "${_dist}/Contents/Resources/Doc"
 	COMMAND ${CMAKE_COMMAND} -E copy_directory
 		"${CMAKE_SOURCE_DIR}/Html"          "${_dist}/Contents/Resources/Html"
 	COMMAND ${CMAKE_COMMAND} -E copy_directory
