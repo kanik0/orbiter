@@ -39,9 +39,24 @@ set(_entitlements "${CMAKE_SOURCE_DIR}/cmake/Orbiter.entitlements.plist")
 # Distributable bundle: same layout as macos-bundle but data dirs are
 # *copied* (not symlinked) so the .app is self-contained and survives
 # the round-trip through hdiutil.
+# Build up the DEPENDS list with guards so the target stays valid even
+# when Lua / XRSound / the celbody subtree are disabled in a given
+# configuration. Orbiter is always required; the others pull in the
+# artifacts referenced by the COMMAND list below.
+set(_bundle_deps Orbiter)
+if(TARGET celbody_symlinks)
+	list(APPEND _bundle_deps celbody_symlinks)
+endif()
+if(TARGET XRSound_assets)
+	list(APPEND _bundle_deps XRSound_assets)
+endif()
+if(TARGET lua)
+	list(APPEND _bundle_deps lua)
+endif()
+
 add_custom_target(macos-bundle-distributable
 	COMMENT "Creating distributable Orbiter.app (copy data dirs)..."
-	DEPENDS Orbiter
+	DEPENDS ${_bundle_deps}
 	COMMAND ${CMAKE_COMMAND} -E rm -rf "${_dist}"
 	COMMAND ${CMAKE_COMMAND} -E make_directory "${_dist}/Contents/MacOS"
 	COMMAND ${CMAKE_COMMAND} -E make_directory "${_dist}/Contents/Resources"
@@ -59,6 +74,12 @@ add_custom_target(macos-bundle-distributable
 		"${CMAKE_BINARY_DIR}/Scenarios"     "${_dist}/Contents/Resources/Scenarios"
 	COMMAND ${CMAKE_COMMAND} -E copy_directory
 		"${CMAKE_BINARY_DIR}/Modules"       "${_dist}/Contents/Resources/Modules"
+	# liblua.dylib is produced in the build root by Extern/Lua and is
+	# referenced via @rpath by every vessel module and Lua plugin.
+	# Drop it inside Modules/ so the dylibs resolve it via @loader_path
+	# (Modules/*.dylib) or @loader_path/.. (Modules/Plugin/*.dylib).
+	COMMAND ${CMAKE_COMMAND} -E copy
+		"${CMAKE_BINARY_DIR}/liblua.dylib"  "${_dist}/Contents/Resources/Modules/"
 	COMMAND ${CMAKE_COMMAND} -E copy_directory
 		"${CMAKE_BINARY_DIR}/Fonts"         "${_dist}/Contents/Resources/Fonts"
 	COMMAND ${CMAKE_COMMAND} -E copy_directory
