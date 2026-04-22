@@ -368,7 +368,6 @@ bool VesselBase::SurfaceProximity () const
 	return sp.alt < 3.0*size;
 #ifdef UNDEF
 	if (!proxybody) return false;
-	//if (bTouchdown) return true;  // TODO
 	double rad = proxybody->Size();
 	double dist = s0->pos.dist (proxybody->s0->pos);
 	double alt = dist-rad-Elevation();

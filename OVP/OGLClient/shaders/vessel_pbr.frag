@@ -157,7 +157,7 @@ void main() {
     }
 
     vec3 color = ambientColor + Lo + emission;
-    color = color / (color + 1.0);  // Reinhard placeholder until M11 HDR
+    color = color / (color + 1.0);  // Reinhard tonemap
 
     FragColor = vec4(color, albedo.a);
 }

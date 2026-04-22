@@ -63,6 +63,26 @@ add_custom_target(macos-bundle-distributable
 		"${CMAKE_BINARY_DIR}/Fonts"         "${_dist}/Contents/Resources/Fonts"
 	COMMAND ${CMAKE_COMMAND} -E copy_directory
 		"${CMAKE_BINARY_DIR}/GravityModels" "${_dist}/Contents/Resources/GravityModels"
+	COMMAND ${CMAKE_COMMAND} -E copy_directory
+		"${CMAKE_BINARY_DIR}/Script"        "${_dist}/Contents/Resources/Script"
+	COMMAND ${CMAKE_COMMAND} -E copy_directory
+		"${CMAKE_BINARY_DIR}/Flights"       "${_dist}/Contents/Resources/Flights"
+	# XRSound runtime assets: configs + Default/*.wav pack (produced by
+	# Sound/XRSound/CMakeLists.txt in the build tree, not in the source tree).
+	COMMAND ${CMAKE_COMMAND} -E copy_directory
+		"${CMAKE_BINARY_DIR}/XRSound"       "${_dist}/Contents/Resources/XRSound"
+	# Doc / Html / Localdoc: copy source trees first, then overlay any
+	# PDFs produced during the build (e.g. XRSound User Manual) — the
+	# second copy_directory overwrites conflicting files, so generated
+	# PDFs win over their LaTeX/ODT sources.
+	COMMAND ${CMAKE_COMMAND} -E copy_directory
+		"${CMAKE_SOURCE_DIR}/Doc"           "${_dist}/Contents/Resources/Doc"
+	COMMAND /bin/sh -c "[ -d '${CMAKE_BINARY_DIR}/Doc' ] && \
+		cmake -E copy_directory '${CMAKE_BINARY_DIR}/Doc' '${_dist}/Contents/Resources/Doc' || true"
+	COMMAND ${CMAKE_COMMAND} -E copy_directory
+		"${CMAKE_SOURCE_DIR}/Html"          "${_dist}/Contents/Resources/Html"
+	COMMAND ${CMAKE_COMMAND} -E copy_directory
+		"${CMAKE_SOURCE_DIR}/Localdoc"      "${_dist}/Contents/Resources/Localdoc"
 )
 
 # codesign step. Handles three cases:
