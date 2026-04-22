@@ -96,6 +96,17 @@ DefaultPanel::DefaultPanel (Pane *_pane, int cidx): pane(_pane)
 	mfdPen = NULL;
 
 	InitDeviceObjects ();
+
+	// Populate MFD side-button labels for any Instrument that already
+	// exists on this Pane. SetGeometry() has left their UVs on a blank
+	// placeholder slot, and RepaintMFDButtons() is otherwise only invoked
+	// from Pane::OpenMFD() → MFDModeChanged(), which is skipped when the
+	// panel is re-instantiated (e.g. F1 back to generic cockpit) with the
+	// same MFD mode still active. The bottom PWR / SEL / MNU buttons use
+	// texture-baked glyphs laid out in SetGeometry() and aren't affected.
+	// RepaintMFDButtons() short-circuits when gc or mfd[id].instr is null,
+	// so this is a no-op on first boot before any MFD has been opened.
+	for (int i = 0; i < 2; i++) RepaintMFDButtons(i);
 }
 
 DefaultPanel::~DefaultPanel ()
