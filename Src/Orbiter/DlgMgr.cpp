@@ -593,6 +593,15 @@ void DialogManager::InitImGui()
 		}
 	}
 
+	// Consolidate the atlas into a single atomic Build() pass now that
+	// every glyph has been requested. Build() is marked obsolete in 1.92
+	// but still does the right thing: it re-packs all baked glyphs into
+	// a stable texture layout and sets TexIsBuilt. After this point
+	// ImGui will only rebuild if brand-new (size, glyph) triples arrive
+	// at runtime — and the 8..48 × 0x20..0x7E range above pre-empts
+	// every size the MFDs, HUD and VC text layers can request.
+	io.Fonts->Build();
+
 #ifdef _WIN32
 	ImGui_ImplWin32_Init(hWnd);
 #endif
