@@ -522,18 +522,33 @@ bool OGLSketchpad::Text(int x, int y, const char *str, int len)
 		ImFontGlyph *glyph = baked->FindGlyph((ImWchar)codepoint);
 		if (!glyph) continue;
 
+		// The cached glyph->U0..V1 are only valid for the TexRef that
+		// was current when the glyph was last baked. ImGui 1.92 may
+		// repack the atlas at any time (new font-size triples arrive,
+		// dynamic fit), invalidating cached UVs on glyphs baked during
+		// earlier passes — those glyphs then sample empty texels. The
+		// imgui.h comment is explicit: "Always use latest values from
+		// GetCustomRect()." (#123)
+		ImFontAtlasRect rect;
+		float u0 = glyph->U0, u1 = glyph->U1, v0 = glyph->V0, v1 = glyph->V1;
+		if (glyph->PackId >= 0 &&
+		    atlas->GetCustomRect(glyph->PackId, &rect)) {
+			u0 = rect.uv0.x; v0 = rect.uv0.y;
+			u1 = rect.uv1.x; v1 = rect.uv1.y;
+		}
+
 		float gx0 = pen + glyph->X0;
 		float gy0 = py  + glyph->Y0;
 		float gx1 = pen + glyph->X1;
 		float gy1 = py  + glyph->Y1;
 
 		quads.insert(quads.end(), {
-			gx0, gy0, glyph->U0, glyph->V0,
-			gx1, gy0, glyph->U1, glyph->V0,
-			gx0, gy1, glyph->U0, glyph->V1,
-			gx1, gy0, glyph->U1, glyph->V0,
-			gx1, gy1, glyph->U1, glyph->V1,
-			gx0, gy1, glyph->U0, glyph->V1,
+			gx0, gy0, u0, v0,
+			gx1, gy0, u1, v0,
+			gx0, gy1, u0, v1,
+			gx1, gy0, u1, v0,
+			gx1, gy1, u1, v1,
+			gx0, gy1, u0, v1,
 		});
 		pen += glyph->AdvanceX;
 	}
@@ -1439,6 +1454,14 @@ void OGLSketchpad::TextEx(float x, float y, const char *str,
 		ImFontGlyph *g = baked->FindGlyph((ImWchar)cp);
 		if (!g) continue;
 
+		// See Text() above for why cached UVs are untrusted. (#123)
+		ImFontAtlasRect rect;
+		float u0 = g->U0, u1 = g->U1, v0 = g->V0, v1 = g->V1;
+		if (g->PackId >= 0 && atlas->GetCustomRect(g->PackId, &rect)) {
+			u0 = rect.uv0.x; v0 = rect.uv0.y;
+			u1 = rect.uv1.x; v1 = rect.uv1.y;
+		}
+
 		// Local-space (unrotated) corners.
 		const float lx0 = pen + g->X0, lx1 = pen + g->X1;
 		const float ly0 = g->Y0,       ly1 = g->Y1;
@@ -1453,12 +1476,12 @@ void OGLSketchpad::TextEx(float x, float y, const char *str,
 		rot(lx0, ly1, rx3, ry3);
 
 		quads.insert(quads.end(), {
-			rx0, ry0, g->U0, g->V0,
-			rx1, ry1, g->U1, g->V0,
-			rx3, ry3, g->U0, g->V1,
-			rx1, ry1, g->U1, g->V0,
-			rx2, ry2, g->U1, g->V1,
-			rx3, ry3, g->U0, g->V1,
+			rx0, ry0, u0, v0,
+			rx1, ry1, u1, v0,
+			rx3, ry3, u0, v1,
+			rx1, ry1, u1, v0,
+			rx2, ry2, u1, v1,
+			rx3, ry3, u0, v1,
 		});
 		pen += g->AdvanceX;
 	}
