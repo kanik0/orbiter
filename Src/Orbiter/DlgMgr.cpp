@@ -558,6 +558,31 @@ void DialogManager::InitImGui()
 	manuscriptFont = safeLoadFont(prm.ImGui_ManuscriptFontFile, prm.ImGui_FontSize);
 	if (!manuscriptFont) manuscriptFont = defaultFont;
 
+	// Force ImGui 1.92 to pre-bake every printable ASCII glyph at each
+	// font size the MFDs and HUD can request, before any rendering
+	// happens. Without this, ImGui bakes glyphs lazily the first time a
+	// (font, size, codepoint) triple is drawn; successive bakes can
+	// repack the atlas, and ImFontGlyph::{U0..V1} is documented as
+	// "valid only for the current value of atlas->TexRef". On macOS
+	// Metal-wrapped OpenGL this results in specific letters disappearing
+	// from MFD text (#123 — "MODE SELECT" rendered as "M E SE E T"
+	// because O, D, L, C were baked in a later atlas repack whose UVs
+	// no longer map to the currently-bound texture). Pre-baking fixes
+	// the atlas layout once and for all at startup.
+	//
+	// Size range 10..30 covers every MFD/HUD size observed in the port
+	// (HUD 17/20/23, MFD mode 13/17/25, VC MFD title 34). Memory cost
+	// is bounded: ~5 fonts × 21 sizes × 95 glyphs ≈ 10k rasters.
+	ImFont *fontsToBake[] = { defaultFont, consoleFont, monoFont, manuscriptFont };
+	for (ImFont *f : fontsToBake) {
+		if (!f) continue;
+		for (int szInt = 10; szInt <= 30; szInt++) {
+			ImFontBaked *baked = f->GetFontBaked((float)szInt);
+			if (!baked) continue;
+			for (ImWchar c = 0x20; c < 0x7F; c++) baked->FindGlyph(c);
+		}
+	}
+
 #ifdef _WIN32
 	ImGui_ImplWin32_Init(hWnd);
 #endif
