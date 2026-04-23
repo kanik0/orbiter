@@ -558,6 +558,50 @@ void DialogManager::InitImGui()
 	manuscriptFont = safeLoadFont(prm.ImGui_ManuscriptFontFile, prm.ImGui_FontSize);
 	if (!manuscriptFont) manuscriptFont = defaultFont;
 
+	// Force ImGui 1.92 to pre-bake every printable ASCII glyph at every
+	// font size the MFDs and HUD can request, before any rendering
+	// happens. Without this, ImGui bakes glyphs lazily the first time a
+	// (font, size, codepoint) triple is drawn; subsequent bakes can
+	// repack the atlas, and ImFontGlyph::{U0..V1} are documented as
+	// "valid only for the current value of atlas->TexRef" (imgui.h,
+	// ImFontAtlas comment). On macOS with the Metal-wrapped OpenGL
+	// driver that repack leaves stale UVs on the subset of glyphs
+	// baked during the earlier pass — those glyphs sample empty texels
+	// and render invisibly while their AdvanceX still moves the pen.
+	// Observable effect (#123): "MODE SELECT" rendered as "M E SE E T",
+	// "Orbit" as "r t", "Surface" as "S r ace", with the missing-letter
+	// set shifting each time a new font-size is requested at runtime.
+	//
+	// Two measures prevent the repack entirely:
+	//   1. Pre-allocate a 2048² atlas (TexMinWidth/Height) so growth
+	//      past the 512×128 default never has to happen.
+	//   2. Walk every printable ASCII codepoint (0x20..0x7E) at every
+	//      integer size 8..48 on every registered font. MFDs use 13/17/
+	//      20/23/25/34; HUD uses 17/20/23. Bracketing 8..48 also
+	//      absorbs VC title scaling without any atlas growth.
+	// Memory cost: ~4 fonts × 41 sizes × 95 glyphs ≈ 15k rasters, a
+	// small fraction of the 2048² atlas.
+	io.Fonts->TexMinWidth = 2048;
+	io.Fonts->TexMinHeight = 2048;
+	ImFont *fontsToBake[] = { defaultFont, consoleFont, monoFont, manuscriptFont };
+	for (ImFont *f : fontsToBake) {
+		if (!f) continue;
+		for (int szInt = 8; szInt <= 48; szInt++) {
+			ImFontBaked *baked = f->GetFontBaked((float)szInt);
+			if (!baked) continue;
+			for (ImWchar c = 0x20; c < 0x7F; c++) baked->FindGlyph(c);
+		}
+	}
+
+	// Consolidate the atlas into a single atomic Build() pass now that
+	// every glyph has been requested. Build() is marked obsolete in 1.92
+	// but still does the right thing: it re-packs all baked glyphs into
+	// a stable texture layout and sets TexIsBuilt. After this point
+	// ImGui will only rebuild if brand-new (size, glyph) triples arrive
+	// at runtime — and the 8..48 × 0x20..0x7E range above pre-empts
+	// every size the MFDs, HUD and VC text layers can request.
+	io.Fonts->Build();
+
 #ifdef _WIN32
 	ImGui_ImplWin32_Init(hWnd);
 #endif
