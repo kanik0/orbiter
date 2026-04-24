@@ -8,8 +8,10 @@
 // drew through ImGui::GetForegroundDrawList() and so never touched the
 // target surface, leaving MFD textures black.
 //
-// Text is drawn by emitting per-glyph textured quads that sample ImGui's
-// font atlas (already uploaded to GL as part of ImGui_ImplOpenGL3 init).
+// Text is drawn by emitting per-glyph textured quads that sample the
+// process-lifetime OGLTextAtlas (built once at startup from stb_truetype
+// rasters; see OGLTextAtlas.h for why ImGui's dynamic atlas couldn't be
+// used here).
 
 #ifndef __OGLSKETCHPAD_H
 #define __OGLSKETCHPAD_H
@@ -18,11 +20,10 @@
 
 #include "DrawAPI.h"
 #include "OrbiterAPI.h"
+#include "OGLTextAtlas.h"
 #include <OpenGL/gl3.h>
 #include <array>
 #include <vector>
-
-struct ImFont;
 
 namespace ogl {
 
@@ -35,8 +36,8 @@ class OGLFont : public oapi::Font {
 public:
 	OGLFont(int height, bool prop, const char *face,
 	        FontStyle style, int orientation);
-	ImFont *imFont;
-	float   fontSize;
+	FontId  fontId;     // resolved from (prop, face) at construction
+	float   fontSize;   // pen-line height in pixels
 };
 
 class OGLPen : public oapi::Pen {

@@ -21,6 +21,7 @@ if(NOT WIN32)
 		OGLCelSphere.cpp
 		OGLSurface.cpp
 		OGLSketchpad.cpp
+		OGLTextAtlas.cpp
 		OGLLaunchpad.cpp
 		OGLWindowMgr.cpp
 		OGLKeymapEditor.cpp
