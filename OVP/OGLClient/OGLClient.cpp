@@ -522,6 +522,18 @@ void OGLClient::BlitQuad(OGLSurface *tgt, DWORD tgtx, DWORD tgty, DWORD tgtw, DW
 {
 	if (!m_blitShader || !m_blitVAO || !src) return;
 
+	// Bail on degenerate surfaces before touching GL state. A source or
+	// target whose GL texture failed to allocate (e.g. a Dragonfly panel
+	// area registered with a bogus size in #130) sits here as an
+	// OGLSurface with sane-looking metadata but no backing storage —
+	// sampling or attaching it otherwise trips a SIGSEGV inside the
+	// driver.
+	if (src->GetTexture() == 0 ||
+	    src->GetWidth() == 0 || src->GetHeight() == 0 ||
+	    src->GetWidth() > 16384 || src->GetHeight() > 16384) return;
+	if (tgt && (tgt->GetWidth() == 0 || tgt->GetHeight() == 0 ||
+	            tgt->GetWidth() > 16384 || tgt->GetHeight() > 16384)) return;
+
 	// Compute source UV coords
 	float sw = (float)src->GetWidth(), sh = (float)src->GetHeight();
 	float u0 = (float)srcx / sw, v0 = (float)srcy / sh;
@@ -603,7 +615,13 @@ void OGLClient::BlitQuad(OGLSurface *tgt, DWORD tgtx, DWORD tgty, DWORD tgtw, DW
 	// colorkey path.
 	glDisable(GL_BLEND);
 	glDisable(GL_DEPTH_TEST);
-	glViewport(0, 0, tgt->GetWidth(), tgt->GetHeight());
+	// Viewport is already configured above: tgt->BindFBO() sets it to the
+	// target surface's dimensions, and the backbuffer branch sets it to
+	// (m_viewW, m_viewH). The earlier unconditional
+	// `glViewport(0, 0, tgt->GetWidth(), tgt->GetHeight())` here
+	// dereferenced tgt and SIGSEGV'd whenever a caller legitimately passed
+	// tgt=NULL (Panel::SetArea with a NULL Panel::surf after a failed
+	// DefineBackground, #130).
 
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 

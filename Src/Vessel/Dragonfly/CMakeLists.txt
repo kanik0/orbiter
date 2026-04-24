@@ -47,7 +47,7 @@ add_custom_command(
 
 add_custom_command(
 	TARGET Dragonfly PRE_BUILD
-	COMMAND ${CMAKE_COMMAND} -E copy_directory ${MESH_SOURCE_DIR}/ ${CMAKE_BINARY_DIR}/Meshes
+	COMMAND ${CMAKE_COMMAND} -E copy_directory ${MESH_SOURCE_DIR}/ ${CMAKE_BINARY_DIR}/Meshes/Dragonfly
 )
 
 add_custom_command(

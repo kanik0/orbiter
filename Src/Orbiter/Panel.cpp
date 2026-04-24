@@ -141,15 +141,22 @@ void Panel::DefineBackground (HBITMAP hBmp, DWORD flag, DWORD _ck)
 {
 	if (!gc) return;
 
-	//HRESULT res;
-	BITMAP bm;
-
 	if (surf) gc->clbkReleaseSurface (surf);
+
+	// Zero-init so macOS/Linux — where GetObject is a no-op stub
+	// (OrbiterPlatform.h) and hBmp is often nullptr because the GDI
+	// helpers that produced it are also stubs — don't leak uninit
+	// stack bytes into srcW/srcH. Without this the Dragonfly panel
+	// background produced a ~2.3-billion-pixel srcW and later crashed
+	// the OGL client in BlitQuad (#130).
+	BITMAP bm = {};
+	if (!hBmp) { surf = nullptr; srcW = srcH = 0; return; }
 
 	// bitmap size
     GetObject (hBmp, sizeof(bm), &bm);
     srcW = bm.bmWidth;
 	srcH = bm.bmHeight;
+	if (srcW <= 0 || srcH <= 0) { surf = nullptr; srcW = srcH = 0; return; }
 	tgtW = (int)(scale*srcW);
 	tgtH = (int)(scale*srcH);
 
@@ -219,6 +226,22 @@ void Panel::DefineArea (int aid, const RECT &pos, int draw_mode, int mouse_mode,
 {
 	// sanity-checks
 	if (draw_mode == PANEL_REDRAW_NEVER) bkmode = PANEL_MAP_NONE;
+
+	// Caller-passed RECT sanity. A malformed RECT (right < left, bottom
+	// < top, or an area wider/taller than the largest MFD the engine
+	// ships with) will propagate into clbkCreateSurface as a garbage
+	// width/height and crash the OGL client downstream (#130). Drop the
+	// registration and log the offender so the upstream bug can be
+	// pinned to a specific area id + rect.
+	const int w = pos.right - pos.left;
+	const int h = pos.bottom - pos.top;
+	if (w <= 0 || h <= 0 || w > 16384 || h > 16384) {
+		LOGOUT_ERR("Panel::DefineArea skipping aid=%d with malformed RECT "
+		           "(left=%ld, top=%ld, right=%ld, bottom=%ld) → %dx%d",
+		           aid, (long)pos.left, (long)pos.top,
+		           (long)pos.right, (long)pos.bottom, w, h);
+		return;
+	}
 
 	if (narea == nareabuf) {
 		Area **tmp = new Area*[nareabuf += 32]; TRACENEW

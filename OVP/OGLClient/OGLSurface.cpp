@@ -73,6 +73,24 @@ bool OGLSurface::Create(DWORD w, DWORD h, DWORD attrib)
 
 bool OGLSurface::CreateEx(DWORD w, DWORD h, DWORD attrib, int samples, bool wantStencil)
 {
+	// Reject obviously-bogus dimensions before any GL call. Passing
+	// w=2625193536 to glTexImage2D silently fails on the macOS driver —
+	// the texture handle is valid but the storage is undefined, which
+	// later trips FRAMEBUFFER_INCOMPLETE_ATTACHMENT on FBO attachment
+	// and a SIGSEGV inside BlitQuad when the caller samples the phantom
+	// texture. Upper bound is the most conservative GL_MAX_TEXTURE_SIZE
+	// any supported macOS/Metal GPU exposes (Apple Silicon reports
+	// 16384, Intel HD 4000 8192). Anything larger here is a caller bug.
+	// #130 tracks the Dragonfly panel-area registration that currently
+	// asks for 2625193536x12.
+	if (w == 0 || h == 0 || w > 16384 || h > 16384) {
+		fprintf(stderr,
+		        "[OGLSurface] CreateEx rejected bogus size %ux%u "
+		        "(attrib=0x%04lx)\n",
+		        (unsigned)w, (unsigned)h, (unsigned long)attrib);
+		return false;
+	}
+
 	m_width        = w;
 	m_height       = h;
 	m_attrib       = attrib;
