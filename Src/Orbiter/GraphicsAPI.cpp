@@ -587,8 +587,19 @@ void GraphicsClient::clbkRender2DPanel (SURFHANDLE *hSurf, MESHHANDLE hMesh, MAT
 
 SURFHANDLE GraphicsClient::clbkCreateSurface (HBITMAP hBmp)
 {
-	BITMAP bm;
+	// On macOS/Linux HBITMAP and the GDI bitmap helpers are empty stubs
+	// (OrbiterPlatform.h): CreateCompatibleBitmap returns nullptr, and
+	// GetObject(HBITMAP, …) is a no-op that doesn't touch the caller's
+	// BITMAP struct. Without zero-initialisation `bm` then held stack
+	// garbage and we propagated a ~2.3-billion-pixel width down to
+	// clbkCreateSurface → OGL driver SIGSEGV when the subsequent blit
+	// sampled the phantom texture (#130, Dragonfly panel background).
+	// Refuse a NULL bitmap handle up front and zero the BITMAP shadow so
+	// a failing GetObject surfaces as a NULL SURFHANDLE instead.
+	if (!hBmp) return nullptr;
+	BITMAP bm = {};
 	GetObject (hBmp, sizeof(bm), &bm);
+	if (bm.bmWidth <= 0 || bm.bmHeight <= 0) return nullptr;
 	SURFHANDLE surf = clbkCreateSurface (bm.bmWidth, bm.bmHeight);
 	if (surf) {
 		if (!clbkCopyBitmap (surf, hBmp, 0, 0, 0, 0)) {
