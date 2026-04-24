@@ -1194,7 +1194,10 @@ void Pane::RegisterPanelBackground (HBITMAP hBmp, DWORD flag, DWORD ck)
 
 void Pane::RegisterPanelBackground (SURFHANDLE hSurf, DWORD flag)
 {
-	// todo
+	if (panel) panel->DefineBackgroundSurface (hSurf, flag);
+	// Ownership transfers to Panel::DefineBackgroundSurface, which will
+	// release the surface when the panel is torn down. No Orbiter-side
+	// cleanup required here.
 }
 
 void Pane::RegisterPanelArea (int aid, const RECT &pos, int draw_mode, int mouse_mode, int bkmode)
