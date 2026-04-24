@@ -222,6 +222,76 @@ void Panel::DefineBackground (HBITMAP hBmp, DWORD flag, DWORD _ck)
 	visible = true;
 }
 
+void Panel::DefineBackgroundSurface (SURFHANDLE hSurf, DWORD flag)
+{
+	if (!gc) return;
+
+	if (surf) gc->clbkReleaseSurface (surf);
+
+	// Direct SURFHANDLE entry for vessels whose GDI-based bitmap path is
+	// not usable (macOS/Linux stubs of CreateCompatibleBitmap). Ownership
+	// of hSurf transfers here — the panel will release it at teardown.
+	if (!hSurf) { surf = nullptr; srcW = srcH = 0; return; }
+
+	DWORD w = 0, h = 0;
+	if (!gc->clbkGetSurfaceSize (hSurf, &w, &h) || w <= 0 || h <= 0) {
+		gc->clbkReleaseSurface (hSurf);
+		surf = nullptr; srcW = srcH = 0;
+		return;
+	}
+
+	surf = hSurf;
+	srcW = (int)w;
+	srcH = (int)h;
+	tgtW = (int)(scale*srcW);
+	tgtH = (int)(scale*srcH);
+
+	shiftflag = flag & 0x00FF;
+	if (shiftflag & PANEL_ATTACH_BOTTOM) shiftflag |= PANEL_MOVEOUT_TOP;
+	if (shiftflag & PANEL_ATTACH_TOP)    shiftflag |= PANEL_MOVEOUT_BOTTOM;
+	if (shiftflag & PANEL_ATTACH_LEFT)   shiftflag |= PANEL_MOVEOUT_RIGHT;
+	if (shiftflag & PANEL_ATTACH_RIGHT)  shiftflag |= PANEL_MOVEOUT_LEFT;
+
+	if (shiftflag & PANEL_ATTACH_TOP && shiftflag & PANEL_ATTACH_BOTTOM) {
+		if (tgtH < pane->H) {
+			scale = (double)pane->H/(double)srcH;
+			tgtW = (int)(scale*srcW);
+			tgtH = (int)(scale*srcH);
+			iscale  = 1.0/scale;
+			scaled  = (scale != 1.0);
+		}
+	}
+
+	X0 = ((LONG)pane->W - tgtW)/2;
+	if      ((shiftflag & 0x0003) == PANEL_ATTACH_BOTTOM) Y0 = (LONG)pane->H - tgtH;
+	else if ((shiftflag & 0x0003) == PANEL_ATTACH_TOP)    Y0 = 0;
+	else                                                  Y0 = ((LONG)pane->H - tgtH)/2;
+
+	tgtRect.left   = (X0 >= 0 ? X0 : 0);
+	tgtRect.top    = (Y0 >= 0 ? Y0 : 0);
+	tgtRect.right  = min (tgtRect.left+tgtW, (LONG)pane->W);
+	tgtRect.bottom = min (tgtRect.top+tgtH, (LONG)pane->H);
+
+	srcRect.left   = tgtRect.left-X0;
+	srcRect.top    = tgtRect.top-Y0;
+	srcRect.right  = srcRect.left + (tgtRect.right-tgtRect.left);
+	srcRect.bottom = srcRect.top  + (tgtRect.bottom-tgtRect.top);
+
+	if (scaled) {
+		srcRect.left   = max((LONG)(srcRect.left  *iscale), (LONG)0);
+		srcRect.top    = max((LONG)(srcRect.top   *iscale), (LONG)0);
+		srcRect.right  = min((LONG)(srcRect.right * iscale), srcW);
+		srcRect.bottom = min((LONG)(srcRect.bottom* iscale), srcH);
+	}
+
+	// SURFHANDLE path never carries a Win32 GDI colour-key; callers that
+	// want keyed blits should author the transparent pixels directly.
+	bltflag = 0;
+	has_ck = false;
+
+	visible = true;
+}
+
 void Panel::DefineArea (int aid, const RECT &pos, int draw_mode, int mouse_mode, int bkmode)
 {
 	// sanity-checks

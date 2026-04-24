@@ -57,6 +57,12 @@ public:
 	// converts rectangle from unscaled panel space to viewport space
 
 	void DefineBackground (HBITMAP hBmp, DWORD flag, DWORD ck = (DWORD)-1);
+// Alternative entry point for vessels that can't produce an HBITMAP
+// (non-Windows builds whose CreateCompatibleBitmap is a stub). Takes
+// ownership of `hSurf` — it will be released when the panel is torn
+// down. Name-disambiguated from the HBITMAP overload because
+// HBITMAP and SURFHANDLE are both `void*` typedefs on macOS/Linux.
+void DefineBackgroundSurface (SURFHANDLE hSurf, DWORD flag);
 
 	void DefineArea (int aid, const RECT &pos, int draw_mode, int mouse_mode, int bkmode);
 	void ReleaseAreas ();

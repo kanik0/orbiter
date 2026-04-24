@@ -125,7 +125,8 @@ Panel::~Panel()
   };
 };
 void Panel::MakeYourBackground()
-{ 
+{
+#ifdef _WIN32
 	surf=oapiCreateSurface(Wdth,Hght);
 	hDC=oapiGetDC(surf);
 	hDC2=CreateCompatibleDC(hDC);
@@ -142,8 +143,84 @@ void Panel::MakeYourBackground()
 	DeleteDC(hDC2);
 	oapiReleaseDC(surf,hDC);
 	oapiDestroySurface(surf);
+#else
+	// macOS / Linux: every GDI helper the Win32 path uses
+	// (CreateCompatibleBitmap, SelectObject, Rectangle, TextOut, Arc, …)
+	// is an empty stub in OrbiterPlatform.h, so the original code
+	// produced a NULL HBITMAP and an empty panel background (#133). Build
+	// the background through oapi::Sketchpad instead, keep the backing
+	// SURFHANDLE, and hand it to oapiRegisterPanelBackground's SURFHANDLE
+	// overload from Dragonfly::LoadPanel.
+	hBitmap = nullptr;
+	surf = oapiCreateSurface(Wdth, Hght);
+	if (!surf) return;
 
-	
+	oapi::Sketchpad *skp = oapiGetSketchpad(surf);
+	if (!skp) { oapiDestroySurface(surf); surf = nullptr; return; }
+
+	// Panel fill (hBRUSH_Background = RGB(145,48,48)).
+	skp->QuickBrush(RGB(145, 48, 48));
+	skp->QuickPen(0, 0, 0);
+	skp->Rectangle(0, 0, Wdth, Hght);
+
+	// Screws — white outline circle with a diagonal scratch through it.
+	const int di = (int)(5 * sqrt(2.0) / 2);
+	skp->QuickPen(RGB(250, 250, 250), 1, 1);
+	skp->QuickBrush(RGB(145, 48, 48));
+	for (int i = 0; i < screw_num; i++) {
+		int x = Screw_list[i].x, y = Screw_list[i].y;
+		skp->Ellipse(x - 5, y - 5, x + 5, y + 5);
+		skp->Line(x - di, y - di, x + di, y + di);
+	}
+
+	// Labels — red, centre-aligned, transparent background (the GDI path
+	// used SetTextColor RGB(255,100,100) even though the brush handle
+	// naming suggests cyan; we honour the actual rendered colour).
+	skp->SetTextAlign(oapi::Sketchpad::CENTER, oapi::Sketchpad::TOP);
+	skp->SetTextColor(RGB(255, 100, 100));
+	skp->SetBackgroundMode(oapi::Sketchpad::BK_TRANSPARENT);
+	for (int i = 0; i < text_num; i++) {
+		skp->Text(Text_list[i].x, Text_list[i].y,
+		          Text_list[i].text, (int)strlen(Text_list[i].text));
+	}
+
+	// Column text — short tab frame above/below the label, opaque bg so
+	// the tab cuts through the frame line neatly.
+	skp->QuickPen(RGB(255, 100, 100), 1, 1);
+	skp->SetBackgroundMode(oapi::Sketchpad::BK_OPAQUE);
+	skp->SetBackgroundColor(RGB(145, 48, 48));
+	for (int i = 0; i < ctext_num; i++) {
+		const int cx = CText_list[i].x, cy = CText_list[i].y;
+		const int lng = CText_list[i].lngth, dir = CText_list[i].dir;
+		skp->MoveTo(cx + lng / 2, cy + dir * 7 + 5);
+		skp->LineTo(cx + lng / 2, cy + 5);
+		skp->LineTo(cx - lng / 2, cy + 5);
+		skp->LineTo(cx - lng / 2, cy + dir * 7 + 5);
+		skp->Text(cx, cy, CText_list[i].text,
+		          (int)strlen(CText_list[i].text));
+	}
+
+	// Borders — the GDI path rounds each corner with a 5-pixel Arc();
+	// Sketchpad has no arc primitive, so draw square corners. Visually
+	// almost indistinguishable at panel scale.
+	skp->QuickPen(RGB(15, 15, 15), 1, 1);
+	skp->SetBackgroundMode(oapi::Sketchpad::BK_TRANSPARENT);
+	for (int i = 0; i < border_num; i++) {
+		const int px = Border_list[i].x, py = Border_list[i].y;
+		const int nr = Border_list[i].num;
+		const int x0 = px - 5, x1 = px + 45 * nr + 5;
+		const int y0 = py, y1 = py + 40;
+		skp->MoveTo(x0, y0);
+		skp->LineTo(x0, y1);
+		skp->LineTo(x1, y1);
+		skp->LineTo(x1, y0);
+		skp->LineTo(x0, y0);
+	}
+
+	oapiReleaseSketchpad(skp);
+	// Leave `surf` alive; Dragonfly::LoadPanel will hand it to
+	// oapiRegisterPanelBackground(SURFHANDLE,…), which takes ownership.
+#endif
 }
 void Panel::NowPutScrews()
 {int di=5*sqrt(2.0)/2;

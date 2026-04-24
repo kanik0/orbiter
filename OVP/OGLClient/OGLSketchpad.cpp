@@ -364,13 +364,18 @@ DWORD OGLSketchpad::GetTextWidth(const char *str, int len) {
 
 void OGLSketchpad::PackColor(DWORD col, float out[4]) const
 {
-	// Orbiter stores 0xBBGGRR. The alpha byte (bits 24-31) is optional;
-	// the ColorCompatibility default treats alpha==0 as "fully opaque"
-	// which is what every D3D9 caller historically assumed. Sketchpads
-	// that opt out (ColorCompatibility(false)) get the raw alpha byte.
-	float r = ((col >> 16) & 0xFF) / 255.0f;
+	// Orbiter stores 0xBBGGRR — B in the high byte, G in the middle, R
+	// in the low byte, matching the layout Windows' RGB(r,g,b) macro
+	// produces. The previous extraction here swapped R and B (it
+	// assigned the BB byte to the local "r" variable), so anything
+	// non-symmetric — col_red1, col_yellow1, or RGB(145,48,48) — came
+	// out with R and B transposed. Green/grey/white stayed fine, which
+	// is why the bug stayed hidden until #133 exercised a dark-red fill.
+	// The alpha byte (bits 24-31) is optional; ColorCompatibility's
+	// default treats alpha==0 as "fully opaque", matching D3D9 legacy.
+	float r = ( col        & 0xFF) / 255.0f;
 	float g = ((col >>  8) & 0xFF) / 255.0f;
-	float b = ( col        & 0xFF) / 255.0f;
+	float b = ((col >> 16) & 0xFF) / 255.0f;
 	float a = ((col >> 24) & 0xFF) / 255.0f;
 	if (m_colourCompat && a < 1.0f / 255.0f) a = 1.0f;
 	out[0] = r; out[1] = g; out[2] = b; out[3] = a;

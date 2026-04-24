@@ -5270,6 +5270,18 @@ OAPIFUNC bool oapiUnregisterExternMFD (ExternMFD *emfd);
 OAPIFUNC void oapiRegisterPanelBackground (HBITMAP hBmp, DWORD flag = PANEL_ATTACH_BOTTOM|PANEL_MOVEOUT_BOTTOM,
 				                           DWORD ck = (DWORD)-1);
 
+/**
+ * \brief SURFHANDLE-based alternative to \ref oapiRegisterPanelBackground.
+ * Needed by vessel plugins that can't produce an HBITMAP — macOS/Linux
+ * builds where CreateCompatibleBitmap is an empty stub. Ownership of
+ * `hSurf` transfers to the engine; do not release it yourself. Named
+ * distinctly from the HBITMAP overload because both parameter types
+ * are `void*` typedefs on macOS/Linux and overload resolution is
+ * ambiguous there.
+ */
+OAPIFUNC void oapiRegisterPanelBackgroundSurface (SURFHANDLE hSurf,
+                                                  DWORD flag = PANEL_ATTACH_BOTTOM|PANEL_MOVEOUT_BOTTOM);
+
 	/**
 	* \anchor register_p_a
 	* \brief Defines a rectangular area within a panel to receive mouse or redraw notifications.

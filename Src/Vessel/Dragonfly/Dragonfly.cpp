@@ -840,7 +840,15 @@ void Dragonfly::RedrawPanel_CGIndicator (SURFHANDLE surf)
 void Dragonfly::LoadPanel(int id)
 { 
 	Internals.PanelList[id].MakeYourBackground();
+#ifdef _WIN32
 	oapiRegisterPanelBackground(Internals.PanelList[id].hBitmap,Internals.PanelList[id].ATT_mode,0xFFFFFF);
+#else
+	// macOS / Linux: MakeYourBackground built the panel through a
+	// Sketchpad-backed SURFHANDLE because the GDI helpers are stubs.
+	// Register it via the SURFHANDLE overload; ownership transfers to
+	// the engine.
+	oapiRegisterPanelBackgroundSurface(Internals.PanelList[id].surf, Internals.PanelList[id].ATT_mode);
+#endif
 	oapiSetPanelNeighbours(Internals.PanelList[id].neighbours[0],Internals.PanelList[id].neighbours[1],Internals.PanelList[id].neighbours[2],Internals.PanelList[id].neighbours[3]);
 	Internals.PanelList[id].RegisterYourInstruments();
     CurrentPANEL=id;

@@ -1783,6 +1783,11 @@ DLLEXPORT void oapiRegisterPanelBackground (HBITMAP hBmp, DWORD flag, DWORD ck)
 	g_pane->RegisterPanelBackground (hBmp, flag, ck);
 }
 
+DLLEXPORT void oapiRegisterPanelBackgroundSurface (SURFHANDLE hSurf, DWORD flag)
+{
+	g_pane->RegisterPanelBackground (hSurf, flag);
+}
+
 DLLEXPORT void oapiRegisterPanelArea (int id, const RECT &pos, int draw_event, int mouse_event, int bkmode)
 {
 	g_pane->RegisterPanelArea (id, pos, draw_event, mouse_event, bkmode);
