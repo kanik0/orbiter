@@ -6,6 +6,24 @@
 #include "OGLSurface.h"
 #include <cstdio>
 #include <cstring>
+#include <vector>
+
+// S3TC compressed-texture internal-format constants. Apple's OpenGL/gl3.h
+// doesn't declare these by default, but the driver does accept them via
+// GL_EXT_texture_compression_s3tc (enabled by default on macOS Core
+// Profile). OGLTexture.cpp has the same fallbacks.
+#ifndef GL_COMPRESSED_RGB_S3TC_DXT1_EXT
+#define GL_COMPRESSED_RGB_S3TC_DXT1_EXT   0x83F0
+#endif
+#ifndef GL_COMPRESSED_RGBA_S3TC_DXT1_EXT
+#define GL_COMPRESSED_RGBA_S3TC_DXT1_EXT  0x83F1
+#endif
+#ifndef GL_COMPRESSED_RGBA_S3TC_DXT3_EXT
+#define GL_COMPRESSED_RGBA_S3TC_DXT3_EXT  0x83F2
+#endif
+#ifndef GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
+#define GL_COMPRESSED_RGBA_S3TC_DXT5_EXT  0x83F3
+#endif
 
 namespace ogl {
 
@@ -154,11 +172,54 @@ int OGLSurface::Release()
 	return rc;
 }
 
+// ---------------------------------------------------------------------------
+// DXTn/BCn textures cannot be attached to an FBO — glFramebufferTexture2D on a
+// compressed internal format returns GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT.
+// Most vessel panel textures ship as DXT5 (dg_panel.dds is 2048x1024 DXT5)
+// AND are later self-blitted by the vessel plugin to paint glyphs / gauges
+// onto the panel itself. Without this upgrade the self-blit silently no-ops
+// and the DG 2D MFD side-button labels stay blank (#129).
+//
+// glGetTexImage on a compressed texture decompresses client-side via the
+// driver, so we can reupload as GL_RGBA8 in one round-trip. One-off per RT-
+// using texture — the memory hit is 4× for the affected sub-set (DG panel:
+// 2 MB → 8 MB).
+static void DecompressToRGBA8IfCompressed(GLuint texId, DWORD width, DWORD height, bool regenMips)
+{
+	if (!texId) return;
+	glBindTexture(GL_TEXTURE_2D, texId);
+	GLint fmt = 0;
+	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &fmt);
+	const bool compressed =
+		fmt == GL_COMPRESSED_RGB_S3TC_DXT1_EXT  ||
+		fmt == GL_COMPRESSED_RGBA_S3TC_DXT1_EXT ||
+		fmt == GL_COMPRESSED_RGBA_S3TC_DXT3_EXT ||
+		fmt == GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
+	if (!compressed) { glBindTexture(GL_TEXTURE_2D, 0); return; }
+
+	std::vector<unsigned char> pixels((size_t)width * height * 4);
+	glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0,
+	             GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+	if (regenMips) glGenerateMipmap(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	fprintf(stderr,
+	        "[OGLSurface] Decompressed DXT%c → RGBA8 for RT use "
+	        "(tex=%u, %ux%u)\n",
+	        (fmt == GL_COMPRESSED_RGB_S3TC_DXT1_EXT ||
+	         fmt == GL_COMPRESSED_RGBA_S3TC_DXT1_EXT) ? '1' :
+	        fmt == GL_COMPRESSED_RGBA_S3TC_DXT3_EXT ? '3' : '5',
+	        texId, (unsigned)width, (unsigned)height);
+}
+
 GLuint OGLSurface::EnsureFBO()
 {
 	if (m_fbo) return m_fbo;
 	if (!m_texId) return 0;
 	if (m_fboFailed) return 0;
+
+	DecompressToRGBA8IfCompressed(m_texId, m_width, m_height, HasMipmaps());
 
 	// --- Single-sample resolve FBO (always built). ---------------------------
 	glGenFramebuffers(1, &m_fbo);
