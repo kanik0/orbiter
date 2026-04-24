@@ -6,8 +6,7 @@
 #include "OGLSketchpad.h"
 #include "OGLShaderMgr.h"
 #include "OGLSurface.h"
-#include "imgui.h"
-#include "imgui_internal.h"   // ImTextCharFromUtf8
+#include "OGLTextAtlas.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -16,6 +15,40 @@
 #include <vector>
 
 namespace ogl {
+
+namespace {
+
+// Minimal UTF-8 decoder. Only ASCII (0x00..0x7F) is currently baked into
+// the atlas — multi-byte sequences are decoded so the pen advances over
+// them sensibly (one codepoint per iteration), but GetGlyph returns null
+// and the codepoint is dropped silently. Localised non-ASCII strings in
+// MFDs are not in scope for the macOS port today.
+int DecodeUtf8(unsigned int *cp, const char *p, const char *end)
+{
+	unsigned char c = (unsigned char)*p;
+	if (c < 0x80) { *cp = c; return 1; }
+	if ((c & 0xE0) == 0xC0 && p + 1 < end) {
+		*cp = ((c & 0x1Fu) << 6) | ((unsigned char)p[1] & 0x3Fu);
+		return 2;
+	}
+	if ((c & 0xF0) == 0xE0 && p + 2 < end) {
+		*cp = ((c & 0x0Fu) << 12) |
+		      (((unsigned char)p[1] & 0x3Fu) << 6) |
+		       ((unsigned char)p[2] & 0x3Fu);
+		return 3;
+	}
+	if ((c & 0xF8) == 0xF0 && p + 3 < end) {
+		*cp = ((c & 0x07u) << 18) |
+		      (((unsigned char)p[1] & 0x3Fu) << 12) |
+		      (((unsigned char)p[2] & 0x3Fu) << 6) |
+		       ((unsigned char)p[3] & 0x3Fu);
+		return 4;
+	}
+	*cp = (unsigned int)'?';
+	return 1;
+}
+
+} // namespace
 
 // --- Static shared state ---------------------------------------------------
 
@@ -121,22 +154,21 @@ void OGLSketchpad::ReleaseShared()
 OGLFont::OGLFont(int height, bool prop, const char *face,
                  FontStyle style, int orientation)
 	: oapi::Font(height, prop, face, style, orientation),
-	  imFont(nullptr), fontSize((float)(height < 0 ? -height : height))
+	  fontId(FontId::DEFAULT),
+	  fontSize((float)(height < 0 ? -height : height))
 {
-	// Pick from ImGui's built-in atlas. The loader registers three fonts:
-	// index 0 = default proportional, index 2 = fixed-width (if available).
-	// Until we ship our own .ttf pack the face name is only used to swap
-	// between the two buckets.
-	ImGuiIO &io = ImGui::GetIO();
-	if (!io.Fonts || io.Fonts->Fonts.Size == 0) return;
+	// Map (prop, face) onto an OGLTextAtlas slot. The previous ImGui-
+	// based code used Fonts[0] (Roboto) for proportional and Fonts[2]
+	// (Lekton-Bold) for fixed-width; OGLTextAtlas registers the same
+	// .ttf files under FontId::DEFAULT and FontId::MONO respectively.
 	const bool wantFixed =
 		!prop ||
 		(face && (!strcmp(face, "Fixed") || !strcmp(face, "Courier") ||
 		          !strcmp(face, "Courier New")));
-	if (wantFixed && io.Fonts->Fonts.Size > 2)
-		imFont = io.Fonts->Fonts[2];
+	if (wantFixed && OGLTextAtlas::Instance().HasFont(FontId::MONO))
+		fontId = FontId::MONO;
 	else
-		imFont = io.Fonts->Fonts[0];
+		fontId = FontId::DEFAULT;
 }
 
 OGLPen::OGLPen(int s, int w, DWORD c)
@@ -306,24 +338,26 @@ void OGLSketchpad::GetOrigin(int *x, int *y) const {
 // --- Metrics ---------------------------------------------------------------
 
 DWORD OGLSketchpad::GetCharSize() {
-	// Orbiter packs (width << 16) | height. We measure against the ImGui
-	// reference glyph so the returned width tracks the actual font.
-	ImFont *imf = m_font ? m_font->imFont : ImGui::GetFont();
-	float sz = m_font ? m_font->fontSize : 14.0f;
-	if (!imf) return ((DWORD)8 << 16) | 14u;
-	ImVec2 ref = imf->CalcTextSizeA(sz, FLT_MAX, 0, "M");
-	DWORD h = (DWORD)std::max(1.0f, sz);
-	DWORD w = (DWORD)std::max(1.0f, ref.x);
-	return (w << 16) | h;
+	// Orbiter packs (width << 16) | height. Width is measured against the
+	// reference 'M' glyph so callers that compute label widths from
+	// (charsize * label-length) get a tight fit on the actual font.
+	OGLTextAtlas &atlas = OGLTextAtlas::Instance();
+	FontId fid = m_font ? m_font->fontId : FontId::DEFAULT;
+	int sz = (int)(m_font ? m_font->fontSize : 14.0f);
+	float w = atlas.GetTextWidth(fid, sz, "M");
+	DWORD h = (DWORD)std::max(1, sz);
+	DWORD wW = (DWORD)std::max(1.0f, std::ceil(w));
+	return (wW << 16) | h;
 }
 
 DWORD OGLSketchpad::GetTextWidth(const char *str, int len) {
 	if (!str) return 0;
-	ImFont *imf = m_font ? m_font->imFont : ImGui::GetFont();
-	float sz = m_font ? m_font->fontSize : 14.0f;
+	OGLTextAtlas &atlas = OGLTextAtlas::Instance();
+	FontId fid = m_font ? m_font->fontId : FontId::DEFAULT;
+	int sz = (int)(m_font ? m_font->fontSize : 14.0f);
 	const char *end = (len > 0) ? str + len : str + std::strlen(str);
-	ImVec2 tsz = imf->CalcTextSizeA(sz, FLT_MAX, 0, str, end);
-	return (DWORD)std::max(0.0f, tsz.x);
+	float w = atlas.GetTextWidth(fid, sz, str, end);
+	return (DWORD)std::max(0.0f, std::ceil(w));
 }
 
 // --- Draw helpers ----------------------------------------------------------
@@ -473,84 +507,65 @@ void OGLSketchpad::DrawTexturedQuads(const float *xyuv, int nVerts,
 bool OGLSketchpad::Text(int x, int y, const char *str, int len)
 {
 	if (!str || !s_program) return false;
-	ImFont *imf = m_font ? m_font->imFont : ImGui::GetFont();
-	float   sz  = m_font ? m_font->fontSize : 14.0f;
-	if (!imf) return false;
+	OGLTextAtlas &atlas = OGLTextAtlas::Instance();
+	GLuint atlasTex = atlas.GetTextureID();
+	if (!atlasTex) return false;
+
+	FontId fid = m_font ? m_font->fontId : FontId::DEFAULT;
+	int sz = (int)(m_font ? m_font->fontSize : 14.0f);
 
 	const char *end = (len > 0) ? str + len : str + std::strlen(str);
-	ImVec2 tsz = imf->CalcTextSizeA(sz, FLT_MAX, 0, str, end);
+	float tw = atlas.GetTextWidth(fid, sz, str, end);
+	float lineH = 0.0f;
+	atlas.GetVMetrics(fid, sz, nullptr, nullptr, &lineH);
+	if (lineH <= 0.0f) lineH = (float)sz;
 
 	float px = (float)(x + m_ox);
 	float py = (float)(y + m_oy);
-	if (m_tah == CENTER) px -= tsz.x * 0.5f;
-	else if (m_tah == RIGHT) px -= tsz.x;
-	if (m_tav == BASELINE) py -= sz * 0.8f;
-	else if (m_tav == BOTTOM) py -= tsz.y;
+	if (m_tah == CENTER)      px -= tw * 0.5f;
+	else if (m_tah == RIGHT)  px -= tw;
+	if (m_tav == BASELINE)    py -= sz * 0.8f;
+	else if (m_tav == BOTTOM) py -= lineH;
 
 	if (m_bkMode == BK_OPAQUE) {
 		const float r[2 * 3 * 2] = {
-			px,         py,
-			px + tsz.x, py,
-			px,         py + tsz.y,
-			px + tsz.x, py,
-			px + tsz.x, py + tsz.y,
-			px,         py + tsz.y,
+			px,      py,
+			px + tw, py,
+			px,      py + lineH,
+			px + tw, py,
+			px + tw, py + lineH,
+			px,      py + lineH,
 		};
 		DrawSolidTriangles(r, 6, m_bgCol);
 	}
-
-	// ImGui 1.92 bakes glyph metrics per requested size; we fetch the baked
-	// entry for `sz` so glyph->X0..AdvanceX come back already scaled and do
-	// not need a per-glyph multiply at draw time. The atlas texture id is
-	// exposed via ImFontAtlas::TexRef; nullptr IDs happen transiently while
-	// a dynamic atlas rebuilds.
-	ImFontAtlas   *atlas  = ImGui::GetIO().Fonts;
-	GLuint         atlasTex = atlas ? (GLuint)(std::uintptr_t)atlas->TexRef.GetTexID() : 0;
-	ImFontBaked   *baked  = imf->GetFontBaked(sz);
-	if (!atlasTex || !baked) return true;
 
 	float pen = px;
 	std::vector<float> quads;
 	quads.reserve((end - str) * 6 * 4);
 
 	for (const char *p = str; p < end; ) {
-		unsigned int codepoint = 0;
-		int bytes = ImTextCharFromUtf8(&codepoint, p, end);
+		unsigned int cp = 0;
+		int bytes = DecodeUtf8(&cp, p, end);
 		if (bytes <= 0) break;
 		p += bytes;
 
-		ImFontGlyph *glyph = baked->FindGlyph((ImWchar)codepoint);
-		if (!glyph) continue;
+		const Glyph *g = atlas.GetGlyph(fid, sz, cp);
+		if (!g) continue;
 
-		// The cached glyph->U0..V1 are only valid for the TexRef that
-		// was current when the glyph was last baked. ImGui 1.92 may
-		// repack the atlas at any time (new font-size triples arrive,
-		// dynamic fit), invalidating cached UVs on glyphs baked during
-		// earlier passes — those glyphs then sample empty texels. The
-		// imgui.h comment is explicit: "Always use latest values from
-		// GetCustomRect()." (#123)
-		ImFontAtlasRect rect;
-		float u0 = glyph->U0, u1 = glyph->U1, v0 = glyph->V0, v1 = glyph->V1;
-		if (glyph->PackId >= 0 &&
-		    atlas->GetCustomRect(glyph->PackId, &rect)) {
-			u0 = rect.uv0.x; v0 = rect.uv0.y;
-			u1 = rect.uv1.x; v1 = rect.uv1.y;
-		}
-
-		float gx0 = pen + glyph->X0;
-		float gy0 = py  + glyph->Y0;
-		float gx1 = pen + glyph->X1;
-		float gy1 = py  + glyph->Y1;
+		float gx0 = pen + g->x0;
+		float gy0 = py  + g->y0;
+		float gx1 = pen + g->x1;
+		float gy1 = py  + g->y1;
 
 		quads.insert(quads.end(), {
-			gx0, gy0, u0, v0,
-			gx1, gy0, u1, v0,
-			gx0, gy1, u0, v1,
-			gx1, gy0, u1, v0,
-			gx1, gy1, u1, v1,
-			gx0, gy1, u0, v1,
+			gx0, gy0, g->u0, g->v0,
+			gx1, gy0, g->u1, g->v0,
+			gx0, gy1, g->u0, g->v1,
+			gx1, gy0, g->u1, g->v0,
+			gx1, gy1, g->u1, g->v1,
+			gx0, gy1, g->u0, g->v1,
 		});
-		pen += glyph->AdvanceX;
+		pen += g->advanceX;
 	}
 
 	if (!quads.empty()) {
@@ -1430,15 +1445,18 @@ void OGLSketchpad::TextEx(float x, float y, const char *str,
                           float scale, float angle)
 {
 	if (!str || !*str) return;
-	// Scale and rotation operate around the text anchor (x, y). Per-glyph
-	// quads are rotated individually so letter spacing follows the angle.
-	ImFont *imf = m_font ? m_font->imFont : ImGui::GetFont();
-	float sz = (m_font ? m_font->fontSize : 14.0f) * scale;
-	if (!imf) return;
-	ImFontBaked *baked = imf->GetFontBaked(sz);
-	ImFontAtlas *atlas = ImGui::GetIO().Fonts;
-	GLuint atlasTex = atlas ? (GLuint)(std::uintptr_t)atlas->TexRef.GetTexID() : 0;
-	if (!baked || !atlasTex) return;
+	OGLTextAtlas &atlas = OGLTextAtlas::Instance();
+	GLuint atlasTex = atlas.GetTextureID();
+	if (!atlasTex) return;
+
+	// Scale and rotation operate around the text anchor (x, y). The atlas
+	// provides discrete integer-size bakes, so we round (fontSize * scale)
+	// to the nearest baked size and let GetGlyph clamp into [sizeMin,
+	// sizeMax]; the residual sub-pixel error is well below MFD legibility.
+	FontId fid = m_font ? m_font->fontId : FontId::DEFAULT;
+	float fSz = (m_font ? m_font->fontSize : 14.0f) * scale;
+	int sz = (int)std::round(fSz);
+	if (sz < 1) sz = 1;
 
 	const float c = std::cos(angle), s = std::sin(angle);
 	const float ax = x + (float)m_ox, ay = y + (float)m_oy;
@@ -1448,23 +1466,16 @@ void OGLSketchpad::TextEx(float x, float y, const char *str,
 	const char *end = str + std::strlen(str);
 	for (const char *p = str; p < end; ) {
 		unsigned int cp = 0;
-		int bytes = ImTextCharFromUtf8(&cp, p, end);
+		int bytes = DecodeUtf8(&cp, p, end);
 		if (bytes <= 0) break;
 		p += bytes;
-		ImFontGlyph *g = baked->FindGlyph((ImWchar)cp);
+
+		const Glyph *g = atlas.GetGlyph(fid, sz, cp);
 		if (!g) continue;
 
-		// See Text() above for why cached UVs are untrusted. (#123)
-		ImFontAtlasRect rect;
-		float u0 = g->U0, u1 = g->U1, v0 = g->V0, v1 = g->V1;
-		if (g->PackId >= 0 && atlas->GetCustomRect(g->PackId, &rect)) {
-			u0 = rect.uv0.x; v0 = rect.uv0.y;
-			u1 = rect.uv1.x; v1 = rect.uv1.y;
-		}
-
 		// Local-space (unrotated) corners.
-		const float lx0 = pen + g->X0, lx1 = pen + g->X1;
-		const float ly0 = g->Y0,       ly1 = g->Y1;
+		const float lx0 = pen + g->x0, lx1 = pen + g->x1;
+		const float ly0 = g->y0,       ly1 = g->y1;
 		auto rot = [&](float lx, float ly, float &ox, float &oy) {
 			ox = ax + c * lx - s * ly;
 			oy = ay + s * lx + c * ly;
@@ -1476,14 +1487,14 @@ void OGLSketchpad::TextEx(float x, float y, const char *str,
 		rot(lx0, ly1, rx3, ry3);
 
 		quads.insert(quads.end(), {
-			rx0, ry0, u0, v0,
-			rx1, ry1, u1, v0,
-			rx3, ry3, u0, v1,
-			rx1, ry1, u1, v0,
-			rx2, ry2, u1, v1,
-			rx3, ry3, u0, v1,
+			rx0, ry0, g->u0, g->v0,
+			rx1, ry1, g->u1, g->v0,
+			rx3, ry3, g->u0, g->v1,
+			rx1, ry1, g->u1, g->v0,
+			rx2, ry2, g->u1, g->v1,
+			rx3, ry3, g->u0, g->v1,
 		});
-		pen += g->AdvanceX;
+		pen += g->advanceX;
 	}
 	if (!quads.empty())
 		DrawTexturedQuads(quads.data(), (int)(quads.size() / 4),
